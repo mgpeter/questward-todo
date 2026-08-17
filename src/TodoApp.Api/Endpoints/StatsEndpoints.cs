@@ -1,0 +1,86 @@
+using Microsoft.EntityFrameworkCore;
+using TodoApp.Api.Contracts;
+using TodoApp.Api.Services;
+using TodoApp.Data;
+using TodoApp.Models;
+using TodoApp.Models.Progression;
+
+namespace TodoApp.Api.Endpoints;
+
+public static class StatsEndpoints
+{
+    private const int TrendDays = 14;
+
+    public static IEndpointRouteBuilder MapStatsEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapGet("/api/stats", GetStats).WithTags("Stats");
+
+        return app;
+    }
+
+    private static async Task<IResult> GetStats(
+        TodoDbContext db,
+        GamificationService gamification,
+        CancellationToken cancellationToken,
+        int utcOffsetMinutes = 0)
+    {
+        var character = await gamification.GetCharacterAsync(cancellationToken);
+        var progress = LevelCurve.Describe(character.TotalXp);
+
+        var offset = TimeSpan.FromMinutes(Math.Clamp(utcOffsetMinutes, -840, 840));
+        var localNow = DateTimeOffset.UtcNow.ToOffset(offset);
+        var today = DateOnly.FromDateTime(localNow.Date);
+        var windowStartUtc = new DateTimeOffset(localNow.Date.AddDays(-(TrendDays - 1)), offset)
+            .ToUniversalTime();
+
+        var totalTasks = await db.Tasks.CountAsync(cancellationToken);
+        var completedTasks = await db.Tasks.CountAsync(t => t.IsCompleted, cancellationToken);
+        var overdueTasks = await db.Tasks.CountAsync(
+            t => !t.IsCompleted && t.DueDate != null && t.DueDate < DateTimeOffset.UtcNow,
+            cancellationToken);
+
+        var byDifficulty = await db.Tasks
+            .Where(t => t.IsCompleted)
+            .GroupBy(t => t.Difficulty)
+            .Select(g => new DifficultyBreakdown(g.Key, g.Count(), g.Sum(t => t.XpAwarded)))
+            .ToListAsync(cancellationToken);
+
+        // Every difficulty appears, including the ones never used, so the chart has a stable shape.
+        var breakdown = Enum.GetValues<Difficulty>()
+            .Select(difficulty =>
+                byDifficulty.FirstOrDefault(b => b.Difficulty == difficulty)
+                ?? new DifficultyBreakdown(difficulty, 0, 0))
+            .ToList();
+
+        var recent = await db.Tasks
+            .AsNoTracking()
+            .Where(t => t.IsCompleted && t.CompletedAt >= windowStartUtc)
+            .Select(t => new { t.CompletedAt, t.XpAwarded })
+            .ToListAsync(cancellationToken);
+
+        var grouped = recent
+            .GroupBy(t => DateOnly.FromDateTime(t.CompletedAt!.Value.ToOffset(offset).Date))
+            .ToDictionary(g => g.Key, g => (Count: g.Count(), Xp: g.Sum(t => t.XpAwarded)));
+
+        var trend = Enumerable.Range(0, TrendDays)
+            .Select(dayOffset =>
+            {
+                var date = today.AddDays(-(TrendDays - 1 - dayOffset));
+                return grouped.TryGetValue(date, out var entry)
+                    ? new DailyCompletion(date, entry.Count, entry.Xp)
+                    : new DailyCompletion(date, 0, 0);
+            })
+            .ToList();
+
+        return Results.Ok(new StatsDto(
+            totalTasks,
+            totalTasks - completedTasks,
+            completedTasks,
+            overdueTasks,
+            progress.TotalXp,
+            progress.Level,
+            progress.Title,
+            breakdown,
+            trend));
+    }
+}

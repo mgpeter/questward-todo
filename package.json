@@ -1,0 +1,13 @@
+{
+  "name": "questward-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Repo-level tooling for Questward. The app itself lives in web/ and src/.",
+  "scripts": {
+    "verify:ui": "node scripts/verify-ui.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.57.0"
+  }
+}

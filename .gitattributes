@@ -1,0 +1,16 @@
+# Normalise line endings in the repository to LF. This repo is authored on
+# Windows but its Dockerfile builds inside Linux containers, where a stray CRLF
+# in a copied file is a genuine failure mode.
+* text=auto eol=lf
+
+# Windows-only tooling that expects CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Never touched by line-ending normalisation.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

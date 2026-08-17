@@ -1,0 +1,239 @@
+@import 'tailwindcss';
+
+/* Self-hosted so the app has no runtime dependency on a font CDN.
+   Fraunces "full" carries the SOFT / WONK / opsz axes used by the display styles. */
+@import '@fontsource-variable/fraunces/full.css';
+@import '@fontsource-variable/outfit';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* --------------------------------------------------------------------------
+   Palette. Warm parchment by day, warm ink by night - deliberately not the
+   blue-grey default. Gold carries progress, teal carries confirmation.
+   -------------------------------------------------------------------------- */
+:root {
+  --canvas: #f4efe4;
+  --canvas-deep: #ebe3d3;
+  --surface: #fffdf8;
+  --surface-sunk: #efe8da;
+  --line: #e2d8c5;
+  --line-strong: #cbbda2;
+
+  --ink: #221f19;
+  --ink-muted: #6b6357;
+  --ink-faint: #9a9081;
+
+  --gold: #b8801d;
+  --gold-bright: #d09a2c;
+  --gold-glow: rgb(184 128 29 / 0.28);
+  --teal: #17695c;
+  --rose: #a6323f;
+
+  /* Difficulty identity. Hues chosen so the four stay separable under deuteranopia
+     and protanopia - checked with the dataviz palette validator, not by eye. */
+  --tier-easy: #3d8038;
+  --tier-medium: #1f66a8;
+  --tier-hard: #b26a00;
+  --tier-epic: #7b3fa0;
+
+  /* Same hues, retuned for use as chart fills against the chart surface. */
+  --mark-easy: #3d8038;
+  --mark-medium: #1f66a8;
+  --mark-hard: #b26a00;
+  --mark-epic: #7b3fa0;
+
+  --shadow-card: 0 1px 2px rgb(60 45 20 / 0.06), 0 8px 24px -12px rgb(60 45 20 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(60 45 20 / 0.08), 0 18px 40px -18px rgb(60 45 20 / 0.3);
+  --grain-opacity: 0.035;
+}
+
+.dark {
+  --canvas: #14120f;
+  --canvas-deep: #0e0d0b;
+  --surface: #1d1a16;
+  --surface-sunk: #17150f;
+  --line: #322c23;
+  --line-strong: #4a4133;
+
+  --ink: #f2ece1;
+  --ink-muted: #a89e8d;
+  --ink-faint: #766d5e;
+
+  --gold: #e0ac4c;
+  --gold-bright: #f2c569;
+  --gold-glow: rgb(224 172 76 / 0.3);
+  --teal: #55b5a1;
+  --rose: #e3697a;
+
+  /* Lifted for legibility as small text on a dark surface... */
+  --tier-easy: #7cb573;
+  --tier-medium: #6ca6dc;
+  --tier-hard: #e0a05a;
+  --tier-epic: #bd8ce0;
+
+  /* ...while chart fills sit in the darker band the validator requires. */
+  --mark-easy: #55954e;
+  --mark-medium: #3a80c0;
+  --mark-hard: #b8791f;
+  --mark-epic: #9257bd;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px -14px rgb(0 0 0 / 0.7);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 22px 48px -20px rgb(0 0 0 / 0.8);
+  --grain-opacity: 0.055;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-deep: var(--canvas-deep);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-teal: var(--teal);
+  --color-rose: var(--rose);
+
+  --color-tier-easy: var(--tier-easy);
+  --color-tier-medium: var(--tier-medium);
+  --color-tier-hard: var(--tier-hard);
+  --color-tier-epic: var(--tier-epic);
+
+  --color-mark-easy: var(--mark-easy);
+  --color-mark-medium: var(--mark-medium);
+  --color-mark-hard: var(--mark-hard);
+  --color-mark-epic: var(--mark-epic);
+
+  --font-display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'Outfit Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A faint film of grain over everything, so flat fills read as paper rather than plastic. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: var(--gold-glow);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 3px solid var(--canvas);
+    border-radius: 99px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-faint);
+  }
+}
+
+@layer components {
+  /* The display face, with the optical-size and wonk axes actually used. */
+  .font-display {
+    font-family: var(--font-display);
+    font-variation-settings: 'SOFT' 24, 'WONK' 1, 'opsz' 36;
+    letter-spacing: -0.015em;
+  }
+
+  .tabular {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* Panels: paper on paper, separated by a hairline rather than a heavy shadow. */
+  .panel {
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-card);
+  }
+
+  .tier-easy {
+    --tier: var(--tier-easy);
+    --mark: var(--mark-easy);
+  }
+  .tier-medium {
+    --tier: var(--tier-medium);
+    --mark: var(--mark-medium);
+  }
+  .tier-hard {
+    --tier: var(--tier-hard);
+    --mark: var(--mark-hard);
+  }
+  .tier-epic {
+    --tier: var(--tier-epic);
+    --mark: var(--mark-epic);
+  }
+
+  .tier-chip {
+    color: var(--tier);
+    background-color: color-mix(in srgb, var(--tier) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tier) 32%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

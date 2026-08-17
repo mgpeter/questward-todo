@@ -1,0 +1,67 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Breakpoints in Program.cs, the endpoints, and GamificationService.
+      "name": "API (.NET)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-api",
+      "program": "${workspaceFolder}/src/TodoApp.Api/bin/Debug/net10.0/TodoApp.Api.dll",
+      "cwd": "${workspaceFolder}/src/TodoApp.Api",
+      "args": ["--urls", "http://localhost:5080"],
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Now listening on:\\s+(https?://\\S+)",
+        "uriFormat": "%s/scalar/v1"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "sourceFileMap": {
+        "/Views": "${workspaceFolder}/Views"
+      }
+    },
+    {
+      // Breakpoints in .tsx files. Needs `npm run dev` already running in web/,
+      // or use the "Full stack" compound below which starts it for you.
+      "name": "SPA (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web",
+      "sourceMaps": true,
+      "userDataDir": "${workspaceFolder}/.vscode/.chrome-profile"
+    },
+    {
+      // Debug the production shape: one origin, SPA served from wwwroot.
+      // Run `npm run build` in web/ first.
+      "name": "SPA (Chrome, against the API on 5080)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5080",
+      "webRoot": "${workspaceFolder}/web",
+      "sourceMaps": true,
+      "userDataDir": "${workspaceFolder}/.vscode/.chrome-profile"
+    },
+    {
+      // Attach to the containerised app. Requires `docker compose up -d` and the
+      // ms-dotnettools debugger being copied in - see README; usually easier to
+      // reproduce the bug against the local API instead.
+      "name": "Attach to a running .NET process",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": "${command:pickProcess}"
+    }
+  ],
+  "compounds": [
+    {
+      // F5 this one: starts Postgres, the API under the debugger, Vite, and Chrome.
+      "name": "Full stack (API + Vite + Chrome)",
+      "configurations": ["API (.NET)", "SPA (Chrome)"],
+      "preLaunchTask": "dev-prereqs",
+      "stopAll": true
+    }
+  ]
+}

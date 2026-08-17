@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-api",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/TodoApp.Api/TodoApp.Api.csproj"],
+      "problemMatcher": "$msCompile",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "db-up",
+      "detail": "Start the development Postgres container and wait for it to be healthy.",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml up -d --wait",
+      "problemMatcher": []
+    },
+    {
+      "label": "vite",
+      "detail": "Vite dev server on 5173 with /api proxied to 5080.",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*VITE.*",
+          "endsPattern": ".*Local:.*5173.*"
+        }
+      }
+    },
+    {
+      "label": "dev-prereqs",
+      "detail": "Everything the Full stack compound needs before the debugger attaches.",
+      "dependsOrder": "sequence",
+      "dependsOn": ["db-up", "vite"],
+      "problemMatcher": []
+    },
+    {
+      "label": "web-build",
+      "detail": "Build the SPA into src/TodoApp.Api/wwwroot for the single-origin setup.",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "problemMatcher": []
+    },
+    {
+      "label": "verify-api",
+      "type": "shell",
+      "command": "pwsh -NoProfile -File ./scripts/verify-api.ps1 -BaseUrl http://localhost:5080",
+      "problemMatcher": []
+    },
+    {
+      "label": "verify-ui",
+      "type": "shell",
+      "command": "node scripts/verify-ui.mjs --url http://localhost:5080 --headed",
+      "problemMatcher": []
+    }
+  ]
+}
