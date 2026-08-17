@@ -97,6 +97,25 @@ public static class ItemCatalog
     public const string CharmOfPresence = "charm-of-presence";
     public const string DragonfangSpear = "dragonfang-spear";
 
+    // Expanded gear
+    public const string IronMace = "iron-mace";
+    public const string OakenStaff = "oaken-staff";
+    public const string DuellingRapier = "duelling-rapier";
+    public const string GreatAxe = "great-axe";
+    public const string RunedWand = "runed-wand";
+    public const string LongbowOfTheVale = "longbow-of-the-vale";
+    public const string ChoirmastersLute = "choirmasters-lute";
+    public const string ReliquaryHammer = "reliquary-hammer";
+    public const string PaddedJerkin = "padded-jerkin";
+    public const string StuddedLeather = "studded-leather";
+    public const string BreastplateOfDawn = "breastplate-of-dawn";
+    public const string ShadowweaveCloak = "shadowweave-cloak";
+    public const string RingOfFocus = "ring-of-focus";
+    public const string PendantOfTheBear = "pendant-of-the-bear";
+    public const string GlovesOfTheThief = "gloves-of-the-thief";
+    public const string CircletOfClarity = "circlet-of-clarity";
+    public const string LuckyCoin = "lucky-coin";
+
     public static IReadOnlyList<ItemDefinition> All { get; } =
     [
         // --- Weapons ---------------------------------------------------------
@@ -168,7 +187,78 @@ public static class ItemCatalog
 
         new(CharmOfPresence, "Charm of Presence", ItemSlot.Trinket,
             "People finish their sentences more generously around you.",
-            BonusAbility: Ability.Charisma, BaseValue: 30)
+            BonusAbility: Ability.Charisma, BaseValue: 30),
+
+        // --- Expanded weapons -------------------------------------------------
+        new(IronMace, "Iron Mace", ItemSlot.Weapon,
+            "No edge to dull, which is rather the point.",
+            DamageNotation: "1d8", BonusAbility: Ability.Wisdom, BaseValue: 22),
+
+        new(OakenStaff, "Oaken Staff", ItemSlot.Weapon,
+            "Worn smooth where a hand has gripped it for years.",
+            DamageNotation: "1d8", BonusAbility: Ability.Intelligence, BaseValue: 26),
+
+        new(DuellingRapier, "Duelling Rapier", ItemSlot.Weapon,
+            "Balanced for someone who intends to be precise about this.",
+            DamageNotation: "1d8", Finesse: true, BonusAbility: Ability.Dexterity, BaseValue: 35),
+
+        new(GreatAxe, "Great Axe", ItemSlot.Weapon,
+            "Two hands, one purpose.",
+            DamageNotation: "1d12", BonusAbility: Ability.Strength, BaseValue: 55),
+
+        new(RunedWand, "Runed Wand", ItemSlot.Weapon,
+            "The runes shift when you are not looking directly at them.",
+            DamageNotation: "1d6", Finesse: true, BonusAbility: Ability.Intelligence, BaseValue: 48),
+
+        new(LongbowOfTheVale, "Longbow of the Vale", ItemSlot.Weapon,
+            "Draws like it wants to be drawn.",
+            DamageNotation: "1d10", Finesse: true, BonusAbility: Ability.Dexterity, BaseValue: 65),
+
+        new(ChoirmastersLute, "Choirmaster's Lute", ItemSlot.Weapon,
+            "Surprisingly solid. The strings are almost incidental.",
+            DamageNotation: "1d6", Finesse: true, BonusAbility: Ability.Charisma, BaseValue: 40),
+
+        new(ReliquaryHammer, "Reliquary Hammer", ItemSlot.Weapon,
+            "Something small and holy rattles in the head of it.",
+            DamageNotation: "1d10", BonusAbility: Ability.Wisdom, BaseValue: 72),
+
+        // --- Expanded armour --------------------------------------------------
+        new(PaddedJerkin, "Padded Jerkin", ItemSlot.Armour,
+            "Warm, at least.",
+            ArmourBonus: 1, BonusAbility: Ability.Constitution, BaseValue: 6),
+
+        new(StuddedLeather, "Studded Leather", ItemSlot.Armour,
+            "The studs are more useful than they look.",
+            ArmourBonus: 3, BonusAbility: Ability.Dexterity, BaseValue: 28),
+
+        new(BreastplateOfDawn, "Breastplate of Dawn", ItemSlot.Armour,
+            "Catches the light even indoors, which is either holy or a nuisance.",
+            ArmourBonus: 5, BonusAbility: Ability.Charisma, BaseValue: 80),
+
+        new(ShadowweaveCloak, "Shadowweave Cloak", ItemSlot.Armour,
+            "You keep losing track of your own sleeves.",
+            ArmourBonus: 4, BonusAbility: Ability.Dexterity, BaseValue: 68),
+
+        // --- Expanded trinkets -------------------------------------------------
+        new(RingOfFocus, "Ring of Focus", ItemSlot.Trinket,
+            "The noise recedes a little while you wear it.",
+            BonusAbility: Ability.Wisdom, BaseValue: 32),
+
+        new(PendantOfTheBear, "Pendant of the Bear", ItemSlot.Trinket,
+            "Heavy, and you find you do not mind carrying it.",
+            BonusAbility: Ability.Strength, BaseValue: 34),
+
+        new(GlovesOfTheThief, "Gloves of the Thief", ItemSlot.Trinket,
+            "Fingertips worn thin from honest work, allegedly.",
+            BonusAbility: Ability.Dexterity, BaseValue: 38),
+
+        new(CircletOfClarity, "Circlet of Clarity", ItemSlot.Trinket,
+            "Thoughts arrive already in order.",
+            BonusAbility: Ability.Intelligence, BaseValue: 42),
+
+        new(LuckyCoin, "Lucky Coin", ItemSlot.Trinket,
+            "It has come up heads every time so far. Every single time.",
+            BonusAbility: Ability.Charisma, BaseValue: 26)
     ];
 
     private static readonly Dictionary<string, ItemDefinition> ByKey =

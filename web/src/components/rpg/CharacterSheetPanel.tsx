@@ -1,7 +1,7 @@
-import { Coins, Heart, Shield, Swords, Zap } from 'lucide-react'
+import { Coins, Heart, Moon, Shield, Swords, Zap } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { CharacterSheet, InventoryItem } from '../../lib/rpg'
-import { useEquip, useSellItem } from '../../lib/rpgQueries'
+import { useEquip, useRest, useSellItem } from '../../lib/rpgQueries'
 
 export function CharacterSheetPanel({
   sheet,
@@ -45,6 +45,7 @@ export function CharacterSheetPanel({
               <span className="text-ink-faint">/{sheet.maxHitPoints}</span>
             </span>
           </Stat>
+          <Recovery sheet={sheet} />
           <Stat icon={<Shield size={13} />} label="Armour class" testId="stat-ac">
             <span className="tabular">{sheet.armourClass}</span>
           </Stat>
@@ -90,6 +91,72 @@ export function CharacterSheetPanel({
       <Inventory items={inventory} />
     </div>
   )
+}
+
+/**
+ * Healing was always happening; nothing ever said so, which made the app look broken to
+ * anyone watching a bar that did not move. This shows the clock, and sells the bed.
+ */
+function Recovery({ sheet }: { sheet: CharacterSheet }) {
+  const rest = useRest()
+  const whole = sheet.currentHitPoints >= sheet.maxHitPoints
+
+  return (
+    <div
+      className="col-span-2 rounded-xl border border-line bg-surface-sunk px-3 py-2.5 sm:col-span-1 lg:col-span-2"
+      data-testid="recovery"
+    >
+      <p className="flex items-center gap-1.5 text-[9.5px] font-medium uppercase tracking-[0.14em] text-ink-faint">
+        <Moon size={13} />
+        Recovery
+      </p>
+
+      {whole ? (
+        <p className="mt-1.5 text-[12.5px] text-teal">In fighting shape.</p>
+      ) : (
+        <>
+          <p className="mt-1.5 text-[12px] leading-snug text-ink-muted">
+            <span className="text-ink">+1 HP {relative(sheet.nextRegenerationAt)}</span>
+            {sheet.fullyHealedAt && (
+              <span className="text-ink-faint"> · full {relative(sheet.fullyHealedAt)}</span>
+            )}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => rest.mutate()}
+            disabled={rest.isPending || sheet.gold < sheet.restCost}
+            title={`Sleep at the tavern for ${sheet.restCost} gold`}
+            data-testid="rest"
+            className="tabular mt-2 w-full rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold disabled:opacity-40"
+          >
+            Rest for {sheet.restCost} gold
+          </button>
+        </>
+      )}
+
+      {rest.isError && (
+        <p role="alert" className="mt-1.5 text-[11px] text-rose">
+          {(rest.error as Error).message}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** "in 6m" / "in 2h 10m", from an absolute instant. */
+function relative(at: string | null): string {
+  if (!at) return 'soon'
+
+  const ms = new Date(at).getTime() - Date.now()
+
+  if (ms <= 0) return 'any moment'
+
+  const minutes = Math.round(ms / 60_000)
+
+  if (minutes < 60) return `in ${Math.max(1, minutes)}m`
+
+  return `in ${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 function Stat({

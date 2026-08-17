@@ -11,7 +11,11 @@ public enum RpgFailure
     ItemEquipped = 6,
     QuestNotComplete = 7,
     QuestAlreadyClaimed = 8,
-    UnknownClass = 9
+    UnknownClass = 9,
+    AbilityExhausted = 10,
+    NotEnoughGold = 11,
+    AlreadyAtFullHealth = 12,
+    CannotUpgrade = 13
 }
 
 /// <summary>

@@ -7,6 +7,8 @@ namespace TodoApp.Api.Services.Rpg;
 
 public sealed record SellResult(int GoldGained, int Gold);
 
+public sealed record RestResult(int GoldSpent, int Gold, int HitPoints, int MaxHitPoints);
+
 /// <summary>
 /// Class selection and the inventory: everything about the character outside a fight.
 /// </summary>
@@ -158,6 +160,60 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
 
         return RpgResult<SellResult>.Success(new SellResult(gold, character.Gold));
     }
+
+    /// <summary>
+    /// A night at the tavern: pay gold, wake up whole.
+    /// </summary>
+    /// <remarks>
+    /// The second gold sink, and the alternative to waiting out passive regeneration. The
+    /// price is deterministic and shown before paying, so the choice between time and
+    /// money is an informed one.
+    /// </remarks>
+    public async Task<RpgResult<RestResult>> RestAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (await db.Encounters.AnyAsync(
+                e => e.UserId == userId && e.Status == EncounterStatus.Active, cancellationToken))
+        {
+            return RpgResult<RestResult>.Fail(
+                RpgFailure.EncounterAlreadyActive, "You cannot bed down mid-fight.");
+        }
+
+        var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
+        var sheet = await sheets.BuildAsync(character, cancellationToken);
+
+        CharacterSheetService.NormaliseHitPoints(character, sheet, DateTimeOffset.UtcNow);
+
+        var missing = sheet.MaxHitPoints - character.CurrentHitPoints;
+
+        if (missing <= 0)
+        {
+            return RpgResult<RestResult>.Fail(
+                RpgFailure.AlreadyAtFullHealth, "You are already in fighting shape.");
+        }
+
+        var cost = RestCost(missing, sheet.Level);
+
+        if (character.Gold < cost)
+        {
+            return RpgResult<RestResult>.Fail(
+                RpgFailure.NotEnoughGold,
+                $"A room costs {cost} gold and you have {character.Gold}.");
+        }
+
+        character.Gold -= cost;
+        character.CurrentHitPoints = sheet.MaxHitPoints;
+        character.HitPointsUpdatedAt = DateTimeOffset.UtcNow;
+
+        // Nothing here touches TotalXp: sleeping is not an achievement.
+        await db.SaveChangesAsync(cancellationToken);
+
+        return RpgResult<RestResult>.Success(
+            new RestResult(cost, character.Gold, character.CurrentHitPoints, sheet.MaxHitPoints));
+    }
+
+    /// <summary>Deterministic and shown before paying, so the trade is an informed one.</summary>
+    public static int RestCost(int missingHitPoints, int level) =>
+        missingHitPoints <= 0 ? 0 : Math.Max(5, missingHitPoints * (2 + level));
 
     /// <summary>
     /// Equipment changes Constitution, which changes maximum hit points. Without this,

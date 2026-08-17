@@ -267,4 +267,23 @@ export const api = {
       `/api/rpg/quests/${key}/claim`,
       { method: 'POST' },
     ),
+
+  useAbility: (encounterId: string, abilityKey: string) =>
+    request<Rpg.AttackResult>(`/api/rpg/encounters/${encounterId}/ability/${abilityKey}`, {
+      method: 'POST',
+    }),
+
+  getChronicle: (limit = 20) => request<Rpg.Chronicle>(`/api/rpg/encounters?limit=${limit}`),
+
+  rest: () => request<Rpg.RestResult>('/api/rpg/rest', { method: 'POST' }),
+
+  getShop: () => request<Rpg.Shop>('/api/rpg/shop'),
+
+  buyOffer: (offerId: string) =>
+    request<Rpg.PurchaseResult>(`/api/rpg/shop/${encodeURIComponent(offerId)}/buy`, {
+      method: 'POST',
+    }),
+
+  upgradeItem: (id: string) =>
+    request<Rpg.UpgradeResult>(`/api/rpg/inventory/${id}/upgrade`, { method: 'POST' }),
 }

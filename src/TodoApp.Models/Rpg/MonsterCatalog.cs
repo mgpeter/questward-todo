@@ -48,7 +48,12 @@ public static class MonsterCatalog
             "Startlingly large. Deeply unbothered by you.",
             Level: 1, ArmourClass: 10, MaxHitPoints: 7, AttackBonus: 2, DamageNotation: "1d4",
             MinGold: 1, MaxGold: 5, DropChance: 15,
-            [new LootEntry(ItemCatalog.WornDagger, 3), new LootEntry(ItemCatalog.LeatherArmour, 1)]),
+            [
+                new LootEntry(ItemCatalog.WornDagger, 3),
+                new LootEntry(ItemCatalog.PaddedJerkin, 2),
+                new LootEntry(ItemCatalog.LeatherArmour, 1),
+                new LootEntry(ItemCatalog.LuckyCoin, 1)
+            ]),
 
         new(Goblin, "Goblin",
             "Small, mean, and better armed than it has any right to be.",
@@ -57,6 +62,8 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.GoblinCleaver, 4),
                 new LootEntry(ItemCatalog.LeatherArmour, 3),
+                new LootEntry(ItemCatalog.IronMace, 2),
+                new LootEntry(ItemCatalog.GlovesOfTheThief, 2),
                 new LootEntry(ItemCatalog.BootsOfSpeed, 1)
             ]),
 
@@ -67,6 +74,9 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.RustyLongsword, 3),
                 new LootEntry(ItemCatalog.ChainShirt, 3),
+                new LootEntry(ItemCatalog.OakenStaff, 2),
+                new LootEntry(ItemCatalog.StuddedLeather, 2),
+                new LootEntry(ItemCatalog.RingOfFocus, 2),
                 new LootEntry(ItemCatalog.AmuletOfInsight, 1)
             ]),
 
@@ -76,7 +86,9 @@ public static class MonsterCatalog
             MinGold: 12, MaxGold: 35, DropChance: 40,
             [
                 new LootEntry(ItemCatalog.SilveredBlade, 2),
-                new LootEntry(ItemCatalog.LeatherArmour, 3),
+                new LootEntry(ItemCatalog.DuellingRapier, 3),
+                new LootEntry(ItemCatalog.StuddedLeather, 3),
+                new LootEntry(ItemCatalog.ChoirmastersLute, 2),
                 new LootEntry(ItemCatalog.CharmOfPresence, 2)
             ]),
 
@@ -87,6 +99,8 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.BootsOfSpeed, 4),
                 new LootEntry(ItemCatalog.HuntingBow, 3),
+                new LootEntry(ItemCatalog.PendantOfTheBear, 2),
+                new LootEntry(ItemCatalog.ShadowweaveCloak, 1),
                 new LootEntry(ItemCatalog.RingOfVigour, 1)
             ]),
 
@@ -96,7 +110,9 @@ public static class MonsterCatalog
             MinGold: 25, MaxGold: 70, DropChance: 50,
             [
                 new LootEntry(ItemCatalog.ScaleMail, 4),
+                new LootEntry(ItemCatalog.GreatAxe, 3),
                 new LootEntry(ItemCatalog.GoblinCleaver, 3),
+                new LootEntry(ItemCatalog.PendantOfTheBear, 2),
                 new LootEntry(ItemCatalog.RingOfVigour, 2)
             ]),
 
@@ -106,7 +122,10 @@ public static class MonsterCatalog
             MinGold: 40, MaxGold: 110, DropChance: 55,
             [
                 new LootEntry(ItemCatalog.SilveredBlade, 4),
+                new LootEntry(ItemCatalog.RunedWand, 3),
+                new LootEntry(ItemCatalog.ShadowweaveCloak, 2),
                 new LootEntry(ItemCatalog.WardingShield, 2),
+                new LootEntry(ItemCatalog.CircletOfClarity, 3),
                 new LootEntry(ItemCatalog.AmuletOfInsight, 3)
             ]),
 
@@ -116,6 +135,9 @@ public static class MonsterCatalog
             MinGold: 120, MaxGold: 300, DropChance: 75,
             [
                 new LootEntry(ItemCatalog.DragonfangSpear, 3),
+                new LootEntry(ItemCatalog.LongbowOfTheVale, 3),
+                new LootEntry(ItemCatalog.ReliquaryHammer, 2),
+                new LootEntry(ItemCatalog.BreastplateOfDawn, 2),
                 new LootEntry(ItemCatalog.WardingShield, 3),
                 new LootEntry(ItemCatalog.ScaleMail, 2)
             ])

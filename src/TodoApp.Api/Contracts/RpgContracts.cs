@@ -7,6 +7,13 @@ public sealed record AbilityDto(string Key, string Abbreviation, int Score, int 
 
 public sealed record PerkDto(string Key, string Name, string Description);
 
+public sealed record ClassAbilityDto(
+    string Key,
+    string Name,
+    string Description,
+    int UsesPerEncounter,
+    int Remaining);
+
 public sealed record CharacterSheetDto(
     string? ClassKey,
     string? ClassName,
@@ -22,7 +29,14 @@ public sealed record CharacterSheetDto(
     int CriticalOn,
     int Stamina,
     int Gold,
-    PerkDto? Perk);
+    PerkDto? Perk,
+    /// <summary>Active class abilities. Distinct from Abilities, which are ability scores.</summary>
+    IReadOnlyList<ClassAbilityDto> ClassAbilities,
+    /// <summary>When the next hit point returns, so the UI can show a countdown.</summary>
+    DateTimeOffset? NextRegenerationAt,
+    DateTimeOffset? FullyHealedAt,
+    /// <summary>Gold a full heal would cost right now. Zero when already whole.</summary>
+    int RestCost);
 
 public sealed record ClassOptionDto(
     string Key,
@@ -135,9 +149,48 @@ public sealed record QuestDto(
     bool IsClaimed,
     DateTimeOffset? ClaimedAt,
     int RewardGold,
-    string? RewardItemName);
+    string? RewardItemName,
+    bool IsLocked,
+    int MinimumLevel);
 
 public sealed record QuestClaimResponse(int GoldGained, int Gold, InventoryItemDto? Item);
+
+public sealed record ChronicleSummaryDto(
+    int Fought,
+    int Won,
+    int Lost,
+    int Fled,
+    int GoldEarned,
+    string? MostFoughtMonster,
+    int MostFoughtCount);
+
+public sealed record ChronicleDto(ChronicleSummaryDto Summary, IReadOnlyList<EncounterDto> Encounters);
+
+public sealed record ShopOfferDto(
+    string OfferId,
+    string ItemKey,
+    string Name,
+    string Blurb,
+    string Slot,
+    string Rarity,
+    string? Damage,
+    int ArmourBonus,
+    IReadOnlyList<RollModifierDto> AbilityBonuses,
+    int Price,
+    bool Affordable);
+
+public sealed record ShopDto(IReadOnlyList<ShopOfferDto> Offers, DateTimeOffset RotatesAt, int Gold);
+
+public sealed record PurchaseResponse(InventoryItemDto Item, int GoldSpent, int Gold);
+
+public sealed record UpgradeResponse(
+    InventoryItemDto Item,
+    string From,
+    string To,
+    int GoldSpent,
+    int Gold);
+
+public sealed record RestResponse(int GoldSpent, int Gold, int HitPoints, int MaxHitPoints);
 
 public sealed record SellResponse(int GoldGained, int Gold);
 

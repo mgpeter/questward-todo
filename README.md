@@ -7,8 +7,10 @@ to how hard it was, level up a character, and collect badges along the way.
 - **Frontend** - React 19 + TypeScript + Vite, Tailwind CSS v4, TanStack Query, Motion
 - **Deployment** - one container serving the API and the SPA on a single port, or
   `dotnet run` + Vite for development
-- **Users** - one implicit local profile today, with no sign-in. Auth0-backed accounts are
-  planned; see `docs/product/roadmap.md` Phase 3.
+- **Users** - Auth0-backed accounts. Several people can share one instance, each with
+  their own tasks, XP, badges and character.
+- **Adventure** - classes, ability scores, d20 combat, loot, a shop and quests, all fuelled
+  by finishing real tasks.
 
 ---
 
@@ -201,9 +203,31 @@ Your level is a record of work done; your gear is what you did with it. The game
 for productivity rather than a substitute for it, and there is deliberately **no endpoint
 capable of moving XP** outside task completion. See DEC-012.
 
-**Classes.** Fighter (d10, Second Wind), Rogue (d8, crits on 19), Wizard (d6, some fights
-are free), Cleric (d8, rerolls its first natural 1), Ranger (d10, better loot rolls), Bard
-(d8, more gold).
+**Classes.** Each has a passive perk and an active ability usable twice per fight, so a
+Wizard and a Fighter do not play the same way:
+
+| Class | Perk | Ability |
+|---|---|---|
+| Fighter | Second Wind: heals on a win | Power Attack: -2 to hit, damage dice doubled |
+| Rogue | Crits on a natural 19 | Sneak Strike: attack with advantage |
+| Wizard | Some fights cost no stamina | Magic Missile: no attack roll, always hits |
+| Cleric | Rerolls its first natural 1 | Healing Word: heal, forfeiting the swing |
+| Ranger | Loot rarity rolled with advantage | Aimed Shot: advantage, crits on 19 |
+| Bard | Gold rewards increased by half | Vicious Mockery: its answering swing goes wide |
+
+**Healing.** One hit point returns every 8 minutes, and completing tasks restores more.
+The character sheet shows when the next point lands and when you will be whole. If you are
+in a hurry, sleep at the tavern: a full heal for gold, priced by how hurt you are and what
+level you are.
+
+**The Market.** Six offers, rotating daily. Stock is *computed* from your id and the date
+rather than stored, so there is no stock table and no nightly job. It never carries Epic or
+Legendary: the best gear still has to be won, or reforged into by paying to raise an item
+one rarity at a time. Buying costs full price against a half-price sell, and that spread is
+where gold goes.
+
+**The Chronicle.** Every finished fight is kept with its full roll-by-roll log, so you can
+reread exactly how something went.
 
 **The d20 core.** `d20 + modifier vs target`. A natural 20 always hits and doubles the
 damage dice; a natural 1 always misses. Every roll comes back fully itemised - the dice,

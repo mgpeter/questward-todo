@@ -18,6 +18,14 @@ export interface AbilityView {
   bonusFromItems: number
 }
 
+export interface ClassAbilityView {
+  key: string
+  name: string
+  description: string
+  usesPerEncounter: number
+  remaining: number
+}
+
 export interface CharacterSheet {
   classKey: string | null
   className: string | null
@@ -34,6 +42,12 @@ export interface CharacterSheet {
   stamina: number
   gold: number
   perk: Perk | null
+  classAbilities: ClassAbilityView[]
+  /** Null when already at full health. */
+  nextRegenerationAt: string | null
+  fullyHealedAt: string | null
+  /** Gold a full heal costs right now. Zero when whole. */
+  restCost: number
 }
 
 export interface ClassOption {
@@ -133,6 +147,8 @@ export interface Quest {
   claimedAt: string | null
   rewardGold: number
   rewardItemName: string | null
+  isLocked: boolean
+  minimumLevel: number
 }
 
 export interface QuestAdvance {
@@ -160,3 +176,59 @@ export interface EquipResult {
 
 /** Ordered worst to best, so the UI can compare rarities. */
 export const RARITY_ORDER: RarityName[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+
+export interface ChronicleSummary {
+  fought: number
+  won: number
+  lost: number
+  fled: number
+  goldEarned: number
+  mostFoughtMonster: string | null
+  mostFoughtCount: number
+}
+
+export interface Chronicle {
+  summary: ChronicleSummary
+  encounters: Encounter[]
+}
+
+export interface ShopOffer {
+  offerId: string
+  itemKey: string
+  name: string
+  blurb: string
+  slot: ItemSlotName
+  rarity: RarityName
+  damage: string | null
+  armourBonus: number
+  abilityBonuses: RollModifier[]
+  price: number
+  affordable: boolean
+}
+
+export interface Shop {
+  offers: ShopOffer[]
+  rotatesAt: string
+  gold: number
+}
+
+export interface PurchaseResult {
+  item: InventoryItem
+  goldSpent: number
+  gold: number
+}
+
+export interface UpgradeResult {
+  item: InventoryItem
+  from: RarityName
+  to: RarityName
+  goldSpent: number
+  gold: number
+}
+
+export interface RestResult {
+  goldSpent: number
+  gold: number
+  hitPoints: number
+  maxHitPoints: number
+}

@@ -20,7 +20,10 @@ public sealed record QuestView(
     DateTimeOffset? ClaimedAt,
     int RewardGold,
     string? RewardItemKey,
-    string? RewardItemName);
+    string? RewardItemName,
+    /// <summary>Above the character's level. Shown rather than hidden, so there is something to aim for.</summary>
+    bool IsLocked,
+    int MinimumLevel);
 
 public sealed record QuestAdvance(string Key, string Name, string Progress, bool JustCompleted);
 
@@ -141,7 +144,9 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
             .Where(p => p.UserId == userId)
             .ToDictionaryAsync(p => p.QuestKey, cancellationToken);
 
-        return QuestCatalog.AvailableAt(level)
+        // The whole catalog, not just what is unlocked. A quest you cannot take yet is
+        // still a reason to keep going; hiding it leaves the board looking finished.
+        return QuestCatalog.All
             .Select(quest =>
             {
                 var counters = progress.TryGetValue(quest.Key, out var row)
@@ -160,8 +165,14 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
                     row?.ClaimedAt,
                     quest.RewardGold,
                     quest.RewardItemKey,
-                    ItemCatalog.Find(quest.RewardItemKey)?.Name);
+                    ItemCatalog.Find(quest.RewardItemKey)?.Name,
+                    IsLocked: quest.MinimumLevel > level,
+                    MinimumLevel: quest.MinimumLevel);
             })
+            .OrderBy(q => q.ClaimedAt is not null)   // claimed sink to the bottom
+            .ThenBy(q => q.IsLocked)                 // then the ones you cannot take
+            .ThenByDescending(q => q.IsComplete)     // claimable first
+            .ThenBy(q => q.MinimumLevel)
             .ToList();
     }
 

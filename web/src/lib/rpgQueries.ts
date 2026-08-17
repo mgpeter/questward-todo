@@ -10,6 +10,8 @@ export const rpgKeys = {
   encounter: ['rpg', 'encounter'] as const,
   inventory: ['rpg', 'inventory'] as const,
   quests: ['rpg', 'quests'] as const,
+  chronicle: ['rpg', 'chronicle'] as const,
+  shop: ['rpg', 'shop'] as const,
 }
 
 export const useSheet = () => useQuery({ queryKey: rpgKeys.sheet, queryFn: api.getSheet })
@@ -72,13 +74,30 @@ export function useAttack() {
     mutationFn: (id: string) => api.attack(id),
     // The response carries the whole updated sheet, so stamina, gold and hit points
     // settle before the refetch lands and nothing flickers mid-fight.
+    //
+    // The finished encounter is deliberately kept in the cache. Nulling it here is what
+    // used to make a victory vanish the instant it happened: the tavern list snapped back
+    // and the gold, loot and killing blow were never seen. The caller decides when the
+    // result has been read, via useDismissEncounter.
     onSuccess: (result) => {
-      client.setQueryData(rpgKeys.encounter, result.encounter.status === 'active' ? result.encounter : null)
+      client.setQueryData(rpgKeys.encounter, result.encounter)
       client.setQueryData<CharacterSheet>(rpgKeys.sheet, result.sheet)
       void client.invalidateQueries({ queryKey: rpgKeys.inventory })
       void client.invalidateQueries({ queryKey: rpgKeys.quests })
     },
   })
+}
+
+/** Clears a finished encounter once the player has read its outcome. */
+export function useDismissEncounter() {
+  const client = useQueryClient()
+
+  return () => {
+    client.setQueryData(rpgKeys.encounter, null)
+    void client.invalidateQueries({ queryKey: rpgKeys.encounter })
+    void client.invalidateQueries({ queryKey: rpgKeys.monsters })
+    void client.invalidateQueries({ queryKey: queryKeys.character })
+  }
 }
 
 export function useFlee() {
@@ -111,6 +130,54 @@ export function useSellItem() {
 
   return useMutation({
     mutationFn: (id: string) => api.sellItem(id),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+export const useChronicle = () =>
+  useQuery({ queryKey: rpgKeys.chronicle, queryFn: () => api.getChronicle() })
+
+export const useShop = () => useQuery({ queryKey: rpgKeys.shop, queryFn: api.getShop })
+
+export function useAbility() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ encounterId, abilityKey }: { encounterId: string; abilityKey: string }) =>
+      api.useAbility(encounterId, abilityKey),
+    // Same handling as a plain attack: the finished encounter stays put until dismissed.
+    onSuccess: (result) => {
+      client.setQueryData(rpgKeys.encounter, result.encounter)
+      client.setQueryData<CharacterSheet>(rpgKeys.sheet, result.sheet)
+      void client.invalidateQueries({ queryKey: rpgKeys.inventory })
+      void client.invalidateQueries({ queryKey: rpgKeys.quests })
+    },
+  })
+}
+
+export function useRest() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.rest(),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+export function useBuyOffer() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (offerId: string) => api.buyOffer(offerId),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+export function useUpgradeItem() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => api.upgradeItem(id),
     onSuccess: () => invalidateAdventure(client),
   })
 }

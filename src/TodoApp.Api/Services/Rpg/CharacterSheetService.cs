@@ -13,7 +13,37 @@ namespace TodoApp.Api.Services.Rpg;
 public sealed class CharacterSheetService(TodoDbContext db)
 {
     /// <summary>One hit point back per this much elapsed time, so resting is worth something.</summary>
-    private static readonly TimeSpan RegenerationInterval = TimeSpan.FromMinutes(8);
+    public static readonly TimeSpan RegenerationInterval = TimeSpan.FromMinutes(8);
+
+    /// <summary>
+    /// When the next point comes back, and when the character will be whole again.
+    /// </summary>
+    /// <remarks>
+    /// Surfaced because the mechanic was invisible: hit points recovered silently and the
+    /// app read as broken to anyone watching a bar that never moved.
+    /// </remarks>
+    public static (DateTimeOffset? NextPoint, DateTimeOffset? FullyHealed) RegenerationForecast(
+        Character character,
+        CharacterSheet sheet,
+        DateTimeOffset now)
+    {
+        var missing = sheet.MaxHitPoints - character.CurrentHitPoints;
+
+        if (missing <= 0)
+        {
+            return (null, null);
+        }
+
+        var anchor = character.HitPointsUpdatedAt ?? now;
+
+        // Elapsed time already banked toward the next point carries over, so the countdown
+        // does not silently restart on every read.
+        var elapsed = now - anchor;
+        var sinceLastPoint = TimeSpan.FromTicks(elapsed.Ticks % RegenerationInterval.Ticks);
+        var next = now + (RegenerationInterval - sinceLastPoint);
+
+        return (next, next + (RegenerationInterval * (missing - 1)));
+    }
 
     public async Task<CharacterSheet> BuildAsync(Character character, CancellationToken cancellationToken)
     {

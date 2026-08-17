@@ -27,8 +27,15 @@ public static class RpgEndpoints
         group.MapGet("/monsters", GetMonsters);
         group.MapPost("/encounters", StartEncounter).ValidateBody<StartEncounterRequest>();
         group.MapGet("/encounters/active", GetActiveEncounter);
+        group.MapGet("/encounters", GetChronicle);
         group.MapPost("/encounters/{id:guid}/attack", Attack);
+        group.MapPost("/encounters/{id:guid}/ability/{abilityKey}", UseAbility);
         group.MapPost("/encounters/{id:guid}/flee", Flee);
+
+        group.MapPost("/rest", Rest);
+        group.MapGet("/shop", GetShop);
+        group.MapPost("/shop/{offerId}/buy", Buy);
+        group.MapPost("/inventory/{id:guid}/upgrade", Upgrade);
 
         group.MapGet("/inventory", GetInventory);
         group.MapPost("/inventory/{id:guid}/equip", Equip);
@@ -121,16 +128,39 @@ public static class RpgEndpoints
         return encounter is null ? Results.NoContent() : Results.Ok(encounter.ToDto());
     }
 
-    private static async Task<IResult> Attack(
+    private static Task<IResult> Attack(
         Guid id,
         ICurrentUser currentUser,
         CombatService combat,
         TodoDbContext db,
         CharacterSheetService sheets,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        ResolveRoundAsync(
+            currentUser, combat, db, sheets, cancellationToken,
+            (service, userId) => service.AttackAsync(userId, id, cancellationToken));
+
+    private static Task<IResult> UseAbility(
+        Guid id,
+        string abilityKey,
+        ICurrentUser currentUser,
+        CombatService combat,
+        TodoDbContext db,
+        CharacterSheetService sheets,
+        CancellationToken cancellationToken) =>
+        ResolveRoundAsync(
+            currentUser, combat, db, sheets, cancellationToken,
+            (service, userId) => service.UseAbilityAsync(userId, id, abilityKey, cancellationToken));
+
+    private static async Task<IResult> ResolveRoundAsync(
+        ICurrentUser currentUser,
+        CombatService combat,
+        TodoDbContext db,
+        CharacterSheetService sheets,
+        CancellationToken cancellationToken,
+        Func<CombatService, Guid, Task<RpgResult<AttackOutcome>>> resolve)
     {
         var user = await currentUser.GetAsync(cancellationToken);
-        var result = await combat.AttackAsync(user.Id, id, cancellationToken);
+        var result = await resolve(combat, user.Id);
 
         if (!result.Ok)
         {
@@ -148,7 +178,94 @@ public static class RpgEndpoints
             outcome.GoldAwarded,
             outcome.Loot?.ToDto(),
             outcome.QuestsAdvanced.Select(q => q.ToDto()).ToList(),
-            sheet.ToDto(character)));
+            // Remaining ability uses come from the encounter the round just ran on.
+            sheet.ToDto(character, outcome.Encounter)));
+    }
+
+    private static async Task<IResult> GetChronicle(
+        ICurrentUser currentUser,
+        CombatService combat,
+        CancellationToken cancellationToken,
+        int limit = 20,
+        DateTimeOffset? before = null)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+
+        var encounters = await combat.HistoryAsync(user.Id, limit, before, cancellationToken);
+        var summary = await combat.SummaryAsync(user.Id, cancellationToken);
+
+        return Results.Ok(new ChronicleDto(
+            summary.ToDto(),
+            encounters.Select(e => e.ToDto()).ToList()));
+    }
+
+    private static async Task<IResult> Rest(
+        ICurrentUser currentUser,
+        AdventurerService adventurer,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await adventurer.RestAsync(user.Id, cancellationToken);
+
+        return result.Ok
+            ? Results.Ok(new RestResponse(
+                result.Value.GoldSpent, result.Value.Gold,
+                result.Value.HitPoints, result.Value.MaxHitPoints))
+            : Problem(result.Failure, result.Message);
+    }
+
+    private static async Task<IResult> GetShop(
+        ICurrentUser currentUser,
+        TodoDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+
+        var gold = await db.Characters
+            .Where(c => c.UserId == user.Id)
+            .Select(c => c.Gold)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var stock = ShopService.StockFor(user.Id, DateTimeOffset.UtcNow);
+
+        return Results.Ok(new ShopDto(
+            stock.Offers.Select(o => o.ToDto(gold)).ToList(),
+            stock.RotatesAt,
+            gold));
+    }
+
+    private static async Task<IResult> Buy(
+        string offerId,
+        ICurrentUser currentUser,
+        ShopService shop,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await shop.BuyAsync(user.Id, offerId, cancellationToken);
+
+        return result.Ok
+            ? Results.Ok(new PurchaseResponse(
+                result.Value!.Item.ToDto(), result.Value.GoldSpent, result.Value.Gold))
+            : Problem(result.Failure, result.Message);
+    }
+
+    private static async Task<IResult> Upgrade(
+        Guid id,
+        ICurrentUser currentUser,
+        ShopService shop,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await shop.UpgradeAsync(user.Id, id, cancellationToken);
+
+        return result.Ok
+            ? Results.Ok(new UpgradeResponse(
+                result.Value!.Item.ToDto(),
+                RarityRules.Describe(result.Value.From),
+                RarityRules.Describe(result.Value.To),
+                result.Value.GoldSpent,
+                result.Value.Gold))
+            : Problem(result.Failure, result.Message);
     }
 
     private static async Task<IResult> Flee(
@@ -296,7 +413,11 @@ public static class RpgEndpoints
         RpgFailure.ItemEquipped => Results.Problem(message, statusCode: 409),
         RpgFailure.QuestAlreadyClaimed => Results.Problem(message, statusCode: 409),
         RpgFailure.QuestNotComplete => Results.Problem(message, statusCode: 409),
+        RpgFailure.AlreadyAtFullHealth => Results.Problem(message, statusCode: 409),
+        RpgFailure.CannotUpgrade => Results.Problem(message, statusCode: 409),
         RpgFailure.NotEnoughStamina => Results.Problem(message, statusCode: 422),
+        RpgFailure.NotEnoughGold => Results.Problem(message, statusCode: 422),
+        RpgFailure.AbilityExhausted => Results.Problem(message, statusCode: 422),
         RpgFailure.MonsterOutOfRange => Results.Problem(message, statusCode: 400),
         RpgFailure.UnknownClass => Results.Problem(message, statusCode: 400),
         _ => Results.Problem(message, statusCode: 500)

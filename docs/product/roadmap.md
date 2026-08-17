@@ -163,9 +163,36 @@ Monsters and quests grant gold and loot, never XP, and every fight costs Stamina
 completing a task produces. Your level is a record of work done; your gear is what you did
 with it. See DEC-012.
 
+### Known Gaps Leaving Phase 4
+
+- Gold accumulated with nothing to spend it on.
+- Winning a fight discarded the result before it could be read.
+- Healing happened silently, so it looked broken.
+- All six class perks were passive; combat was one button for everyone.
+
+## Phase 5: The Expansion (Shipped 2026-08-17)
+
+**Goal:** Make the RPG layer legible and give it depth, without loosening the rule that
+only real work grants experience.
+
+### Features
+
+- [x] **Victory and defeat summary** - The finished encounter stays on screen with gold,
+      loot, quests advanced and an explicit note that experience did not move `S`
+- [x] **Chronicle** - Every finished fight with its full log, plus lifetime totals `M`
+- [x] **Visible regeneration and tavern rest** - The countdown to the next hit point and to
+      full, plus a paid full heal priced by damage and level `S`
+- [x] **Quest log** - Filters, a claimed counter, and above-level quests shown locked
+      rather than hidden `S`
+- [x] **Market and reforging** - Six daily offers computed from user and date, capped at
+      Rare, plus paying to raise an item one rarity `M`
+- [x] **More gear** - 17 items to 34, with every monster's loot table widened `S`
+- [x] **Class abilities** - One active ability per class, twice per fight, each bending a
+      different combat rule `L`
+
 ### Known Gaps
 
-- Gold accumulates with nothing to spend it on. A shop is the obvious next step.
-- No consumables, spells, multi-monster encounters or procedural items.
-- The Adventure UI has not been driven end to end in a browser, because that needs a
+- No consumables, multi-monster encounters or procedural items.
+- The Adventure UI still has not been driven end to end in a browser, because that needs a
   signed-in session.
+- Class abilities are one per class; a second tier at higher levels is the obvious follow-up.

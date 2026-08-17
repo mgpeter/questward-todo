@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
+import { Chronicle } from '../components/rpg/Chronicle'
 import { ClassSelect } from '../components/rpg/ClassSelect'
 import { QuestBoard } from '../components/rpg/QuestBoard'
+import { Shop } from '../components/rpg/Shop'
 import { Tavern } from '../components/rpg/Tavern'
 import { useInventory, useSheet } from '../lib/rpgQueries'
 
-type Panel = 'sheet' | 'tavern' | 'quests'
+type Panel = 'sheet' | 'tavern' | 'shop' | 'quests' | 'chronicle'
 
 const PANELS: { key: Panel; label: string }[] = [
   { key: 'sheet', label: 'Character' },
   { key: 'tavern', label: 'Tavern' },
+  { key: 'shop', label: 'Market' },
   { key: 'quests', label: 'Quests' },
+  { key: 'chronicle', label: 'Chronicle' },
 ]
 
 export function AdventureView() {
@@ -73,7 +77,9 @@ export function AdventureView() {
       )}
 
       {panel === 'tavern' && <Tavern sheet={sheet.data} />}
+      {panel === 'shop' && <Shop />}
       {panel === 'quests' && <QuestBoard />}
+      {panel === 'chronicle' && <Chronicle />}
 
       <ClassSelect
         open={classOpen}

@@ -44,6 +44,7 @@ builder.Services.AddScoped<LootService>();
 builder.Services.AddScoped<QuestService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddScoped<AdventurerService>();
+builder.Services.AddScoped<ShopService>();
 
 // Fail at startup rather than booting and rejecting every request with an opaque 401.
 builder.Services.AddOptions<Auth0Options>()

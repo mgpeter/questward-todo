@@ -1,18 +1,49 @@
 import { Swords, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import type { CharacterSheet, Encounter } from '../../lib/rpg'
-import { useActiveEncounter, useAttack, useFlee, useMonsters, useStartEncounter } from '../../lib/rpgQueries'
+import { useState } from 'react'
+import type { AttackResult, CharacterSheet, Encounter } from '../../lib/rpg'
+import {
+  useAbility,
+  useActiveEncounter,
+  useAttack,
+  useDismissEncounter,
+  useFlee,
+  useMonsters,
+  useStartEncounter,
+} from '../../lib/rpgQueries'
 import { DiceRoll } from './DiceRoll'
+import { EncounterResult } from './EncounterResult'
 
 export function Tavern({ sheet }: { sheet: CharacterSheet }) {
   const encounter = useActiveEncounter()
+  const dismiss = useDismissEncounter()
+
+  // Held here rather than in the query cache: the outcome belongs to the player's
+  // attention, not to the server, and it stays put until they have read it.
+  const [outcome, setOutcome] = useState<AttackResult | null>(null)
+
+  if (outcome) {
+    return (
+      <EncounterResult
+        result={outcome}
+        onDismiss={() => {
+          setOutcome(null)
+          dismiss()
+        }}
+        onFightAgain={() => {
+          setOutcome(null)
+          dismiss()
+        }}
+      />
+    )
+  }
 
   if (encounter.isLoading) {
     return <div className="panel h-64 animate-pulse rounded-2xl opacity-60" />
   }
 
-  return encounter.data ? (
-    <EncounterView encounter={encounter.data} sheet={sheet} />
+  return encounter.data && encounter.data.status === 'active' ? (
+    <EncounterView encounter={encounter.data} sheet={sheet} onFinished={setOutcome} />
   ) : (
     <MonsterList sheet={sheet} />
   )
@@ -96,9 +127,33 @@ function MonsterList({ sheet }: { sheet: CharacterSheet }) {
   )
 }
 
-function EncounterView({ encounter, sheet }: { encounter: Encounter; sheet: CharacterSheet }) {
+function EncounterView({
+  encounter,
+  sheet,
+  onFinished,
+}: {
+  encounter: Encounter
+  sheet: CharacterSheet
+  onFinished: (result: AttackResult) => void
+}) {
   const attack = useAttack()
+  const ability = useAbility()
   const flee = useFlee()
+
+  const busy = attack.isPending || ability.isPending
+
+  // One place deciding a round is over, so an ability ending a fight shows the same
+  // summary a plain attack does.
+  const finish = (result: AttackResult) => {
+    if (result.encounter.status !== 'active') {
+      onFinished(result)
+    }
+  }
+
+  const swing = () => attack.mutate(encounter.id, { onSuccess: finish })
+
+  const invoke = (abilityKey: string) =>
+    ability.mutate({ encounterId: encounter.id, abilityKey }, { onSuccess: finish })
 
   const monsterPercent = Math.max(
     0,
@@ -139,11 +194,35 @@ function EncounterView({ encounter, sheet }: { encounter: Encounter; sheet: Char
           />
         </div>
 
-        <div className="mt-4 flex gap-2">
+        {sheet.classAbilities.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2" data-testid="ability-bar">
+            {sheet.classAbilities.map((ability) => (
+              <button
+                key={ability.key}
+                type="button"
+                onClick={() => invoke(ability.key)}
+                disabled={
+                  ability.remaining <= 0 || busy || encounter.status !== 'active'
+                }
+                title={ability.description}
+                data-testid={`ability-${ability.key}`}
+                data-remaining={ability.remaining}
+                className="flex-1 rounded-lg border border-gold/40 bg-gold/8 px-3 py-2 text-[12px] font-medium text-gold transition hover:bg-gold/15 disabled:border-line disabled:bg-transparent disabled:text-ink-faint"
+              >
+                {ability.name}
+                <span className="tabular ml-1.5 text-[10.5px] opacity-70">
+                  {ability.remaining}/{ability.usesPerEncounter}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-2 flex gap-2">
           <button
             type="button"
-            onClick={() => attack.mutate(encounter.id)}
-            disabled={attack.isPending || encounter.status !== 'active'}
+            onClick={swing}
+            disabled={busy || encounter.status !== 'active'}
             data-testid="attack"
             className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-canvas transition hover:opacity-90 disabled:opacity-30"
           >

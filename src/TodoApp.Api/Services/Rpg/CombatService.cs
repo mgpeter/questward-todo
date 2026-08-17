@@ -7,6 +7,15 @@ using TodoApp.Models.Rpg;
 
 namespace TodoApp.Api.Services.Rpg;
 
+public sealed record ChronicleSummary(
+    int Fought,
+    int Won,
+    int Lost,
+    int Fled,
+    int GoldEarned,
+    string? MostFoughtMonster,
+    int MostFoughtCount);
+
 public sealed record AttackOutcome(
     Encounter Encounter,
     IReadOnlyList<CombatRoll> Rolls,
@@ -103,9 +112,27 @@ public sealed class CombatService(
         return RpgResult<Encounter>.Success(encounter);
     }
 
-    public async Task<RpgResult<AttackOutcome>> AttackAsync(
+    public Task<RpgResult<AttackOutcome>> AttackAsync(
         Guid userId,
         Guid encounterId,
+        CancellationToken cancellationToken) =>
+        ResolveRoundAsync(userId, encounterId, abilityKey: null, cancellationToken);
+
+    /// <summary>
+    /// Resolves one round using a class ability instead of a plain attack. The monster
+    /// answers exactly as it would otherwise, so the turn structure is unchanged.
+    /// </summary>
+    public Task<RpgResult<AttackOutcome>> UseAbilityAsync(
+        Guid userId,
+        Guid encounterId,
+        string abilityKey,
+        CancellationToken cancellationToken) =>
+        ResolveRoundAsync(userId, encounterId, abilityKey, cancellationToken);
+
+    private async Task<RpgResult<AttackOutcome>> ResolveRoundAsync(
+        Guid userId,
+        Guid encounterId,
+        string? abilityKey,
         CancellationToken cancellationToken)
     {
         var encounter = await db.Encounters
@@ -133,24 +160,38 @@ public sealed class CombatService(
 
         CharacterSheetService.NormaliseHitPoints(character, sheet, DateTimeOffset.UtcNow);
 
+        ClassAbility? ability = null;
+        var uses = ReadUses(encounter);
+
+        if (abilityKey is not null)
+        {
+            ability = ClassAbilities.Find(character.ClassKey, abilityKey);
+
+            if (ability is null)
+            {
+                return RpgResult<AttackOutcome>.Fail(
+                    RpgFailure.NotFound, "Your class does not have that ability.");
+            }
+
+            if (uses.GetValueOrDefault(ability.Key) >= ability.UsesPerEncounter)
+            {
+                return RpgResult<AttackOutcome>.Fail(
+                    RpgFailure.AbilityExhausted,
+                    $"{ability.Name} is spent for this fight.");
+            }
+
+            uses[ability.Key] = uses.GetValueOrDefault(ability.Key) + 1;
+            WriteUses(encounter, uses);
+        }
+
         var log = Deserialise(encounter.Log);
         var rolls = new List<CombatRoll>();
 
         encounter.Round++;
 
-        // --- the player swings ------------------------------------------------
-        var attack = RollAttackWithBlessing(encounter, sheet.AttackModifiers, monster.ArmourClass, sheet.CriticalOn);
-        rolls.Add(CombatRoll.From(encounter.Round, CombatRoll.Player, attack, DescribeAttack(attack, monster.Name)));
-
-        if (attack.Outcome == RollOutcome.Hit)
-        {
-            var damage = D20.Damage(roller, sheet.DamageExpression, sheet.DamageModifiers, attack.Critical);
-            encounter.MonsterHitPoints = Math.Max(0, encounter.MonsterHitPoints - damage.Total);
-
-            rolls.Add(CombatRoll.From(
-                encounter.Round, CombatRoll.Player, damage,
-                $"{damage.Total} damage. {monster.Name} has {encounter.MonsterHitPoints} hit points left."));
-        }
+        // --- the player acts --------------------------------------------------
+        var skipsAttack = ResolvePlayerAction(
+            encounter, character, sheet, monster, ability, rolls);
 
         var goldAwarded = 0;
         InventoryItem? drop = null;
@@ -164,16 +205,27 @@ public sealed class CombatService(
         else
         {
             // --- the monster answers ------------------------------------------
+            // Vicious Mockery lingers: the monster swings at disadvantage while it lasts.
+            var mocked = encounter.MonsterDisadvantageRounds > 0;
+
+            if (mocked)
+            {
+                encounter.MonsterDisadvantageRounds--;
+            }
+
             var reply = D20.Attack(
                 roller,
                 [new RollModifier(monster.Name, monster.AttackBonus)],
-                sheet.ArmourClass);
+                sheet.ArmourClass,
+                mocked ? RollMode.Disadvantage : RollMode.Normal);
 
             rolls.Add(CombatRoll.From(
                 encounter.Round, CombatRoll.Monster, reply,
                 reply.Outcome == RollOutcome.Hit
                     ? $"{monster.Name} connects."
-                    : $"{monster.Name} misses."));
+                    : mocked
+                        ? $"{monster.Name} misses, still stung by the remark."
+                        : $"{monster.Name} misses."));
 
             if (reply.Outcome == RollOutcome.Hit)
             {
@@ -239,6 +291,56 @@ public sealed class CombatService(
         await db.SaveChangesAsync(cancellationToken);
 
         return RpgResult<Encounter>.Success(encounter);
+    }
+
+    /// <summary>
+    /// Finished encounters, newest first. Every fight and its full roll-by-roll log has
+    /// always been persisted; this is what finally reads it back.
+    /// </summary>
+    public Task<List<Encounter>> HistoryAsync(
+        Guid userId,
+        int limit,
+        DateTimeOffset? before,
+        CancellationToken cancellationToken)
+    {
+        var query = db.Encounters
+            .AsNoTracking()
+            .Where(e => e.UserId == userId && e.Status != EncounterStatus.Active);
+
+        if (before is not null)
+        {
+            query = query.Where(e => e.StartedAt < before);
+        }
+
+        // Ordered to match IX_encounters_UserId_StartedAt.
+        return query
+            .OrderByDescending(e => e.StartedAt)
+            .Take(Math.Clamp(limit, 1, 100))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Totals across every finished fight, for the chronicle's summary strip.</summary>
+    public async Task<ChronicleSummary> SummaryAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var rows = await db.Encounters
+            .AsNoTracking()
+            .Where(e => e.UserId == userId && e.Status != EncounterStatus.Active)
+            .Select(e => new { e.Status, e.GoldAwarded, e.MonsterKey })
+            .ToListAsync(cancellationToken);
+
+        var favourite = rows
+            .GroupBy(r => r.MonsterKey, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault();
+
+        return new ChronicleSummary(
+            Fought: rows.Count,
+            Won: rows.Count(r => r.Status == EncounterStatus.Won),
+            Lost: rows.Count(r => r.Status == EncounterStatus.Lost),
+            Fled: rows.Count(r => r.Status == EncounterStatus.Fled),
+            GoldEarned: rows.Sum(r => r.GoldAwarded),
+            MostFoughtMonster: favourite is null ? null : MonsterCatalog.Find(favourite.Key)?.Name,
+            MostFoughtCount: favourite?.Count() ?? 0);
     }
 
     public Task<Encounter?> ActiveAsync(Guid userId, CancellationToken cancellationToken) =>
@@ -307,14 +409,124 @@ public sealed class CombatService(
         return (gold, drop, Deduplicate(advances));
     }
 
+    /// <summary>
+    /// Runs the player's half of a round, whether that is a plain attack or an ability.
+    /// </summary>
+    /// <returns>True when the action forfeits the attack, as Healing Word does.</returns>
+    private bool ResolvePlayerAction(
+        Encounter encounter,
+        Character character,
+        Models.Rpg.CharacterSheet sheet,
+        MonsterDefinition monster,
+        ClassAbility? ability,
+        List<CombatRoll> rolls)
+    {
+        var round = encounter.Round;
+
+        // Healing forfeits the swing entirely.
+        if (ability?.Kind == AbilityKind.HealingWord)
+        {
+            var heal = D20.Damage(
+                roller,
+                DiceExpression.Parse("1d8"),
+                [new RollModifier("WIS", sheet.EffectiveScores.Modifier(Ability.Wisdom))]);
+
+            var before = character.CurrentHitPoints;
+            character.CurrentHitPoints = Math.Min(sheet.MaxHitPoints, before + heal.Total);
+            var restored = character.CurrentHitPoints - before;
+
+            rolls.Add(CombatRoll.From(
+                round, CombatRoll.Player, heal,
+                $"Healing Word restores {restored} hit points. You are on {character.CurrentHitPoints}."));
+
+            return true;
+        }
+
+        // Magic Missile skips the attack roll: unerring force always lands.
+        if (ability?.Kind == AbilityKind.MagicMissile)
+        {
+            var damage = D20.Damage(
+                roller,
+                DiceExpression.Parse("3d4"),
+                [new RollModifier("INT", sheet.EffectiveScores.Modifier(Ability.Intelligence))]);
+
+            encounter.MonsterHitPoints = Math.Max(0, encounter.MonsterHitPoints - damage.Total);
+
+            rolls.Add(CombatRoll.Note(round, CombatRoll.Player, "Magic Missile streaks out. It cannot miss."));
+            rolls.Add(CombatRoll.From(
+                round, CombatRoll.Player, damage,
+                $"{damage.Total} force damage. {monster.Name} has {encounter.MonsterHitPoints} hit points left."));
+
+            return false;
+        }
+
+        var mode = ability?.Kind switch
+        {
+            AbilityKind.SneakStrike or AbilityKind.AimedShot => RollMode.Advantage,
+            _ => RollMode.Normal
+        };
+
+        var criticalOn = ability?.Kind == AbilityKind.AimedShot ? 19 : sheet.CriticalOn;
+
+        var modifiers = ability?.Kind == AbilityKind.PowerAttack
+            ? [.. sheet.AttackModifiers, new RollModifier("power attack", ClassAbilities.PowerAttackPenalty)]
+            : sheet.AttackModifiers;
+
+        if (ability is not null)
+        {
+            rolls.Add(CombatRoll.Note(round, CombatRoll.Player, $"{ability.Name}."));
+        }
+
+        var attack = RollAttackWithBlessing(encounter, modifiers, monster.ArmourClass, criticalOn, mode);
+        rolls.Add(CombatRoll.From(round, CombatRoll.Player, attack, DescribeAttack(attack, monster.Name)));
+
+        if (attack.Outcome != RollOutcome.Hit)
+        {
+            return false;
+        }
+
+        var expression = ability?.Kind == AbilityKind.ViciousMockery
+            ? DiceExpression.Parse("1d6")
+            : sheet.DamageExpression;
+
+        var damageModifiers = ability?.Kind == AbilityKind.ViciousMockery
+            ? [new RollModifier("CHA", sheet.EffectiveScores.Modifier(Ability.Charisma))]
+            : sheet.DamageModifiers;
+
+        // Power Attack doubles the dice on any hit, the way a critical does.
+        var doubleDice = attack.Critical || ability?.Kind == AbilityKind.PowerAttack;
+
+        var hit = D20.Damage(roller, expression, damageModifiers, doubleDice);
+        encounter.MonsterHitPoints = Math.Max(0, encounter.MonsterHitPoints - hit.Total);
+
+        rolls.Add(CombatRoll.From(
+            round, CombatRoll.Player, hit,
+            $"{hit.Total} damage. {monster.Name} has {encounter.MonsterHitPoints} hit points left."));
+
+        if (ability?.Kind == AbilityKind.ViciousMockery && encounter.MonsterHitPoints > 0)
+        {
+            // Applies to the counter-attack in this same round: the monster's next swing
+            // is the one that goes wide, which is what mocking something should feel like.
+            // The counter consumes it, so it does not linger into later rounds.
+            encounter.MonsterDisadvantageRounds = ClassAbilities.MockeryRounds;
+
+            rolls.Add(CombatRoll.Note(
+                round, CombatRoll.Player,
+                $"{monster.Name} is rattled. Its next swing goes wide."));
+        }
+
+        return false;
+    }
+
     /// <summary>Applies the Cleric's Blessing, which rerolls the first natural 1 of a fight.</summary>
     private RollResult RollAttackWithBlessing(
         Encounter encounter,
         IReadOnlyList<RollModifier> modifiers,
         int armourClass,
-        int criticalOn)
+        int criticalOn,
+        RollMode mode = RollMode.Normal)
     {
-        var result = D20.Attack(roller, modifiers, armourClass, criticalOn: criticalOn);
+        var result = D20.Attack(roller, modifiers, armourClass, mode, criticalOn);
 
         var character = db.Characters.Local.FirstOrDefault(c => c.UserId == encounter.UserId);
         var isCleric = character?.ClassKey == ClassCatalog.Cleric;
@@ -326,7 +538,36 @@ public sealed class CombatService(
 
         encounter.BlessingUsed = true;
 
-        return D20.Attack(roller, modifiers, armourClass, criticalOn: criticalOn);
+        return D20.Attack(roller, modifiers, armourClass, mode, criticalOn);
+    }
+
+    private static Dictionary<string, int> ReadUses(Encounter encounter)
+    {
+        if (string.IsNullOrWhiteSpace(encounter.AbilityUses))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, int>>(encounter.AbilityUses) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static void WriteUses(Encounter encounter, Dictionary<string, int> uses) =>
+        encounter.AbilityUses = JsonSerializer.Serialize(uses);
+
+    /// <summary>Remaining uses of each ability for the caller's class this fight.</summary>
+    public static IReadOnlyDictionary<string, int> RemainingUses(Encounter encounter, string? classKey)
+    {
+        var spent = ReadUses(encounter);
+
+        return ClassAbilities.For(classKey)
+            .ToDictionary(a => a.Key, a => Math.Max(0, a.UsesPerEncounter - spent.GetValueOrDefault(a.Key)));
     }
 
     private static string DescribeAttack(RollResult attack, string monsterName) => attack.Outcome switch

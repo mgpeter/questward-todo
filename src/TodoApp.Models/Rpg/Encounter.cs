@@ -41,6 +41,22 @@ public class Encounter
     /// <summary>Whether the Cleric's Blessing reroll has been spent this encounter.</summary>
     public bool BlessingUsed { get; set; }
 
+    /// <summary>
+    /// Class ability uses spent this fight, as a JSON object keyed by ability key.
+    /// </summary>
+    /// <remarks>
+    /// Per-encounter rather than a persistent resource, so there is nothing to track or
+    /// replenish between fights. Held as JSON for the same reason as the log: it is read
+    /// whole and never queried by its contents.
+    /// </remarks>
+    public string AbilityUses { get; set; } = "{}";
+
+    /// <summary>
+    /// Rounds the monster still attacks at disadvantage for, from the Bard's Vicious
+    /// Mockery. Decremented as it is consumed.
+    /// </summary>
+    public int MonsterDisadvantageRounds { get; set; }
+
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? EndedAt { get; set; }

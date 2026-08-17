@@ -31,7 +31,15 @@ const check = (ok, label, detail) => {
 console.log(`\nAdventure layer check against ${BASE_URL}\n`)
 
 // --- API surface, unauthenticated ------------------------------------------
-const routes = ['/api/rpg/sheet', '/api/rpg/classes', '/api/rpg/monsters', '/api/rpg/inventory', '/api/rpg/quests']
+const routes = [
+  '/api/rpg/sheet',
+  '/api/rpg/classes',
+  '/api/rpg/monsters',
+  '/api/rpg/inventory',
+  '/api/rpg/quests',
+  '/api/rpg/encounters',
+  '/api/rpg/shop',
+]
 
 for (const route of routes) {
   const response = await fetch(`${BASE_URL}${route}`)

@@ -54,6 +54,8 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
         builder.Property(e => e.Log).HasColumnType("jsonb").IsRequired();
         builder.Property(e => e.GoldAwarded).HasColumnType("integer").IsRequired();
         builder.Property(e => e.BlessingUsed).HasColumnType("boolean").IsRequired();
+        builder.Property(e => e.AbilityUses).HasColumnType("jsonb").IsRequired().HasDefaultValue("{}");
+        builder.Property(e => e.MonsterDisadvantageRounds).HasColumnType("integer").IsRequired().HasDefaultValue(0);
         builder.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
         builder.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
 

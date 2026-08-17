@@ -7,27 +7,52 @@ namespace TodoApp.Api.Mapping;
 
 public static class RpgMapping
 {
-    public static CharacterSheetDto ToDto(this CharacterSheet sheet, Character character) => new(
-        sheet.Class?.Key,
-        sheet.Class?.Name,
-        sheet.Level,
-        AbilityDtos(sheet),
-        sheet.ArmourClass,
-        sheet.AttackBonus,
-        sheet.DamageExpression.ToString(),
-        AbilityScores.Abbreviate(sheet.AttackAbility),
-        character.CurrentHitPoints,
-        sheet.MaxHitPoints,
-        sheet.ProficiencyBonus,
-        sheet.CriticalOn,
-        character.Stamina,
-        character.Gold,
-        sheet.Class is null
+    public static CharacterSheetDto ToDto(
+        this CharacterSheet sheet,
+        Character character,
+        Encounter? activeEncounter = null)
+    {
+        var (nextPoint, fullyHealed) = CharacterSheetService.RegenerationForecast(
+            character, sheet, DateTimeOffset.UtcNow);
+
+        var remaining = activeEncounter is null
             ? null
-            : new PerkDto(
-                sheet.Class.Perk.ToString(),
-                sheet.Class.PerkName,
-                sheet.Class.PerkDescription));
+            : CombatService.RemainingUses(activeEncounter, character.ClassKey);
+
+        return new CharacterSheetDto(
+            sheet.Class?.Key,
+            sheet.Class?.Name,
+            sheet.Level,
+            AbilityDtos(sheet),
+            sheet.ArmourClass,
+            sheet.AttackBonus,
+            sheet.DamageExpression.ToString(),
+            AbilityScores.Abbreviate(sheet.AttackAbility),
+            character.CurrentHitPoints,
+            sheet.MaxHitPoints,
+            sheet.ProficiencyBonus,
+            sheet.CriticalOn,
+            character.Stamina,
+            character.Gold,
+            sheet.Class is null
+                ? null
+                : new PerkDto(
+                    sheet.Class.Perk.ToString(),
+                    sheet.Class.PerkName,
+                    sheet.Class.PerkDescription),
+            Models.Rpg.ClassAbilities.For(character.ClassKey)
+                .Select(a => new ClassAbilityDto(
+                    a.Key,
+                    a.Name,
+                    a.Description,
+                    a.UsesPerEncounter,
+                    // Outside a fight, show a full bar rather than zero.
+                    remaining?.GetValueOrDefault(a.Key) ?? a.UsesPerEncounter))
+                .ToList(),
+            nextPoint,
+            fullyHealed,
+            AdventurerService.RestCost(sheet.MaxHitPoints - character.CurrentHitPoints, sheet.Level));
+    }
 
     private static IReadOnlyList<AbilityDto> AbilityDtos(CharacterSheet sheet) =>
         AbilityScores.All
@@ -130,8 +155,37 @@ public static class RpgMapping
         quest.ClaimedAt is not null,
         quest.ClaimedAt,
         quest.RewardGold,
-        quest.RewardItemName);
+        quest.RewardItemName,
+        quest.IsLocked,
+        quest.MinimumLevel);
 
     public static QuestAdvanceDto ToDto(this QuestAdvance advance) =>
         new(advance.Key, advance.Name, advance.Progress, advance.JustCompleted);
+
+    public static ChronicleSummaryDto ToDto(this ChronicleSummary summary) => new(
+        summary.Fought,
+        summary.Won,
+        summary.Lost,
+        summary.Fled,
+        summary.GoldEarned,
+        summary.MostFoughtMonster,
+        summary.MostFoughtCount);
+
+    public static ShopOfferDto ToDto(this ShopOffer offer, int gold) => new(
+        offer.OfferId,
+        offer.Item.Key,
+        offer.Item.Name,
+        offer.Item.Blurb,
+        offer.Item.Slot.ToString().ToLowerInvariant(),
+        RarityRules.Describe(offer.Rarity),
+        offer.Item.Damage?.ToString(),
+        offer.Item.ArmourBonusAt(offer.Rarity),
+        AbilityScores.All
+            .Select(a => new RollModifierDto(
+                AbilityScores.Abbreviate(a),
+                offer.Item.AbilityBonusesAt(offer.Rarity)[a]))
+            .Where(m => m.Value != 0)
+            .ToList(),
+        offer.Price,
+        gold >= offer.Price);
 }
