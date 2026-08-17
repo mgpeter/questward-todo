@@ -1,14 +1,16 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using TodoApp.Models;
 
 namespace TodoApp.Data;
 
 /// <summary>
-/// Applies migrations and guarantees the singleton character row exists.
-/// Retries because in Docker the app container regularly wins the race against Postgres,
-/// even with a compose healthcheck in front of it.
+/// Applies migrations at startup. Retries because in Docker the app container regularly
+/// wins the race against Postgres, even with a compose healthcheck in front of it.
 /// </summary>
+/// <remarks>
+/// This no longer seeds a character. Characters belong to users, and users are
+/// provisioned just in time on their first authenticated request.
+/// </remarks>
 public static class DatabaseInitializer
 {
     private const int MaxAttempts = 12;
@@ -24,7 +26,7 @@ public static class DatabaseInitializer
             try
             {
                 await db.Database.MigrateAsync(cancellationToken);
-                break;
+                return;
             }
             catch (Exception ex) when (attempt < MaxAttempts)
             {
@@ -38,30 +40,5 @@ public static class DatabaseInitializer
                 await Task.Delay(RetryDelay, cancellationToken);
             }
         }
-
-        await EnsureCharacterAsync(db, cancellationToken);
-    }
-
-    private static async Task EnsureCharacterAsync(TodoDbContext db, CancellationToken cancellationToken)
-    {
-        var exists = await db.Characters
-            .AnyAsync(c => c.Id == Character.SingletonId, cancellationToken);
-
-        if (exists)
-        {
-            return;
-        }
-
-        db.Characters.Add(new Character
-        {
-            Id = Character.SingletonId,
-            Name = "Adventurer",
-            AvatarKey = "fox",
-            TotalXp = 0,
-            TasksCompleted = 0,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-
-        await db.SaveChangesAsync(cancellationToken);
     }
 }

@@ -11,48 +11,56 @@ namespace TodoApp.Api.Services;
 /// Owns every mutation that can move the XP needle. Completion and reopening both run in a
 /// transaction so the task, the character total and the badge rows can never drift apart.
 /// </summary>
+/// <remarks>
+/// Every read here is scoped by <c>userId</c>. Missing one does not fail loudly, it
+/// silently lets one user's activity unlock another user's badges, so the scoping is
+/// covered by isolation tests rather than left to review.
+/// </remarks>
 public sealed class GamificationService(TodoDbContext db, AchievementEvaluator evaluator)
 {
-    public async Task<Character> GetCharacterAsync(CancellationToken cancellationToken)
+    public async Task<Character> GetCharacterAsync(Guid userId, CancellationToken cancellationToken)
     {
         var character = await db.Characters
-            .FirstOrDefaultAsync(c => c.Id == Character.SingletonId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.UserId == userId, cancellationToken);
 
         if (character is not null)
         {
             return character;
         }
 
-        // Defensive: the initializer seeds this, but never hand back null from here.
-        character = new Character { Id = Character.SingletonId };
+        // Provisioning creates the character alongside the user, so reaching here means
+        // something went wrong upstream. Recreate rather than throw at the request.
+        character = new Character { UserId = userId };
         db.Characters.Add(character);
         await db.SaveChangesAsync(cancellationToken);
 
         return character;
     }
 
-    public Task<int> CountUnlockedAsync(CancellationToken cancellationToken) =>
-        db.AchievementUnlocks.CountAsync(cancellationToken);
+    public Task<int> CountUnlockedAsync(Guid userId, CancellationToken cancellationToken) =>
+        db.AchievementUnlocks.CountAsync(a => a.UserId == userId, cancellationToken);
 
     public async Task<CompleteTaskResponse?> CompleteAsync(
+        Guid userId,
         Guid taskId,
         int utcOffsetMinutes,
         CancellationToken cancellationToken)
     {
-        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+        var task = await db.Tasks
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId, cancellationToken);
 
         if (task is null)
         {
             return null;
         }
 
-        var character = await GetCharacterAsync(cancellationToken);
+        var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
         // Completing an already-complete task must never award a second time.
         if (task.IsCompleted)
         {
-            var unlockedCount = await CountUnlockedAsync(cancellationToken);
+            var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
             return new CompleteTaskResponse(
                 task.ToDto(),
@@ -67,8 +75,6 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
         var completedAtUtc = DateTimeOffset.UtcNow;
         var localCompletedAt = completedAtUtc.ToOffset(offset);
         var localDayStartUtc = new DateTimeOffset(localCompletedAt.Date, offset).ToUniversalTime();
-
-        var openTasksBefore = await db.Tasks.CountAsync(t => !t.IsCompleted, cancellationToken);
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -91,23 +97,25 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
             TasksCompletedTotal: character.TasksCompleted,
             Level: newLevel,
             HardOrEpicCompleted: await db.Tasks.CountAsync(
-                t => t.IsCompleted && t.Difficulty >= Difficulty.Hard,
+                t => t.UserId == userId && t.IsCompleted && t.Difficulty >= Difficulty.Hard,
                 cancellationToken),
-            OpenTasksBefore: openTasksBefore,
-            OpenTasksAfter: await db.Tasks.CountAsync(t => !t.IsCompleted, cancellationToken),
+            OpenTasksAfter: await db.Tasks.CountAsync(
+                t => t.UserId == userId && !t.IsCompleted,
+                cancellationToken),
             CompletedTodayLocal: await db.Tasks.CountAsync(
-                t => t.IsCompleted && t.CompletedAt >= localDayStartUtc,
+                t => t.UserId == userId && t.IsCompleted && t.CompletedAt >= localDayStartUtc,
                 cancellationToken),
             LocalCompletedAt: localCompletedAt);
 
         var unlocked = await PersistNewUnlocksAsync(
+            userId,
             evaluator.Evaluate(context),
             completedAtUtc,
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
-        var totalUnlocked = await CountUnlockedAsync(cancellationToken);
+        var totalUnlocked = await CountUnlockedAsync(userId, cancellationToken);
 
         return new CompleteTaskResponse(
             task.ToDto(),
@@ -118,21 +126,25 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
             unlocked);
     }
 
-    public async Task<ReopenTaskResponse?> ReopenAsync(Guid taskId, CancellationToken cancellationToken)
+    public async Task<ReopenTaskResponse?> ReopenAsync(
+        Guid userId,
+        Guid taskId,
+        CancellationToken cancellationToken)
     {
-        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+        var task = await db.Tasks
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId, cancellationToken);
 
         if (task is null)
         {
             return null;
         }
 
-        var character = await GetCharacterAsync(cancellationToken);
+        var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
         if (!task.IsCompleted)
         {
-            var unlockedCount = await CountUnlockedAsync(cancellationToken);
+            var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
             return new ReopenTaskResponse(
                 task.ToDto(),
@@ -156,7 +168,7 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
         await db.SaveChangesAsync(cancellationToken);
 
         var newLevel = LevelCurve.LevelForXp(character.TotalXp);
-        var totalUnlocked = await CountUnlockedAsync(cancellationToken);
+        var totalUnlocked = await CountUnlockedAsync(userId, cancellationToken);
 
         // Badges are deliberately never revoked - unlocking is a memory, not a balance.
         return new ReopenTaskResponse(
@@ -168,6 +180,7 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
     }
 
     private async Task<IReadOnlyList<AchievementDto>> PersistNewUnlocksAsync(
+        Guid userId,
         IReadOnlyList<string> earnedKeys,
         DateTimeOffset unlockedAt,
         CancellationToken cancellationToken)
@@ -178,7 +191,7 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
         }
 
         var alreadyUnlocked = await db.AchievementUnlocks
-            .Where(a => earnedKeys.Contains(a.AchievementKey))
+            .Where(a => a.UserId == userId && earnedKeys.Contains(a.AchievementKey))
             .Select(a => a.AchievementKey)
             .ToListAsync(cancellationToken);
 
@@ -193,6 +206,7 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
 
         db.AchievementUnlocks.AddRange(fresh.Select(key => new AchievementUnlock
         {
+            UserId = userId,
             AchievementKey = key,
             UnlockedAt = unlockedAt
         }));

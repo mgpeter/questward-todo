@@ -1,14 +1,12 @@
 namespace TodoApp.Models;
 
 /// <summary>
-/// The single local profile. Exactly one row exists, with <see cref="Id"/> pinned to
-/// <see cref="SingletonId"/> by a check constraint.
+/// A user's game state. Exactly one per <see cref="User"/>, enforced by using
+/// <see cref="UserId"/> as the primary key rather than a surrogate.
 /// </summary>
 public class Character
 {
-    public const int SingletonId = 1;
-
-    public int Id { get; set; } = SingletonId;
+    public Guid UserId { get; set; }
 
     public string Name { get; set; } = "Adventurer";
 

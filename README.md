@@ -7,14 +7,37 @@ to how hard it was, level up a character, and collect badges along the way.
 - **Frontend** - React 19 + TypeScript + Vite, Tailwind CSS v4, TanStack Query, Motion
 - **Deployment** - one container serving the API and the SPA on a single port, or
   `dotnet run` + Vite for development
-- **Users** - one. There is no login, no accounts, no tenancy. It is your machine.
+- **Users** - one implicit local profile today, with no sign-in. Auth0-backed accounts are
+  planned; see `docs/product/roadmap.md` Phase 3.
 
 ---
+
+> [!WARNING]
+> **Sign-up is open.** Anyone who can reach this instance can authenticate through your
+> Auth0 tenant and get an account with storage on your host. That is fine on a private
+> network and **not** fine on a publicly reachable one. Restrict access at the network
+> level, or add an allowlist, before exposing it.
+
+## Set up Auth0 first
+
+The app will not start without an Auth0 tenant. Sign-in also needs outbound internet, so
+an isolated or offline instance cannot be used at all. Both are deliberate; see DEC-011.
+
+1. In the Auth0 dashboard create an **API**. Its Identifier becomes your audience, for
+   example `https://questward.api`. It does not need to resolve.
+2. Create an **Application** of type **Single Page Application**.
+3. On that application set **Allowed Callback URLs**, **Allowed Logout URLs** and
+   **Allowed Web Origins** to the origins you will use:
+   `http://localhost:5173, http://localhost:5080, http://localhost:8080`
+4. Copy three values into `.env` (see `.env.example`): the tenant **Domain**, the SPA
+   **Client ID**, and the API **Identifier**.
+
+None of the three is secret. A PKCE flow has no client secret, and none may be added.
 
 ## Run it with Docker
 
 ```bash
-cp .env.example .env        # optional - defaults work as-is
+cp .env.example .env        # then fill in the three AUTH0_* values
 docker compose up -d --build
 ```
 
@@ -36,6 +59,9 @@ Three terminals, or three background processes:
 docker compose -f docker-compose.dev.yml up -d
 
 # 2. API on http://localhost:5080  (OpenAPI UI at /scalar/v1)
+#    Needs the Auth0 settings. Put them in src/TodoApp.Api/appsettings.Local.json
+#    (gitignored) or export them:
+#      Auth0__Domain, Auth0__Audience, Auth0__SpaClientId
 dotnet run --project src/TodoApp.Api
 
 # 3. SPA on http://localhost:5173 with hot reload, /api proxied to 5080
@@ -195,27 +221,43 @@ In Development the OpenAPI document is at `/openapi/v1.json` with a browsable UI
 
 ## Verifying it
 
-Both scripts are destructive to task data - run them against a development database.
+```bash
+dotnet test
+```
+
+106 tests: unit tests over the progression rules, plus integration tests that boot the
+real API against a throwaway Postgres container. The ones that matter most are in
+`tests/TodoApp.Tests/Isolation`, which assert that two accounts on one instance cannot
+see or touch each other's tasks, XP or badges through any path. Tests never call Auth0;
+a test authentication handler mints principals locally.
+
+The end-to-end scripts are destructive to task data, so run them against a development
+database. Both now need a token, since every `/api` route requires one.
 
 ```bash
 # API: XP maths, level thresholds, idempotency, refunds, filters, 404s
-pwsh ./scripts/verify-api.ps1 -BaseUrl http://localhost:5080
+pwsh ./scripts/verify-api.ps1 -BaseUrl http://localhost:5080 -AccessToken "<jwt>"
 
 # UI: drives your real installed Chrome through the whole flow and screenshots
 # light, dark, mobile and the level-up moment into artifacts/
 npm install
-node scripts/verify-ui.mjs --url http://localhost:5080
+node scripts/verify-ui.mjs --url http://localhost:5080 --username you@example.com --password '<pw>'
 node scripts/verify-ui.mjs --url http://localhost:5080 --headed   # watch it
 ```
 
 The UI script fails on any console error or failed request, not just on a missing
 element, and it asserts the browser and the API agree about XP after every mutation.
 
+Grab a token for the API script from the browser devtools console while signed in, or
+from Auth0's API test tab.
+
 ## Notes
 
-- The single character row is pinned to `Id = 1` by a check constraint. Adding
-  multi-user support later means adding a `UserId` to tasks and unlocks; nothing else
-  about the schema has to change.
+- The single character row is pinned to `Id = 1` by a check constraint. Adding the planned
+  Auth0-backed accounts means adding a `UserId` to tasks and unlocks and unpinning that
+  row; nothing else about the schema has to change.
+- Until accounts land, anyone who can reach the port is the user. Do not expose an
+  instance to an untrusted network.
 - The app applies migrations on startup with a bounded retry loop, because in Compose the
   app container regularly wins the race against Postgres even with a healthcheck in front.
 - Theme is stored in `localStorage` under `questward.theme` and applied by an inline

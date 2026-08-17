@@ -8,6 +8,9 @@ public class AchievementUnlock
 {
     public int Id { get; set; }
 
+    /// <summary>Owning user. Uniqueness is per user per badge, not per badge.</summary>
+    public Guid UserId { get; set; }
+
     public string AchievementKey { get; set; } = string.Empty;
 
     public DateTimeOffset UnlockedAt { get; set; } = DateTimeOffset.UtcNow;

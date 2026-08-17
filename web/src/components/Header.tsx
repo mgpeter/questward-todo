@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
+import { AccountMenu } from './AccountMenu'
 import { ThemeToggle } from './ThemeToggle'
 import { XpRail } from './XpRail'
 
@@ -32,8 +33,9 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
           {character && <XpRail character={character} />}
         </div>
 
-        <div className="order-2 ml-auto sm:order-3">
+        <div className="order-2 ml-auto flex items-center gap-2 sm:order-3">
           <ThemeToggle />
+          <AccountMenu />
         </div>
       </div>
 

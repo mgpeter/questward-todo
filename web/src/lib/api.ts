@@ -113,11 +113,53 @@ export class ApiError extends Error {
 /** Minutes to add to UTC to get the browser's local time, matching the API's contract. */
 export const utcOffsetMinutes = () => -new Date().getTimezoneOffset()
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+type TokenProvider = () => Promise<string>
+
+let getAccessToken: TokenProvider | null = null
+let onUnauthorized: (() => void) | null = null
+
+/**
+ * Registers the Auth0 token getter once at startup.
+ *
+ * Deliberately a module-level registration rather than a hook, so this client stays free
+ * of React and can keep being used from plain functions.
+ */
+export function registerAuth(provider: TokenProvider | null, unauthorized?: () => void) {
+  getAccessToken = provider
+  onUnauthorized = unauthorized ?? null
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  if (!getAccessToken) return {}
+
+  try {
+    return { Authorization: `Bearer ${await getAccessToken()}` }
+  } catch {
+    // A failed silent renewal is not fatal here; the request goes out without a token
+    // and the 401 path below drives the user back to sign-in.
+    return {}
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
   const response = await fetch(path, {
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
     ...init,
+    headers: {
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(await authHeaders()),
+      ...init?.headers,
+    },
   })
+
+  // One silent renewal attempt: an expired access token is the common case, and the SDK
+  // refreshes it on the next call. Anything still 401 after that needs a real sign-in.
+  if (response.status === 401 && allowRetry && getAccessToken) {
+    return request<T>(path, init, false)
+  }
+
+  if (response.status === 401) {
+    onUnauthorized?.()
+  }
 
   if (!response.ok) {
     let message = `Request failed with ${response.status}`

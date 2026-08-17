@@ -31,6 +31,11 @@ services:
     environment:
       ConnectionStrings__Default: >-
         Host=db;Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward}
+      # Required. The app fails fast at startup if any is missing, rather than
+      # booting and rejecting every request with an opaque 401.
+      Auth0__Domain: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env, see .env.example}
+      Auth0__Audience: ${AUTH0_AUDIENCE:?set AUTH0_AUDIENCE in .env, see .env.example}
+      Auth0__SpaClientId: ${AUTH0_SPA_CLIENT_ID:?set AUTH0_SPA_CLIENT_ID in .env, see .env.example}
     ports:
       - "${QUESTWARD_PORT:-8080}:8080"
 

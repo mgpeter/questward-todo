@@ -9,16 +9,24 @@
     Destructive: it deletes every task it creates and resets nothing else, so run it
     against a development database.
 
+.PARAMETER AccessToken
+    An Auth0 access token for the API audience. Every /api route requires one. Take it
+    from the browser devtools while signed in, or from the Auth0 API test tab.
+
 .EXAMPLE
-    pwsh ./scripts/verify-api.ps1 -BaseUrl http://localhost:5080
+    pwsh ./scripts/verify-api.ps1 -BaseUrl http://localhost:5080 -AccessToken "eyJ..."
 #>
 [CmdletBinding()]
 param(
-    [string]$BaseUrl = "http://localhost:5080"
+    [string]$BaseUrl = "http://localhost:5080",
+
+    [Parameter(Mandatory = $true)]
+    [string]$AccessToken
 )
 
 $ErrorActionPreference = "Stop"
 $script:Failures = 0
+$script:AuthHeader = @{ Authorization = "Bearer $AccessToken" }
 
 function Assert-Equal {
     param($Expected, $Actual, [string]$Label)
@@ -76,6 +84,7 @@ function Invoke-Api {
         Method      = $Method
         Uri         = "$BaseUrl$Path"
         ContentType = "application/json"
+        Headers     = $script:AuthHeader
     }
 
     if ($null -ne $Body) {
@@ -90,7 +99,8 @@ Write-Host "`nQuestward API verification against $BaseUrl" -ForegroundColor Cyan
 # --- Clean slate -------------------------------------------------------------
 Write-Host "`n[setup] removing existing tasks"
 foreach ($existing in (Invoke-Api GET "/api/tasks")) {
-    Invoke-RestMethod -Method Delete -Uri "$BaseUrl/api/tasks/$($existing.id)" | Out-Null
+    Invoke-RestMethod -Method Delete -Uri "$BaseUrl/api/tasks/$($existing.id)" `
+        -Headers $script:AuthHeader | Out-Null
 }
 
 $before = Invoke-Api GET "/api/character"

@@ -6,9 +6,16 @@
  * Uses playwright-core with `channel: 'chrome'`, so it launches the Chrome already on
  * the machine rather than downloading a browser build.
  *
- *   node scripts/verify-ui.mjs                       # against http://localhost:5080
- *   node scripts/verify-ui.mjs --url http://localhost:8080
+ * Every /api route now requires a token, so the run starts by signing in through Auth0
+ * Universal Login with a dedicated test user. Credentials come from the command line or
+ * from QUESTWARD_TEST_USER / QUESTWARD_TEST_PASSWORD.
+ *
+ *   node scripts/verify-ui.mjs --username you@example.com --password 'secret'
+ *   node scripts/verify-ui.mjs --url http://localhost:8080 --username ... --password ...
  *   node scripts/verify-ui.mjs --headed              # watch it happen
+ *
+ * Known risk: Auth0 bot detection can block automated form submission. If sign-in times
+ * out, disable Bot Detection for the development tenant (Security -> Attack Protection).
  */
 import { chromium } from 'playwright-core'
 import { mkdir, rm } from 'node:fs/promises'
@@ -25,6 +32,18 @@ const readFlag = (name, fallback) => {
 const BASE_URL = readFlag('url', 'http://localhost:5080').replace(/\/$/, '')
 const HEADED = args.includes('--headed')
 const SHOTS = path.join(root, 'artifacts')
+
+const USERNAME = readFlag('username', process.env.QUESTWARD_TEST_USER)
+const PASSWORD = readFlag('password', process.env.QUESTWARD_TEST_PASSWORD)
+
+if (!USERNAME || !PASSWORD) {
+  console.error(
+    '\nSign-in credentials are required now that the API is authenticated.\n' +
+      '  node scripts/verify-ui.mjs --username you@example.com --password <pw>\n' +
+      'or set QUESTWARD_TEST_USER and QUESTWARD_TEST_PASSWORD.\n',
+  )
+  process.exit(2)
+}
 
 let failures = 0
 const pass = (label) => console.log(`  \x1b[32mPASS\x1b[0m  ${label}`)
@@ -46,6 +65,31 @@ async function shoot(page, name, settleMs = 700) {
   await page.waitForTimeout(settleMs)
   await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: false })
   console.log(`  \x1b[90msaved artifacts/${name}.png\x1b[0m`)
+}
+
+/**
+ * Drives Auth0 Universal Login. Deliberately the real hosted form rather than a token
+ * injected into storage, so what gets verified is the path a user actually takes.
+ */
+async function signIn(page) {
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
+
+  // The app fetches /api/config before it can offer sign-in at all.
+  await page.waitForSelector('[data-testid="sign-in"]', { timeout: 20_000 })
+  await page.click('[data-testid="sign-in"]')
+
+  await page.waitForURL(/auth0\.com|\/u\/login/, { timeout: 20_000 })
+
+  await page.fill('input[name="username"], input[name="email"], input[type="email"]', USERNAME)
+  await page.fill('input[name="password"], input[type="password"]', PASSWORD)
+  await page.click('button[type="submit"], button[name="action"]')
+
+  // Auth0 shows a consent screen the first time for some tenant configurations.
+  const consent = page.locator('button[value="accept"], button[name="action"][value="accept"]')
+  await consent.click({ timeout: 5000 }).catch(() => {})
+
+  await page.waitForURL((url) => url.toString().startsWith(BASE_URL), { timeout: 30_000 })
+  await page.waitForSelector('[data-testid="character-card"]', { timeout: 30_000 })
 }
 
 async function main() {
@@ -71,21 +115,43 @@ async function main() {
     failedRequests.push(`${request.method()} ${request.url()} - ${request.failure()?.errorText}`),
   )
   page.on('response', (response) => {
-    if (response.status() >= 400) {
+    // Only our own origin. The Auth0 login flow legitimately produces 4xx responses of
+    // its own (probe requests, consent checks) that say nothing about this app.
+    if (response.url().startsWith(BASE_URL) && response.status() >= 400) {
       failedRequests.push(`${response.request().method()} ${response.url()} -> ${response.status()}`)
     }
   })
 
+  // Lifted straight off the app's own requests, so the script's direct API calls carry
+  // the same credentials the browser is using. Reading the SDK's storage format instead
+  // would couple this script to an internal detail of auth0-spa-js.
+  let bearer = null
+  page.on('request', (request) => {
+    const header = request.headers()['authorization']
+    if (header?.startsWith('Bearer ')) bearer = header
+  })
+
   const api = context.request
-  const readCharacter = async () => (await api.get(`${BASE_URL}/api/character`)).json()
+  const authed = () => ({ headers: { authorization: bearer } })
+  const readCharacter = async () =>
+    (await api.get(`${BASE_URL}/api/character`, authed())).json()
 
   try {
+    // ------------------------------------------------------------- sign in
+    step('[auth] signing in through Auth0')
+    await signIn(page)
+    pass(`Signed in as ${USERNAME}`)
+
+    check(Boolean(bearer), 'The app attaches a bearer token to its API calls')
+
     // ---------------------------------------------------------------- setup
     step('[setup] clearing the task list so the run starts from a known board')
-    const existing = await (await api.get(`${BASE_URL}/api/tasks`)).json()
+    const existing = await (await api.get(`${BASE_URL}/api/tasks`, authed())).json()
     for (const task of existing) {
-      await api.delete(`${BASE_URL}/api/tasks/${task.id}`)
+      await api.delete(`${BASE_URL}/api/tasks/${task.id}`, authed())
     }
+
+    await page.reload({ waitUntil: 'networkidle' })
 
     const before = await readCharacter()
     console.log(
@@ -95,8 +161,6 @@ async function main() {
 
     // ------------------------------------------------------------- first load
     step('[load] the app renders and matches the character API')
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' })
-
     await page.waitForSelector('[data-testid="character-card"]')
     checkEqual(
       await page.getAttribute('[data-testid="level-badge"]', 'data-level'),

@@ -16,6 +16,10 @@ public class TodoTaskConfiguration : IEntityTypeConfiguration<TodoTask>
             .HasColumnType("uuid")
             .ValueGeneratedNever();
 
+        builder.Property(t => t.UserId)
+            .HasColumnType("uuid")
+            .IsRequired();
+
         builder.Property(t => t.Title)
             .HasColumnType("varchar(200)")
             .IsRequired();
@@ -57,8 +61,14 @@ public class TodoTaskConfiguration : IEntityTypeConfiguration<TodoTask>
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // The list view always filters on completion state and then orders by these.
-        builder.HasIndex(t => new { t.IsCompleted, t.SortOrder });
-        builder.HasIndex(t => t.CompletedAt);
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Both indexes lead with UserId because no query reads across users. Keeping the
+        // old user-less indexes would be dead weight maintained on every write.
+        builder.HasIndex(t => new { t.UserId, t.IsCompleted, t.SortOrder });
+        builder.HasIndex(t => new { t.UserId, t.CompletedAt });
     }
 }

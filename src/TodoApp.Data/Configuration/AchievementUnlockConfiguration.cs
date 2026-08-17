@@ -16,6 +16,10 @@ public class AchievementUnlockConfiguration : IEntityTypeConfiguration<Achieveme
             .HasColumnType("integer")
             .ValueGeneratedOnAdd();
 
+        builder.Property(a => a.UserId)
+            .HasColumnType("uuid")
+            .IsRequired();
+
         builder.Property(a => a.AchievementKey)
             .HasColumnType("varchar(60)")
             .IsRequired();
@@ -24,7 +28,15 @@ public class AchievementUnlockConfiguration : IEntityTypeConfiguration<Achieveme
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        // A badge can only be earned once; the unique index is the real guard, not the code path.
-        builder.HasIndex(a => a.AchievementKey).IsUnique();
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Uniqueness is per user per badge. A unique index on AchievementKey alone would
+        // mean the first user to earn a badge permanently blocks everyone else from it.
+        // This stays a database constraint because it is what makes the grant in
+        // GamificationService safe under concurrency.
+        builder.HasIndex(a => new { a.UserId, a.AchievementKey }).IsUnique();
     }
 }

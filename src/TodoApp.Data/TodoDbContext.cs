@@ -5,6 +5,8 @@ namespace TodoApp.Data;
 
 public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(options)
 {
+    public DbSet<User> Users => Set<User>();
+
     public DbSet<TodoTask> Tasks => Set<TodoTask>();
 
     public DbSet<Character> Characters => Set<Character>();

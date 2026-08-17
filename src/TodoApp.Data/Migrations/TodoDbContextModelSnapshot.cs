@@ -37,9 +37,12 @@ namespace TodoApp.Data.Migrations
                     b.Property<DateTimeOffset>("UnlockedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("AchievementKey")
+                    b.HasIndex("UserId", "AchievementKey")
                         .IsUnique();
 
                     b.ToTable("achievement_unlocks", (string)null);
@@ -47,8 +50,8 @@ namespace TodoApp.Data.Migrations
 
             modelBuilder.Entity("TodoApp.Models.Character", b =>
                 {
-                    b.Property<int>("Id")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("AvatarKey")
                         .IsRequired()
@@ -67,12 +70,9 @@ namespace TodoApp.Data.Migrations
                     b.Property<int>("TotalXp")
                         .HasColumnType("integer");
 
-                    b.HasKey("Id");
+                    b.HasKey("UserId");
 
-                    b.ToTable("character", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_character_singleton", "\"Id\" = 1");
-                        });
+                    b.ToTable("characters", (string)null);
                 });
 
             modelBuilder.Entity("TodoApp.Models.TodoTask", b =>
@@ -111,16 +111,75 @@ namespace TodoApp.Data.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("XpAwarded")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompletedAt");
+                    b.HasIndex("UserId", "CompletedAt");
 
-                    b.HasIndex("IsCompleted", "SortOrder");
+                    b.HasIndex("UserId", "IsCompleted", "SortOrder");
 
                     b.ToTable("tasks", (string)null);
+                });
+
+            modelBuilder.Entity("TodoApp.Models.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Auth0Sub")
+                        .IsRequired()
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("Email")
+                        .HasColumnType("varchar(320)");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Auth0Sub")
+                        .IsUnique();
+
+                    b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("TodoApp.Models.AchievementUnlock", b =>
+                {
+                    b.HasOne("TodoApp.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TodoApp.Models.Character", b =>
+                {
+                    b.HasOne("TodoApp.Models.User", null)
+                        .WithOne()
+                        .HasForeignKey("TodoApp.Models.Character", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TodoApp.Models.TodoTask", b =>
+                {
+                    b.HasOne("TodoApp.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

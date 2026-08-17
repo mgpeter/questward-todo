@@ -3,14 +3,13 @@ using TodoApp.Models.Progression;
 
 namespace TodoApp.Api.Services;
 
-/// <param name="OpenTasksBefore">Open tasks immediately before this completion, used by Clean Slate.</param>
+/// <param name="OpenTasksAfter">Open tasks remaining after this completion.</param>
 /// <param name="LocalCompletedAt">Completion time in the client's local offset, used by the time-of-day badges.</param>
 public sealed record AchievementContext(
     TodoTask CompletedTask,
     int TasksCompletedTotal,
     int Level,
     int HardOrEpicCompleted,
-    int OpenTasksBefore,
     int OpenTasksAfter,
     int CompletedTodayLocal,
     DateTimeOffset LocalCompletedAt);
@@ -71,7 +70,12 @@ public sealed class AchievementEvaluator
         }
 
         // Only counts as clearing the board if there was a board worth clearing.
-        if (context.OpenTasksAfter == 0 && context.OpenTasksBefore >= 3)
+        //
+        // The original rule was `OpenTasksAfter == 0 && OpenTasksBefore >= 3`, which is
+        // unreachable: tasks are completed one at a time, so OpenTasksAfter is always
+        // OpenTasksBefore - 1, and reaching zero means there was exactly one left. The
+        // effort is measured by what was finished today instead.
+        if (context.OpenTasksAfter == 0 && context.CompletedTodayLocal >= 3)
         {
             earned.Add(AchievementCatalog.CleanSlate);
         }

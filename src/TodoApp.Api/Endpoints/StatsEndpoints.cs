@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TodoApp.Api.Auth;
 using TodoApp.Api.Contracts;
 using TodoApp.Api.Services;
 using TodoApp.Data;
@@ -13,7 +14,10 @@ public static class StatsEndpoints
 
     public static IEndpointRouteBuilder MapStatsEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/stats", GetStats).WithTags("Stats");
+        app.MapGet("/api/stats", GetStats)
+            .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicies.PerUser)
+            .WithTags("Stats");
 
         return app;
     }
@@ -21,10 +25,12 @@ public static class StatsEndpoints
     private static async Task<IResult> GetStats(
         TodoDbContext db,
         GamificationService gamification,
+        ICurrentUser currentUser,
         CancellationToken cancellationToken,
         int utcOffsetMinutes = 0)
     {
-        var character = await gamification.GetCharacterAsync(cancellationToken);
+        var user = await currentUser.GetAsync(cancellationToken);
+        var character = await gamification.GetCharacterAsync(user.Id, cancellationToken);
         var progress = LevelCurve.Describe(character.TotalXp);
 
         var offset = TimeSpan.FromMinutes(Math.Clamp(utcOffsetMinutes, -840, 840));
@@ -33,13 +39,15 @@ public static class StatsEndpoints
         var windowStartUtc = new DateTimeOffset(localNow.Date.AddDays(-(TrendDays - 1)), offset)
             .ToUniversalTime();
 
-        var totalTasks = await db.Tasks.CountAsync(cancellationToken);
-        var completedTasks = await db.Tasks.CountAsync(t => t.IsCompleted, cancellationToken);
-        var overdueTasks = await db.Tasks.CountAsync(
+        var mine = db.Tasks.Where(t => t.UserId == user.Id);
+
+        var totalTasks = await mine.CountAsync(cancellationToken);
+        var completedTasks = await mine.CountAsync(t => t.IsCompleted, cancellationToken);
+        var overdueTasks = await mine.CountAsync(
             t => !t.IsCompleted && t.DueDate != null && t.DueDate < DateTimeOffset.UtcNow,
             cancellationToken);
 
-        var byDifficulty = await db.Tasks
+        var byDifficulty = await mine
             .Where(t => t.IsCompleted)
             .GroupBy(t => t.Difficulty)
             .Select(g => new DifficultyBreakdown(g.Key, g.Count(), g.Sum(t => t.XpAwarded)))
@@ -52,7 +60,7 @@ public static class StatsEndpoints
                 ?? new DifficultyBreakdown(difficulty, 0, 0))
             .ToList();
 
-        var recent = await db.Tasks
+        var recent = await mine
             .AsNoTracking()
             .Where(t => t.IsCompleted && t.CompletedAt >= windowStartUtc)
             .Select(t => new { t.CompletedAt, t.XpAwarded })

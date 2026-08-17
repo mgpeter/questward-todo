@@ -1,0 +1,6 @@
+{
+  "//": "The .NET 10 SDK's MTP mode for `dotnet test`. xUnit v3 runs on Microsoft.Testing.Platform, and the older VSTest mode is no longer supported for it on this SDK.",
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}

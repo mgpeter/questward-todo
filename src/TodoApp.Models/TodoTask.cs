@@ -4,6 +4,9 @@ public class TodoTask
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
 
+    /// <summary>Owning user. Every read and write of this table is filtered by it.</summary>
+    public Guid UserId { get; set; }
+
     public string Title { get; set; } = string.Empty;
 
     public string? Notes { get; set; }
