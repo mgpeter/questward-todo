@@ -514,13 +514,15 @@ completing a task. It is a welcome grant, not a repeatable source, so the invari
 
 ---
 
-## 2026-08-17: Daily Streaks, Decay and Overdue Debuffs
+## 2026-08-17: Daily Streaks, Decay and Overdue Bounties
 
 **ID:** DEC-013
 **Status:** Accepted
 **Category:** Product
 **Stakeholders:** Product Owner
 **Supersedes:** DEC-008
+**Amended:** 2026-08-17, before implementation. Overdue tasks became bounties rather than
+debuffs; see "Overdue: The Carrot, Not The Stick" below.
 
 ### Decision
 
@@ -533,10 +535,10 @@ Reverses DEC-008. The app gains the full set of daily-pressure mechanics:
 3. **Daily login reward** - a once-a-day claimable that escalates with the streak.
 4. **Stat decay** - RPG ability scores or their equivalent degrade while the app is idle,
    recovering when activity resumes.
-5. **Overdue debuffs** - open tasks past their due date impose a combat penalty until
-   cleared.
+5. **Overdue bounties** - open tasks past their due date become worth MORE, not less: a
+   gold multiplier that grows with how overdue they are, and a scarier monster name.
 
-**None of it touches experience.** Streaks, rewards, decay and debuffs act on gold, loot
+**None of it touches experience.** Streaks, rewards, decay and bounties act on gold, loot
 rarity, stamina and combat stats only. The per-task XP table stays exactly Easy 10,
 Medium 25, Hard 50, Epic 100, and no streak multiplies it.
 
@@ -547,7 +549,9 @@ list into an obligation, and explicitly asked that the decision be revisited del
 rather than by drift if retention ever became a goal. This is that deliberate revisit.
 
 The product owner asked for the full set, including the harsher mechanics, after being
-shown that decay and overdue debuffs are the same lever as streaks wearing a hat.
+shown that decay and overdue debuffs are the same lever as streaks wearing a hat. They then
+amended it, before any code was written, to turn the overdue mechanic from a penalty into a
+reward. See below.
 
 ### Alternatives Considered
 
@@ -581,33 +585,56 @@ compatible with everything else. XP remains the one number that only real work c
 - A real reason to return daily, which the product previously had none of.
 - DEC-002, DEC-003 and DEC-012 all survive untouched. The XP invariance tests keep
   passing without modification, because nothing here can reach `TotalXp`.
-- Decay and debuffs act on the RPG layer, which is already understood as the place where
-  power lives, rather than on the record of work.
+- Decay acts on the RPG layer, which is already understood as the place where power lives,
+  rather than on the record of work.
+
+- Overdue tasks now pull toward being done instead of pushing away from the app, which is
+  closer to the mission than the pre-RPG behaviour of doing nothing at all with them.
 
 **Negative:**
-- **This is the mechanic DEC-008 was right to be wary of.** Someone who takes a week off
-  will return to a broken streak, decayed stats and a pile of overdue debuffs, and the app
-  will feel like a reproach at exactly the moment they need it least. Freezes soften the
-  first of those three, not the other two.
-- Overdue debuffs make the app worse precisely when the user is already struggling, which
-  is the opposite of the mission's stated purpose of making small chores easier to start.
+- **DEC-008 was still right about part of this.** Someone who takes a week off returns to a
+  broken streak and decayed stats. Freezes soften the streak; nothing softens the decay.
 - Decay creates work that exists only to undo decay, which is not real work.
 - The Productive Day badge and the streak now overlap conceptually.
+- Bounties create a mild perverse incentive to let tasks go overdue on purpose, since they
+  pay better. The multiplier has to stay modest enough that deliberately stalling is worse
+  than finishing on time.
+
+### Overdue: The Carrot, Not The Stick
+
+The first draft of this entry made overdue tasks impose a combat debuff, and listed as a
+negative that this "makes the app worse precisely when the user is already struggling,
+which is the opposite of the mission's stated purpose of making small chores easier to
+start." The product owner amended it before any code was written.
+
+Overdue tasks are now **bounties**. The longer something has been sitting there, the more
+gold it pays and the more formidable it is named. The task you have been avoiding for three
+weeks becomes the most rewarding thing on the board rather than a tax on everything else.
+
+This is strictly better and resolves the sharpest objection to this entry. A stick applied
+to someone with a backlog compounds the problem it claims to solve; a bounty makes the
+backlog the interesting part. Nothing else in the entry changes: decay, streaks and the
+daily reward stand.
 
 ### Follow-Up Required
 
-Three things to settle before implementation, none of them decided here:
+Two things to settle before implementation, neither decided here:
 
 - **Decay floor.** Stats must bottom out somewhere well above useless, or a returning user
   cannot fight their way back and the mechanic becomes a trap.
-- **Debuff cap.** A penalty that scales per overdue task without a ceiling makes a large
-  backlog unplayable, which is the same failure mode.
-- **Whether either applies below a level threshold**, so a new user is not decayed before
+- **Whether decay applies below a level threshold**, so a new user is not decayed before
   they have understood the game.
+
+The debuff cap that used to be listed here is moot: there is no debuff to cap. The
+equivalent question for bounties is gentler but still real, namely whether the gold
+multiplier needs a ceiling so a year-old task does not pay absurdly.
 
 ### A Note For Whoever Reads This Later
 
-DEC-008's reasoning is still on file directly above and is still, in my assessment,
-correct about the risk. This entry exists so that if the app later feels punishing, the
-cause is findable in one place rather than being archaeology. Reverting means removing
-mechanics 3, 4 and 5 and keeping 1 and 2 with freezes, which was the recommended shape.
+DEC-008's reasoning is still on file directly above and is still, in my assessment, correct
+about the residual risk. This entry exists so that if the app later feels punishing, the
+cause is findable in one place rather than being archaeology.
+
+If it does, the thing to remove is **decay** (mechanic 4), which is now the only remaining
+mechanic that takes something away for not showing up. Streaks with freezes, the daily
+reward and overdue bounties are all additive.

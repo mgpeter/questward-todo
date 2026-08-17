@@ -27,6 +27,19 @@ public class TodoTask
     /// </summary>
     public int XpAwarded { get; set; }
 
+    /// <summary>
+    /// Stamina actually granted when this task was completed, snapshotted for the same
+    /// reason as <see cref="XpAwarded"/>.
+    /// </summary>
+    /// <remarks>
+    /// Reopening used to refund XP and leave the stamina behind, so completing and
+    /// reopening one Epic task in a loop minted five stamina and five hit points a cycle
+    /// out of no work at all. Stamina is the gate that makes the whole RPG layer a sink
+    /// for real work (DEC-012), so an unbounded source of it is an unbounded source of
+    /// gold and loot.
+    /// </remarks>
+    public int StaminaAwarded { get; set; }
+
     /// <summary>Manual ordering within the list; lower sorts first.</summary>
     public int SortOrder { get; set; }
 

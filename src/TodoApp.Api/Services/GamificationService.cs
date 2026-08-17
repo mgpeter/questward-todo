@@ -95,8 +95,13 @@ public sealed class GamificationService(
         // The RPG layer is fuelled from here and nowhere else. Stamina buys fights and
         // finishing work restores hit points, so the adventure always points back at the
         // task list (DEC-003).
-        character.Stamina += task.Difficulty.Stamina();
-        character.CurrentHitPoints += task.Difficulty.Stamina();
+        //
+        // Snapshotted onto the task so reopening can hand back exactly what was granted.
+        var staminaGained = task.Difficulty.Stamina();
+
+        task.StaminaAwarded = staminaGained;
+        character.Stamina += staminaGained;
+        character.CurrentHitPoints += staminaGained;
         character.HitPointsUpdatedAt = completedAtUtc;
 
         await db.SaveChangesAsync(cancellationToken);
@@ -173,15 +178,27 @@ public sealed class GamificationService(
         }
 
         var xpLost = task.XpAwarded;
+        var staminaLost = task.StaminaAwarded;
 
         task.IsCompleted = false;
         task.CompletedAt = null;
         task.XpAwarded = 0;
+        task.StaminaAwarded = 0;
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
         // Clamped: XP can never go negative, even if history was edited out from under us.
         character.TotalXp = Math.Max(0, character.TotalXp - xpLost);
         character.TasksCompleted = Math.Max(0, character.TasksCompleted - 1);
+
+        // Stamina and hit points come back out too. Refunding XP while keeping the stamina
+        // made a complete/reopen loop an unbounded source of fights, and therefore of gold
+        // and loot, from no work at all.
+        character.Stamina = Math.Max(0, character.Stamina - staminaLost);
+
+        // Left standing on at least one hit point: reopening a task should never be able
+        // to kill a character.
+        character.CurrentHitPoints = Math.Max(1, character.CurrentHitPoints - staminaLost);
+        character.HitPointsUpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
 

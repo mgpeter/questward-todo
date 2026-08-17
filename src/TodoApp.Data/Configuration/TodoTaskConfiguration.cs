@@ -49,6 +49,11 @@ public class TodoTaskConfiguration : IEntityTypeConfiguration<TodoTask>
             .HasColumnType("integer")
             .IsRequired();
 
+        builder.Property(t => t.StaminaAwarded)
+            .HasColumnType("integer")
+            .IsRequired()
+            .HasDefaultValue(0);
+
         builder.Property(t => t.SortOrder)
             .HasColumnType("integer")
             .IsRequired();
