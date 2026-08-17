@@ -40,7 +40,9 @@ export function AdventurerStrip() {
         </div>
       </div>
 
-      <div className="min-w-[130px] flex-1" data-testid="strip-health">
+      {/* Capped: flex-1 alone let the bar swallow every spare pixel, so a 380px slab of
+          teal dominated a strip whose other three readings are two characters wide. */}
+      <div className="min-w-[130px] max-w-[230px] flex-1" data-testid="strip-health">
         <div className="flex items-baseline justify-between text-[10.5px] text-ink-faint">
           <span className="flex items-center gap-1 tracking-[0.14em] uppercase">
             <Heart size={10} /> Health

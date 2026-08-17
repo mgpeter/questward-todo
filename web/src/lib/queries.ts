@@ -47,6 +47,12 @@ function invalidateProgression(client: ReturnType<typeof useQueryClient>) {
   void client.invalidateQueries({ queryKey: queryKeys.character })
   void client.invalidateQueries({ queryKey: queryKeys.achievements })
   void client.invalidateQueries({ queryKey: queryKeys.stats })
+
+  // The adventurer sheet too, by prefix. Finishing a task grants stamina and hit points
+  // (DEC-003), so leaving this out left the strip on the task screen showing level 1 and
+  // zero stamina while the header already said level 2 - the one connection the strip
+  // exists to make, silently not made.
+  void client.invalidateQueries({ queryKey: ['rpg'] })
 }
 
 export function useCreateTask() {

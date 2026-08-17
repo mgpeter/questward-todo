@@ -56,6 +56,15 @@ public class TaskModelTests(PostgresFixture postgres) : IAsyncLifetime
 
     private sealed record StatusView(TaskView Task, int XpDelta, CharacterView Character);
 
+    private sealed record DifficultyBreakdownView(string Difficulty, int Completed, int XpEarned);
+
+    private sealed record StatsView(
+        int TotalTasks,
+        int OpenTasks,
+        int CompletedTasks,
+        int OverdueTasks,
+        DifficultyBreakdownView[] ByDifficulty);
+
     private async Task<TaskView> CreateAsync(
         HttpClient client,
         string title,
@@ -192,6 +201,60 @@ public class TaskModelTests(PostgresFixture postgres) : IAsyncLifetime
         var result = await CompleteAsync(_alice, parent.Id);
 
         Assert.Equal(1, result.Character.TasksCompleted);
+    }
+
+    [Fact]
+    public async Task The_record_counts_the_same_completions_the_character_does()
+    {
+        // Caught in the browser, not by a test: the record panel read "3 completed,
+        // Epic 3 - 200 XP" while the character card beside it read "2 done". The stats
+        // aggregates had been migrated off IsCompleted without picking up the subtask
+        // filter, which is exactly the twelve-sites-one-miss failure DEC-014 is about.
+        var parent = await CreateAsync(_alice, "Move house", "epic");
+
+        for (var i = 0; i < 3; i++)
+        {
+            var child = await CreateAsync(_alice, $"Box {i}", "epic", parentId: parent.Id);
+            await CompleteAsync(_alice, child.Id);
+        }
+
+        await CompleteAsync(_alice, parent.Id);
+
+        var stats = await _alice.GetFromJsonAsync<StatsView>("/api/stats?utcOffsetMinutes=0");
+        var character = await CharacterAsync(_alice);
+
+        Assert.Equal(character.TasksCompleted, stats!.CompletedTasks);
+        Assert.Equal(1, stats.CompletedTasks);
+        Assert.Equal(0, stats.OpenTasks);
+        Assert.Equal(1, stats.TotalTasks);
+
+        var epic = stats.ByDifficulty.Single(b => b.Difficulty == "epic");
+        Assert.Equal(1, epic.Completed);
+        Assert.Equal(Difficulty.Epic.BaseXp(), epic.XpEarned);
+    }
+
+    [Fact]
+    public async Task A_rolled_over_daily_task_counts_as_open_again_in_the_record()
+    {
+        var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
+        await CompleteAsync(_alice, task.Id);
+
+        var whileWithheld = await _alice.GetFromJsonAsync<StatsView>("/api/stats?utcOffsetMinutes=0");
+        Assert.Equal(0, whileWithheld!.OpenTasks);
+
+        await using (var db = postgres.CreateContext())
+        {
+            var row = await db.Tasks.SingleAsync(t => t.Id == task.Id);
+            row.XpEligibleFrom = DateTimeOffset.UtcNow.AddMinutes(-1);
+            await db.SaveChangesAsync();
+        }
+
+        var afterRollover = await _alice.GetFromJsonAsync<StatsView>("/api/stats?utcOffsetMinutes=0");
+
+        Assert.Equal(1, afterRollover!.OpenTasks);
+
+        // Still completed: finishing it yesterday is a thing that happened.
+        Assert.Equal(1, afterRollover.CompletedTasks);
     }
 
     // ---------------------------------------------------------------- recurrence

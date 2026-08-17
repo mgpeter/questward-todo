@@ -39,13 +39,28 @@ public static class StatsEndpoints
         var windowStartUtc = new DateTimeOffset(localNow.Date.AddDays(-(TrendDays - 1)), offset)
             .ToUniversalTime();
 
-        var mine = db.Tasks.Where(t => t.UserId == user.Id);
+        // Subtasks are excluded here, at the source, so every aggregate below inherits it.
+        // Without this the record read "3 completed, Epic 3 - 200 XP" while the character
+        // card beside it read "2 done": a checklist item was being counted as a finished
+        // task on one panel and not the other (DEC-014).
+        var mine = db.Tasks.Where(t => t.UserId == user.Id && t.ParentId == null);
 
+        var now = DateTimeOffset.UtcNow;
+
+        // A recurring task whose period has rolled over is stored Completed but is open
+        // again, so "open" and "overdue" have to ask what TodoTask.StatusAt asks. Completed
+        // deliberately does not: finishing it yesterday is still a thing that happened.
         var totalTasks = await mine.CountAsync(cancellationToken);
         var completedTasks = await mine.CountAsync(t => t.Status == TaskProgress.Completed, cancellationToken);
-        var overdueTasks = await mine.CountAsync(
-            t => t.Status != TaskProgress.Completed && t.DueDate != null && t.DueDate < DateTimeOffset.UtcNow,
-            cancellationToken);
+        var open = mine.Where(t =>
+            t.Status != TaskProgress.Completed ||
+            (t.Recurrence != RecurrenceRule.None &&
+             t.XpEligibleFrom != null &&
+             t.XpEligibleFrom <= now));
+
+        var openTasks = await open.CountAsync(cancellationToken);
+        var overdueTasks = await open.CountAsync(
+            t => t.DueDate != null && t.DueDate < now, cancellationToken);
 
         var byDifficulty = await mine
             .Where(t => t.Status == TaskProgress.Completed)
@@ -82,7 +97,9 @@ public static class StatsEndpoints
 
         return Results.Ok(new StatsDto(
             totalTasks,
-            totalTasks - completedTasks,
+            // Counted, not subtracted. A daily task that has come round again is open and
+            // was also completed yesterday, so the two no longer sum to the total.
+            openTasks,
             completedTasks,
             overdueTasks,
             progress.TotalXp,

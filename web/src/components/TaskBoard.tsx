@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'motion/react'
-import { useState, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
 import { taskProgressLabels, taskProgressOrder, type Task, type TaskProgress } from '../lib/api'
 import { useGameFeed } from '../game/GameFeed'
 import { useReorderTasks, useSetTaskStatus } from '../lib/queries'
@@ -17,6 +17,12 @@ interface DragState {
   from: TaskProgress
 }
 
+/** Where it would land: a column, and the card it would be inserted before. */
+interface DropTarget {
+  column: TaskProgress
+  beforeId: string | null
+}
+
 const COLUMN_ACCENT: Record<TaskProgress, string> = {
   todo: 'bg-line-strong',
   inProgress: 'bg-gold',
@@ -32,8 +38,18 @@ const COLUMN_ACCENT: Record<TaskProgress, string> = {
  * card, so drag is an accelerator and never the only way through.
  */
 export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
+  // Refs, not state, are what the drag actually runs on.
+  //
+  // A drop only happens if the preceding dragover called preventDefault, and dragover can
+  // fire in the same tick as dragstart. Reading React state there sees null, skips the
+  // preventDefault and the browser silently rejects the drop: dragstart, dragover,
+  // dragend, no drop event at all. A slow drag survives it because later dragovers see the
+  // committed state; a quick flick does not, which made short reorders fail at random.
+  // The state below is duplicated for rendering only.
+  const dragRef = useRef<DragState | null>(null)
+  const overRef = useRef<DropTarget | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
-  const [over, setOver] = useState<{ column: TaskProgress; beforeId: string | null } | null>(null)
+  const [over, setOver] = useState<DropTarget | null>(null)
   const setStatus = useSetTaskStatus()
   const reorder = useReorderTasks()
   const { celebrateStatusChange } = useGameFeed()
@@ -72,16 +88,39 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
   const commitOrder = (next: Record<TaskProgress, Task[]>) =>
     reorder.mutate([...next.todo, ...next.inProgress].map((task) => task.id))
 
-  const drop = (column: TaskProgress, beforeId: string | null) => {
-    if (!drag) return
+  /** Records where a drop would land, and allows it. Both halves must happen every time. */
+  const trackOver = (event: DragEvent, target: DropTarget) => {
+    if (!dragRef.current) return
 
-    const dragged = columns[drag.from].find((task) => task.id === drag.id)
+    event.preventDefault()
+
+    const current = overRef.current
+    if (current?.column === target.column && current.beforeId === target.beforeId) return
+
+    overRef.current = target
+    setOver(target)
+  }
+
+  const endDrag = () => {
+    dragRef.current = null
+    overRef.current = null
     setDrag(null)
     setOver(null)
+  }
+
+  const drop = (column: TaskProgress) => {
+    const active = dragRef.current
+    const target = overRef.current
+    if (!active) return
+
+    const dragged = columns[active.from].find((task) => task.id === active.id)
+    const beforeId = target?.column === column ? target.beforeId : null
+
+    endDrag()
 
     if (!dragged) return
 
-    if (drag.from !== column) {
+    if (active.from !== column) {
       // Crossing into or out of Done moves XP, so it goes through the status route and
       // the result is fed to the same celebration the checkbox uses.
       setStatus.mutate(
@@ -112,14 +151,10 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
             key={column}
             data-testid={column === 'completed' ? 'completed-section' : `column-${column}`}
             aria-label={taskProgressLabels[column]}
-            onDragOver={(event: DragEvent) => {
-              if (!drag) return
-              event.preventDefault()
-              setOver({ column, beforeId: null })
-            }}
+            onDragOver={(event: DragEvent) => trackOver(event, { column, beforeId: null })}
             onDrop={(event: DragEvent) => {
               event.preventDefault()
-              drop(column, over?.column === column ? over.beforeId : null)
+              drop(column)
             }}
             className={`rounded-2xl border border-dashed p-2 transition ${
               isTarget ? 'border-gold bg-gold/5' : 'border-transparent'
@@ -140,14 +175,12 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
                     task={task}
                     isDragging={drag?.id === task.id}
                     showDropLine={isTarget && over?.beforeId === task.id}
-                    onDragStart={() => setDrag({ id: task.id, from: column })}
-                    onDragEnd={() => {
-                      setDrag(null)
-                      setOver(null)
+                    onDragStart={() => {
+                      dragRef.current = { id: task.id, from: column }
+                      setDrag({ id: task.id, from: column })
                     }}
-                    onDragOverCard={() => {
-                      if (drag) setOver({ column, beforeId: task.id })
-                    }}
+                    onDragEnd={endDrag}
+                    onDragOverCard={(event) => trackOver(event, { column, beforeId: task.id })}
                   />
                 ))}
               </AnimatePresence>

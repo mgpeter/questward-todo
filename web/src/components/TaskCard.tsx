@@ -1,6 +1,6 @@
 import { Check, ChevronLeft, ChevronRight, GripVertical, Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   recurrenceLabels,
   taskProgressLabels,
@@ -33,7 +33,7 @@ interface TaskCardProps {
   showDropLine?: boolean
   onDragStart?: () => void
   onDragEnd?: () => void
-  onDragOverCard?: () => void
+  onDragOverCard?: (event: DragEvent<HTMLLIElement>) => void
 }
 
 export function TaskCard({
@@ -116,22 +116,33 @@ export function TaskCard({
     <motion.li
       layout
       draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      // stopPropagation, not decoration: dragover bubbles, and the column's own handler
-      // resets the insert position to "end of list". Without this the drop line never
-      // settles on a card and every reorder lands at the bottom.
-      onDragOver={(event) => {
-        event.preventDefault()
+      // Capture-phase handlers throughout, for two reasons that happen to agree.
+      //
+      // motion.li claims onDragStart/onDragEnd for its own pan gestures, so the native
+      // names are typed as pan handlers and cannot carry a DragEvent. The *Capture names
+      // are untouched and are plain DOM.
+      //
+      // Capture is also the phase this wants: dragover reaches the column before the card
+      // on the way down, so stopping it here is what keeps "insert before this card" from
+      // being overwritten by the column's "append to the end".
+      onDragStartCapture={(event: DragEvent<HTMLLIElement>) => {
+        // Chrome drags without this, but a drag carrying no payload is not a drag
+        // everywhere else, and effectAllowed is what gives the cursor its move affordance.
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', task.id)
+        onDragStart?.()
+      }}
+      onDragEndCapture={onDragEnd}
+      onDragOverCapture={(event: DragEvent<HTMLLIElement>) => {
         event.stopPropagation()
-        onDragOverCard?.()
+        onDragOverCard?.(event)
       }}
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: isDragging ? 0.4 : 1, y: 0 }}
       // Deliberately no exit animation: completing a task moves it between two lists,
       // and an exiting copy would leave the same task visible twice mid-transition.
       transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-      className={`${meta.tierClass} group panel relative flex items-start gap-2.5 overflow-hidden rounded-xl py-3 pr-3 pl-3.5 transition-shadow hover:shadow-lift ${
+      className={`${meta.tierClass} group panel relative overflow-hidden rounded-xl py-3 pr-3 pl-3.5 transition-shadow hover:shadow-lift ${
         task.isCompleted ? 'opacity-60' : ''
       } ${showDropLine ? 'shadow-[0_-2px_0_0_var(--color-gold)]' : ''}`}
       data-testid="task-card"
@@ -145,6 +156,7 @@ export function TaskCard({
         style={{ backgroundColor: 'var(--tier)', opacity: task.isCompleted ? 0.3 : 0.85 }}
       />
 
+      <div className="flex items-start gap-2.5">
       <span
         aria-hidden="true"
         title="Drag to move"
@@ -226,19 +238,6 @@ export function TaskCard({
             </span>
           ))}
 
-          {/*
-            Said plainly rather than discovered by watching the XP not move: a subtask,
-            or a repeat inside its own period, is worth doing but is not worth XP.
-          */}
-          {!task.awardsProgression && !task.isCompleted && (
-            <span
-              data-testid="task-no-xp"
-              title="Subtasks and repeats inside their period do not pay again."
-              className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-faint"
-            >
-              No XP
-            </span>
-          )}
         </div>
 
         {(task.subtasks.length > 0 || addingSubtask) && (
@@ -279,7 +278,14 @@ export function TaskCard({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      </div>
+
+      {/*
+        Its own row, not the title's row. Inline, this cluster took 113px of a 242px card
+        and left the title 36px, which broke "Move house" across three lines mid-word.
+        Always rendered rather than mounted on hover, so the card does not jump.
+      */}
+      <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <button
           type="button"
           onClick={(event) => shift(event, -1)}
@@ -360,6 +366,7 @@ function SubtaskRow({ subtask }: { subtask: Task }) {
         }
         aria-pressed={subtask.isCompleted}
         aria-label={subtask.isCompleted ? `Reopen ${subtask.title}` : `Complete ${subtask.title}`}
+        title="Steps track progress. The XP is paid when the task itself is finished."
         data-testid="subtask-toggle"
         className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded border transition disabled:opacity-50 ${
           subtask.isCompleted

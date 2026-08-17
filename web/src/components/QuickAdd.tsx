@@ -15,6 +15,10 @@ export function QuickAdd() {
   const [dueDate, setDueDate] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [recurrence, setRecurrence] = useState<Recurrence>('none')
+  // Bumped on submit to remount TagInput. Clearing `tags` empties the chips but leaves
+  // whatever half-typed word is still sitting in its field, which then attaches itself to
+  // the next task you add.
+  const [formGeneration, setFormGeneration] = useState(0)
   const createTask = useCreateTask()
 
   const submit = (event: FormEvent) => {
@@ -39,6 +43,7 @@ export function QuickAdd() {
           setPriority('normal')
           setTags([])
           setRecurrence('none')
+          setFormGeneration((generation) => generation + 1)
         },
       },
     )
@@ -99,7 +104,12 @@ export function QuickAdd() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <TagInput value={tags} onChange={setTags} testId="quick-add-tags" />
+          <TagInput
+            key={formGeneration}
+            value={tags}
+            onChange={setTags}
+            testId="quick-add-tags"
+          />
 
           <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
             <Repeat size={12} />

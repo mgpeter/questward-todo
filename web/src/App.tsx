@@ -23,7 +23,12 @@ export default function App() {
         badgeCount={character.data?.achievementsUnlocked ?? 0}
       />
 
-      <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[290px_minmax(0,1fr)] lg:gap-6">
+      {/*
+        Widened from max-w-6xl. That was right for a single-column list, but the board puts
+        three columns in the same space: on a 1892px window the shell still capped at
+        1152px, which left each column 260px and each card's title 36px.
+      */}
+      <main className="mx-auto grid max-w-[88rem] gap-5 px-4 py-6 lg:grid-cols-[290px_minmax(0,1fr)] lg:gap-6">
         <aside className="lg:sticky lg:top-32 lg:self-start">
           {character.data ? (
             <CharacterCard character={character.data} />
@@ -40,7 +45,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-[11px] text-ink-faint">
+      <footer className="mx-auto max-w-[88rem] px-4 pb-8 text-[11px] text-ink-faint">
         Questward &middot; self-hosted &middot;{' '}
         <a href="/scalar/v1" className="underline decoration-line-strong underline-offset-2 hover:text-ink-muted">
           API reference
