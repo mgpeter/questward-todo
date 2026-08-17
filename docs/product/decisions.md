@@ -259,7 +259,7 @@ still what is deployed today.
 ## 2026-08-16: No Daily Streaks
 
 **ID:** DEC-008
-**Status:** Accepted
+**Status:** Superseded by DEC-013
 **Category:** Product
 **Stakeholders:** Product Owner
 
@@ -285,6 +285,10 @@ obligation, which cuts against the stated purpose of making small chores easier 
 **Negative:** Removes the strongest daily-return hook. If retention is ever a goal, this
 is the first thing to revisit, and it should be revisited deliberately rather than by
 drift.
+
+**Superseded:** revisited deliberately, as this entry asked for, and reversed by DEC-013.
+The reasoning above is left intact because it is still the argument the new design has to
+answer, and the streak-freeze mechanism in DEC-013 exists specifically to answer it.
 
 ---
 
@@ -507,3 +511,103 @@ anything can assert.
 
 The migration grants a one-time 3 stamina so the feature is reachable without first
 completing a task. It is a welcome grant, not a repeatable source, so the invariant holds.
+
+---
+
+## 2026-08-17: Daily Streaks, Decay and Overdue Debuffs
+
+**ID:** DEC-013
+**Status:** Accepted
+**Category:** Product
+**Stakeholders:** Product Owner
+**Supersedes:** DEC-008
+
+### Decision
+
+Reverses DEC-008. The app gains the full set of daily-pressure mechanics:
+
+1. **Daily streak** - a consecutive-day counter, visible in the header, with escalating
+   rewards and streak milestones as badges.
+2. **Streak freezes** - earned periodically and capped at a small number. Missing a day
+   silently spends a freeze rather than resetting the streak.
+3. **Daily login reward** - a once-a-day claimable that escalates with the streak.
+4. **Stat decay** - RPG ability scores or their equivalent degrade while the app is idle,
+   recovering when activity resumes.
+5. **Overdue debuffs** - open tasks past their due date impose a combat penalty until
+   cleared.
+
+**None of it touches experience.** Streaks, rewards, decay and debuffs act on gold, loot
+rarity, stamina and combat stats only. The per-task XP table stays exactly Easy 10,
+Medium 25, Hard 50, Epic 100, and no streak multiplies it.
+
+### Context
+
+DEC-008 declined streaks on the grounds that they punish legitimate breaks and turn a task
+list into an obligation, and explicitly asked that the decision be revisited deliberately
+rather than by drift if retention ever became a goal. This is that deliberate revisit.
+
+The product owner asked for the full set, including the harsher mechanics, after being
+shown that decay and overdue debuffs are the same lever as streaks wearing a hat.
+
+### Alternatives Considered
+
+1. **Streaks only, rewards but no penalties**
+   - Pros: Closest to the spirit of DEC-008; motivates without ever taking anything away.
+   - Cons: Weakest daily pull, which is the thing this reversal exists to create.
+
+2. **Streaks that multiply XP**
+   - Pros: The strongest possible incentive to return daily.
+   - Cons: **Rejected.** The same task would grant different XP on different days, so a
+     level would stop being a precise record of work done. That contradicts DEC-003 and
+     DEC-012, and would force both to be amended as well. Keeping XP out of it is what
+     lets this reversal happen without unpicking the rest of the design.
+
+3. **Weekly target instead of daily**
+   - Pros: Rewards consistency, and a weekend off costs nothing.
+   - Cons: Much softer pull than a daily counter.
+
+### Rationale
+
+Product owner's call, made with the original argument in front of them. The freeze
+mechanism is the concession to it: a genuine break spends a freeze instead of destroying
+progress, so the design answers DEC-008's objection rather than ignoring it.
+
+Confining every mechanic to gold, loot, stamina and combat stats is what keeps this
+compatible with everything else. XP remains the one number that only real work can move.
+
+### Consequences
+
+**Positive:**
+- A real reason to return daily, which the product previously had none of.
+- DEC-002, DEC-003 and DEC-012 all survive untouched. The XP invariance tests keep
+  passing without modification, because nothing here can reach `TotalXp`.
+- Decay and debuffs act on the RPG layer, which is already understood as the place where
+  power lives, rather than on the record of work.
+
+**Negative:**
+- **This is the mechanic DEC-008 was right to be wary of.** Someone who takes a week off
+  will return to a broken streak, decayed stats and a pile of overdue debuffs, and the app
+  will feel like a reproach at exactly the moment they need it least. Freezes soften the
+  first of those three, not the other two.
+- Overdue debuffs make the app worse precisely when the user is already struggling, which
+  is the opposite of the mission's stated purpose of making small chores easier to start.
+- Decay creates work that exists only to undo decay, which is not real work.
+- The Productive Day badge and the streak now overlap conceptually.
+
+### Follow-Up Required
+
+Three things to settle before implementation, none of them decided here:
+
+- **Decay floor.** Stats must bottom out somewhere well above useless, or a returning user
+  cannot fight their way back and the mechanic becomes a trap.
+- **Debuff cap.** A penalty that scales per overdue task without a ceiling makes a large
+  backlog unplayable, which is the same failure mode.
+- **Whether either applies below a level threshold**, so a new user is not decayed before
+  they have understood the game.
+
+### A Note For Whoever Reads This Later
+
+DEC-008's reasoning is still on file directly above and is still, in my assessment,
+correct about the risk. This entry exists so that if the app later feels punishing, the
+cause is findable in one place rather than being archaeology. Reverting means removing
+mechanics 3, 4 and 5 and keeping 1 and 2 with freezes, which was the recommended shape.
