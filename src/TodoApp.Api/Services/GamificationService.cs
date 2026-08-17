@@ -61,8 +61,9 @@ public sealed class GamificationService(
         var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
-        // Completing an already-complete task must never award a second time.
-        if (task.IsCompleted)
+        // Completing an already-complete task must never award a second time. Asked as of
+        // now, so a recurring task that has come round again counts as open.
+        if (task.IsCompletedAt(DateTimeOffset.UtcNow))
         {
             var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
@@ -82,29 +83,65 @@ public sealed class GamificationService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var xpGained = task.Difficulty.BaseXp();
+        // THE progression gate, asked once and obeyed everywhere below.
+        //
+        // It is a single question on purpose. The alternative was repeating the same two
+        // conditions across the XP branch, three achievement counts, two quest recordings
+        // and four stats aggregates, where one missed filter leaks in silence: a quest
+        // paying gold for twenty subtask completions breaches DEC-012 through the side
+        // door, and no XP test would catch it.
+        //
+        // False for a subtask (splitting one task into twenty must not multiply its
+        // reward) and for a recurring task completed again inside its own period.
+        var awards = task.MayAwardAt(completedAtUtc);
 
-        task.IsCompleted = true;
+        var xpGained = awards ? task.Difficulty.BaseXp() : 0;
+        var staminaGained = awards ? task.Difficulty.Stamina() : 0;
+
+        task.Status = TaskProgress.Completed;
         task.CompletedAt = completedAtUtc;
         task.XpAwarded = xpGained;
+        task.StaminaAwarded = staminaGained;
         task.UpdatedAt = completedAtUtc;
 
+        // Move the recurrence gate forward. Monotonic: it never moves back and is never
+        // cleared, so "set daily, complete, set none, complete, set daily" cannot mint XP.
+        if (task.Recurrence != RecurrenceRule.None)
+        {
+            var next = RecurrenceRules.NextEligibleAfter(task.Recurrence, completedAtUtc);
+
+            if (next is not null && (task.XpEligibleFrom is null || next > task.XpEligibleFrom))
+            {
+                task.XpEligibleFrom = next;
+            }
+        }
+
         character.TotalXp += xpGained;
-        character.TasksCompleted += 1;
+        character.TasksCompleted += awards ? 1 : 0;
 
         // The RPG layer is fuelled from here and nowhere else. Stamina buys fights and
         // finishing work restores hit points, so the adventure always points back at the
         // task list (DEC-003).
-        //
-        // Snapshotted onto the task so reopening can hand back exactly what was granted.
-        var staminaGained = task.Difficulty.Stamina();
-
-        task.StaminaAwarded = staminaGained;
         character.Stamina += staminaGained;
         character.CurrentHitPoints += staminaGained;
         character.HitPointsUpdatedAt = completedAtUtc;
 
         await db.SaveChangesAsync(cancellationToken);
+
+        if (!awards)
+        {
+            // Completed, but it pays nothing: no XP, no stamina, no badges, no quest
+            // progress. Returning early is what keeps that guarantee in one place.
+            await transaction.CommitAsync(cancellationToken);
+
+            return new CompleteTaskResponse(
+                task.ToDto(),
+                XpGained: 0,
+                character.ToDto(await CountUnlockedAsync(userId, cancellationToken)),
+                LeveledUp: false,
+                previousLevel,
+                []);
+        }
 
         var newLevel = LevelCurve.LevelForXp(character.TotalXp);
 
@@ -113,13 +150,13 @@ public sealed class GamificationService(
             TasksCompletedTotal: character.TasksCompleted,
             Level: newLevel,
             HardOrEpicCompleted: await db.Tasks.CountAsync(
-                t => t.UserId == userId && t.IsCompleted && t.Difficulty >= Difficulty.Hard,
+                t => t.UserId == userId && t.ParentId == null && t.Status == TaskProgress.Completed && t.Difficulty >= Difficulty.Hard,
                 cancellationToken),
             OpenTasksAfter: await db.Tasks.CountAsync(
-                t => t.UserId == userId && !t.IsCompleted,
+                t => t.UserId == userId && t.ParentId == null && t.Status != TaskProgress.Completed,
                 cancellationToken),
             CompletedTodayLocal: await db.Tasks.CountAsync(
-                t => t.UserId == userId && t.IsCompleted && t.CompletedAt >= localDayStartUtc,
+                t => t.UserId == userId && t.ParentId == null && t.Status == TaskProgress.Completed && t.CompletedAt >= localDayStartUtc,
                 cancellationToken),
             LocalCompletedAt: localCompletedAt);
 
@@ -165,7 +202,7 @@ public sealed class GamificationService(
         var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
-        if (!task.IsCompleted)
+        if (!task.IsCompletedAt(DateTimeOffset.UtcNow))
         {
             var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
@@ -180,11 +217,20 @@ public sealed class GamificationService(
         var xpLost = task.XpAwarded;
         var staminaLost = task.StaminaAwarded;
 
-        task.IsCompleted = false;
+        task.Status = TaskProgress.Todo;
         task.CompletedAt = null;
         task.XpAwarded = 0;
         task.StaminaAwarded = 0;
         task.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Reopening a completion that paid hands the reward back, so the recurrence gate
+        // it closed has to open again. Otherwise an accidental tick and untick destroys
+        // the day's XP with no way to earn it back. Only when it actually paid: reopening
+        // a within-period repeat must leave the earlier payout's gate exactly where it is.
+        if (xpLost > 0)
+        {
+            task.XpEligibleFrom = null;
+        }
 
         // Clamped: XP can never go negative, even if history was edited out from under us.
         character.TotalXp = Math.Max(0, character.TotalXp - xpLost);

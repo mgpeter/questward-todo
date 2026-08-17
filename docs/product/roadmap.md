@@ -196,3 +196,50 @@ only real work grants experience.
 - The Adventure UI still has not been driven end to end in a browser, because that needs a
   signed-in session.
 - Class abilities are one per class; a second tier at higher levels is the obvious follow-up.
+
+## Phase 6: The Task Model (Shipped 2026-08-17)
+
+**Goal:** Give tasks the structure the RPG layer needs to draw on, without giving anyone a
+second way to earn experience for the same work.
+
+### Features
+
+- [x] **Subtasks** - a task nested under a task, one level, with a `3/8` counter on the
+      card. Ticking a step is progress and pays nothing `M`
+- [x] **Repeating tasks** - daily, weekly or monthly, returning to the board on their own
+      with no reset button and no overnight job `M`
+- [x] **Tags** - Postgres `text[]` with a GIN index, chips on the card, a filter row, and
+      autocomplete from what has already been used `S`
+- [x] **Three-column board** - to do, in progress, done, with drag between columns and
+      within them, and the same moves on the keyboard `M`
+- [x] **One status route** - all six transitions through `PUT /api/tasks/{id}/status`,
+      returning a signed `xpDelta` so the client never branches on response shape `S`
+- [x] **Adventurer strip** - class, health, stamina and gold above the board, so the
+      resource the adventure spends is visible where it is earned `S`
+
+### The Constraint That Shaped It
+
+Three features arrived that each add a new way to press "I finished something". The gate is
+asked in exactly one place, `TodoTask.MayAwardAt`, and everything downstream hangs off that
+one answer. Twenty subtasks pay what one task pays; a daily task pays once a day. See
+DEC-014.
+
+### What The Review Caught
+
+Six competing designs contained twelve direct contradictions, four indirect XP leaks and
+one exploit that was already live: reopening a task refunded its XP but kept the stamina
+and hit points, so a complete/reopen loop minted five of each per cycle out of no work.
+Fixed alone and first. The rulings on the rest are in
+@docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md.
+
+One design rebuilt overdue debuffs - the single mechanic DEC-013 was amended to forbid -
+because the brief it was handed paraphrased the decision instead of quoting it.
+
+### Known Gaps
+
+- `Status` is stored but `StatusAt` is what is true, so any new query filtering on the
+  column has to reproduce the recurrence rollover in SQL.
+- One-level nesting is enforced in the service, not in Postgres.
+- The board has not been driven end to end in a browser: that needs a signed-in session,
+  and the sign-in credentials are the product owner's.
+- Phases 3-8 of the RPG expansion are specified but unbuilt.

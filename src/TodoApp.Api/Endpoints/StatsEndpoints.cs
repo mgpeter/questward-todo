@@ -42,13 +42,13 @@ public static class StatsEndpoints
         var mine = db.Tasks.Where(t => t.UserId == user.Id);
 
         var totalTasks = await mine.CountAsync(cancellationToken);
-        var completedTasks = await mine.CountAsync(t => t.IsCompleted, cancellationToken);
+        var completedTasks = await mine.CountAsync(t => t.Status == TaskProgress.Completed, cancellationToken);
         var overdueTasks = await mine.CountAsync(
-            t => !t.IsCompleted && t.DueDate != null && t.DueDate < DateTimeOffset.UtcNow,
+            t => t.Status != TaskProgress.Completed && t.DueDate != null && t.DueDate < DateTimeOffset.UtcNow,
             cancellationToken);
 
         var byDifficulty = await mine
-            .Where(t => t.IsCompleted)
+            .Where(t => t.Status == TaskProgress.Completed)
             .GroupBy(t => t.Difficulty)
             .Select(g => new DifficultyBreakdown(g.Key, g.Count(), g.Sum(t => t.XpAwarded)))
             .ToListAsync(cancellationToken);
@@ -62,7 +62,7 @@ public static class StatsEndpoints
 
         var recent = await mine
             .AsNoTracking()
-            .Where(t => t.IsCompleted && t.CompletedAt >= windowStartUtc)
+            .Where(t => t.Status == TaskProgress.Completed && t.CompletedAt >= windowStartUtc)
             .Select(t => new { t.CompletedAt, t.XpAwarded })
             .ToListAsync(cancellationToken);
 

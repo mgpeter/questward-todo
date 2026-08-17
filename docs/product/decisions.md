@@ -638,3 +638,107 @@ cause is findable in one place rather than being archaeology.
 If it does, the thing to remove is **decay** (mechanic 4), which is now the only remaining
 mechanic that takes something away for not showing up. Streaks with freezes, the daily
 reward and overdue bounties are all additive.
+
+## 2026-08-17: One Progression Gate for Subtasks and Recurrence
+
+**ID:** DEC-014
+**Status:** Accepted
+**Category:** technical
+**Related Spec:** @docs/specs/2026-08-17-task-model-and-rpg-depth/
+
+### Decision
+
+Subtasks and repeating tasks are the same row in `tasks` as everything else, and the
+question "may finishing this pay out?" is asked in exactly one place:
+
+```csharp
+public bool IsProgressionBearing => ParentId is null;
+
+public bool MayAwardAt(DateTimeOffset moment) =>
+    IsProgressionBearing && (XpEligibleFrom is null || moment >= XpEligibleFrom.Value);
+```
+
+`GamificationService.CompleteAsync` asks it once, stores the answer in `awards`, and
+returns early when it is false. XP, stamina, hit points, `TasksCompleted`, achievement
+counts and quest progress all hang off that one branch.
+
+A recurring task's status is **derived, not reset by a job**. `StatusAt(moment)` reports a
+stored `Completed` as `Todo` once `XpEligibleFrom` has passed, so "water the plants",
+ticked on Monday, is open again on Tuesday with nothing scheduled having run.
+
+### Context
+
+Three features arrived together that each add a new way to press "I finished something":
+subtasks, repeating tasks and a drag-to-Done column. DEC-012 says the RPG layer grants no
+experience; the pressure here is the mirror image, that the task layer must not grant
+experience more than once for the same work.
+
+The failure mode is quiet. Splitting one Epic task into twenty subtasks and ticking them
+all would have paid twenty times for one job. A daily task with a complete/reopen loop is
+an XP printer. Neither throws, neither logs, and both look like the feature working.
+
+### Rationale
+
+**One gate rather than a repeated condition.** The alternative was writing
+`ParentId == null` into the XP branch, three achievement aggregates, two quest recordings
+and four stats queries. Twelve places, and a missed one leaks silently in a direction no
+XP test would catch: a quest paying gold for twenty subtask completions is a DEC-012 breach
+through the side door.
+
+**Subtasks are rows, not a new entity.** A self-referencing `ParentId` inherits ownership
+scoping, the index layout, the endpoint surface and the isolation tests for free. One level
+only, enforced on write, so the gate stays a null check rather than a recursive walk.
+
+**Derived rollover rather than a nightly job**, following DEC-002. `XpEligibleFrom` already
+holds the fact; a scheduled reset would be a second copy of it that can be missed, run
+twice, or run while the user is mid-edit.
+
+### The Gate Opens on Refund
+
+The first implementation made `XpEligibleFrom` strictly monotonic: never cleared, on the
+reasoning that clearing it would make "set daily, complete, set none, complete, set daily"
+into free XP. Three tests failed, and they were right to.
+
+Reopening a completed task hands the XP back. With a monotonic gate, ticking a daily task
+by accident and immediately unticking it **destroyed that day's reward with no way to earn
+it back**. The punishment for a misclick was the whole day.
+
+So the gate is cleared on a reopen that actually refunded, and only then. This is safe
+rather than a loophole: the previous paying completion was by definition a whole period
+earlier, so a fresh payout is genuinely due. Editing recurrence still never touches the
+gate, which is what the monotonic rule was really protecting.
+
+The invariant that matters is not "the gate only moves forward". It is:
+
+> At any moment, the character holds exactly the XP that its completed tasks record.
+
+`No_sequence_of_ticks_edits_and_reopens_can_unbalance_the_ledger` asserts that after every
+step of a complete / re-tick / edit / reopen / recur sequence.
+
+### Consequences
+
+**Positive:**
+- Twenty subtasks pay what one task pays. Asserted directly.
+- The task list can grow features without each one needing its own XP audit.
+- No scheduler, no nightly job, no reset that can fail overnight.
+- Reopening is a real undo again, including for repeating tasks.
+
+**Negative:**
+- `Status` is stored but `StatusAt` is what is true, so any new query that filters on the
+  column has to reproduce the rollover in SQL. `GetTasks` already does; a future one could
+  forget. This is the same class of hazard DEC-002 accepts elsewhere.
+- Achievement counts now exclude subtasks, so a user who works entirely in subtasks makes
+  no badge progress. Correct, but it will read as a bug to someone.
+- Clearing the gate on refund means a determined user can, at most, hold one period's
+  payout at a time rather than zero. That is the intended reading, not an oversight.
+
+### Migration
+
+`TaskModelOverhaul` is not mechanical. The scaffold added `Status` with default 0 and then
+dropped `IsCompleted`, which would have silently reopened every task anyone had ever
+finished, leaving their XP banked while the list claimed the work was never done. The
+backfill was hand-added and the drop moved after it. `Tags` also needed an explicit
+`'{}'` default, since Postgres cannot add a `NOT NULL` column to a table that already has
+rows without one.
+
+Both directions were verified against a populated database, not just an empty one.

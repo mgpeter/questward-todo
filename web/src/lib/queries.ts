@@ -5,12 +5,14 @@ import {
   type CreateTaskInput,
   type Difficulty,
   type Task,
+  type TaskProgress,
   type TaskStatus,
   type UpdateTaskInput,
 } from './api'
 
 export const queryKeys = {
   tasks: (filters: TaskFilters) => ['tasks', filters] as const,
+  tags: ['tags'] as const,
   character: ['character'] as const,
   achievements: ['achievements'] as const,
   stats: ['stats'] as const,
@@ -20,6 +22,7 @@ export interface TaskFilters {
   status: TaskStatus
   difficulty?: Difficulty
   search: string
+  tag?: string
 }
 
 export const useTasks = (filters: TaskFilters) =>
@@ -36,6 +39,8 @@ export const useAchievements = () =>
 
 export const useStats = () => useQuery({ queryKey: queryKeys.stats, queryFn: api.getStats })
 
+export const useTags = () => useQuery({ queryKey: queryKeys.tags, queryFn: api.listTags })
+
 /** Everything a completion touches. Called after any XP-moving mutation. */
 function invalidateProgression(client: ReturnType<typeof useQueryClient>) {
   void client.invalidateQueries({ queryKey: ['tasks'] })
@@ -51,6 +56,7 @@ export function useCreateTask() {
     mutationFn: (input: CreateTaskInput) => api.createTask(input),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['tasks'] })
+      void client.invalidateQueries({ queryKey: queryKeys.tags })
       void client.invalidateQueries({ queryKey: queryKeys.stats })
     },
   })
@@ -64,6 +70,7 @@ export function useUpdateTask() {
       api.updateTask(id, input),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['tasks'] })
+      void client.invalidateQueries({ queryKey: queryKeys.tags })
       void client.invalidateQueries({ queryKey: queryKeys.stats })
     },
   })
@@ -104,6 +111,32 @@ export function useReopenTask() {
   })
 }
 
+/**
+ * The board's drag target. One route for all six transitions, so the caller never has to
+ * work out whether a drop was a completion, a reopening or just a column change.
+ */
+export function useSetTaskStatus() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: TaskProgress }) =>
+      api.setTaskStatus(id, status),
+    onSuccess: (result) => {
+      client.setQueryData<Character>(queryKeys.character, result.character)
+      invalidateProgression(client)
+    },
+  })
+}
+
+export function useReorderTasks() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => api.reorderTasks(orderedIds),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+}
+
 export function useUpdateCharacter() {
   const client = useQueryClient()
 
@@ -113,8 +146,9 @@ export function useUpdateCharacter() {
   })
 }
 
-/** Open tasks first, then the completed ones, matching the server's ordering. */
-export const partitionTasks = (tasks: Task[] | undefined) => ({
-  open: tasks?.filter((task) => !task.isCompleted) ?? [],
-  done: tasks?.filter((task) => task.isCompleted) ?? [],
+/** The board's three columns, in the server's order within each. */
+export const groupByStatus = (tasks: Task[] | undefined) => ({
+  todo: tasks?.filter((task) => task.status === 'todo') ?? [],
+  inProgress: tasks?.filter((task) => task.status === 'inProgress') ?? [],
+  completed: tasks?.filter((task) => task.status === 'completed') ?? [],
 })

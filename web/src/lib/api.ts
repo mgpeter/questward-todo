@@ -5,18 +5,48 @@ export type Difficulty = 'easy' | 'medium' | 'hard' | 'epic'
 export type Priority = 'low' | 'normal' | 'high'
 export type TaskStatus = 'all' | 'open' | 'done'
 
+/** Where a task sits on the board. The server calls this Status; 'all' above is a filter. */
+export type TaskProgress = 'todo' | 'inProgress' | 'completed'
+
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly'
+
+export const taskProgressOrder: TaskProgress[] = ['todo', 'inProgress', 'completed']
+
+export const taskProgressLabels: Record<TaskProgress, string> = {
+  todo: 'To do',
+  inProgress: 'In progress',
+  completed: 'Done',
+}
+
+export const recurrenceLabels: Record<Recurrence, string> = {
+  none: 'Once',
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+}
+
 export interface Task {
   id: string
+  parentId: string | null
   title: string
   notes: string | null
   difficulty: Difficulty
   priority: Priority
+  tags: string[]
   xpValue: number
   dueDate: string | null
+  status: TaskProgress
   isCompleted: boolean
   completedAt: string | null
+  startedAt: string | null
   xpAwarded: number
+  staminaAwarded: number
+  recurrence: Recurrence
+  /** False when finishing this pays nothing: a subtask, or a repeat inside its period. */
+  awardsProgression: boolean
+  daysOverdue: number
   sortOrder: number
+  subtasks: Task[]
   createdAt: string
   updatedAt: string
 }
@@ -93,10 +123,28 @@ export interface CreateTaskInput {
   difficulty: Difficulty
   priority?: Priority
   dueDate?: string | null
+  tags?: string[]
+  recurrence?: Recurrence
+  /** Set to nest this under an existing task. One level only. */
+  parentId?: string | null
 }
 
 export interface UpdateTaskInput extends CreateTaskInput {
   priority: Priority
+}
+
+/**
+ * One shape for every column move. XpDelta is positive when the drag completed a task,
+ * negative when it dragged one back out, and zero the rest of the time.
+ */
+export interface SetStatusResult {
+  task: Task
+  xpDelta: number
+  character: Character
+  leveledUp: boolean
+  leveledDown: boolean
+  previousLevel: number
+  unlockedAchievements: Achievement[]
 }
 
 export class ApiError extends Error {
@@ -189,11 +237,19 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
 const body = (value: unknown): RequestInit => ({ body: JSON.stringify(value) })
 
 export const api = {
-  listTasks: (params: { status?: TaskStatus; difficulty?: Difficulty; search?: string } = {}) => {
+  listTasks: (
+    params: {
+      status?: TaskStatus
+      difficulty?: Difficulty
+      search?: string
+      tag?: string
+    } = {},
+  ) => {
     const query = new URLSearchParams()
     if (params.status && params.status !== 'all') query.set('status', params.status)
     if (params.difficulty) query.set('difficulty', params.difficulty)
     if (params.search?.trim()) query.set('search', params.search.trim())
+    if (params.tag) query.set('tag', params.tag)
 
     const suffix = query.toString()
     return request<Task[]>(`/api/tasks${suffix ? `?${suffix}` : ''}`)
@@ -215,6 +271,14 @@ export const api = {
 
   reopenTask: (id: string) =>
     request<ReopenResult>(`/api/tasks/${id}/reopen`, { method: 'POST' }),
+
+  setTaskStatus: (id: string, status: TaskProgress) =>
+    request<SetStatusResult>(`/api/tasks/${id}/status`, {
+      method: 'PUT',
+      ...body({ status, utcOffsetMinutes: utcOffsetMinutes() }),
+    }),
+
+  listTags: () => request<string[]>('/api/tasks/tags'),
 
   reorderTasks: (orderedIds: string[]) =>
     request<void>('/api/tasks/reorder', { method: 'POST', ...body({ orderedIds }) }),

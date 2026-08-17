@@ -1,15 +1,20 @@
-import { CalendarDays, Flag, Plus } from 'lucide-react'
+import { CalendarDays, Flag, Plus, Repeat } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { Difficulty, Priority } from '../lib/api'
+import { recurrenceLabels, type Difficulty, type Priority, type Recurrence } from '../lib/api'
 import { DIFFICULTIES, PRIORITIES } from '../lib/difficulty'
 import { fromDateInputValue } from '../lib/format'
 import { useCreateTask } from '../lib/queries'
+import { TagInput } from './TagInput'
+
+const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly']
 
 export function QuickAdd() {
   const [title, setTitle] = useState('')
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [priority, setPriority] = useState<Priority>('normal')
   const [dueDate, setDueDate] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [recurrence, setRecurrence] = useState<Recurrence>('none')
   const createTask = useCreateTask()
 
   const submit = (event: FormEvent) => {
@@ -19,12 +24,21 @@ export function QuickAdd() {
     if (!trimmed) return
 
     createTask.mutate(
-      { title: trimmed, difficulty, priority, dueDate: fromDateInputValue(dueDate) },
+      {
+        title: trimmed,
+        difficulty,
+        priority,
+        dueDate: fromDateInputValue(dueDate),
+        tags,
+        recurrence,
+      },
       {
         onSuccess: () => {
           setTitle('')
           setDueDate('')
           setPriority('normal')
+          setTags([])
+          setRecurrence('none')
         },
       },
     )
@@ -85,6 +99,25 @@ export function QuickAdd() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <TagInput value={tags} onChange={setTags} testId="quick-add-tags" />
+
+          <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+            <Repeat size={12} />
+            <span className="sr-only">Repeats</span>
+            <select
+              value={recurrence}
+              onChange={(event) => setRecurrence(event.target.value as Recurrence)}
+              data-testid="quick-add-recurrence"
+              className="cursor-pointer bg-transparent text-[11px] text-ink-muted outline-none"
+            >
+              {RECURRENCES.map((rule) => (
+                <option key={rule} value={rule}>
+                  {recurrenceLabels[rule]}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
             <Flag size={12} />
             <span className="sr-only">Priority</span>

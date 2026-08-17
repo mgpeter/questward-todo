@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Achievement, CompleteResult, ReopenResult } from '../lib/api'
+import type { Achievement, CompleteResult, ReopenResult, SetStatusResult } from '../lib/api'
 import { titleForLevel } from '../lib/ranks'
 
 export interface XpFloat {
@@ -36,6 +36,7 @@ interface GameFeedValue {
   levelUp: LevelUpEvent | null
   celebrateCompletion: (result: CompleteResult, origin?: DOMRect | null) => void
   registerRefund: (result: ReopenResult, origin?: DOMRect | null) => void
+  celebrateStatusChange: (result: SetStatusResult, origin?: DOMRect | null) => void
   dismissLevelUp: () => void
   dismissToast: (id: number) => void
 }
@@ -101,6 +102,30 @@ export function GameFeedProvider({ children }: { children: ReactNode }) {
     [pushFloat],
   )
 
+  /**
+   * A drop into Done should feel exactly like ticking the box, and a drop back out like
+   * unticking it. One handler for both, keyed off the sign of the delta.
+   */
+  const celebrateStatusChange = useCallback(
+    (result: SetStatusResult, origin?: DOMRect | null) => {
+      pushFloat(result.xpDelta, origin)
+
+      if (result.leveledUp) {
+        setLevelUp({
+          level: result.character.level,
+          previousLevel: result.previousLevel,
+          title: result.character.title,
+          previousTitle: titleForLevel(result.previousLevel),
+        })
+      }
+
+      result.unlockedAchievements.forEach((achievement, index) =>
+        window.setTimeout(() => pushToast(achievement), 350 + index * 450),
+      )
+    },
+    [pushFloat, pushToast],
+  )
+
   const value = useMemo(
     () => ({
       floats,
@@ -108,11 +133,12 @@ export function GameFeedProvider({ children }: { children: ReactNode }) {
       levelUp,
       celebrateCompletion,
       registerRefund,
+      celebrateStatusChange,
       dismissLevelUp: () => setLevelUp(null),
       dismissToast: (id: number) =>
         setToasts((current) => current.filter((toast) => toast.id !== id)),
     }),
-    [floats, toasts, levelUp, celebrateCompletion, registerRefund],
+    [floats, toasts, levelUp, celebrateCompletion, registerRefund, celebrateStatusChange],
   )
 
   return <GameFeedContext.Provider value={value}>{children}</GameFeedContext.Provider>

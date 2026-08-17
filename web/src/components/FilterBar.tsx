@@ -1,7 +1,7 @@
 import { Search, X } from 'lucide-react'
 import type { Difficulty, TaskStatus } from '../lib/api'
 import { DIFFICULTIES } from '../lib/difficulty'
-import type { TaskFilters } from '../lib/queries'
+import { useTags, type TaskFilters } from '../lib/queries'
 
 interface FilterBarProps {
   filters: TaskFilters
@@ -16,6 +16,8 @@ const STATUSES: { value: TaskStatus; label: string }[] = [
 ]
 
 export function FilterBar({ filters, counts, onChange }: FilterBarProps) {
+  const tags = useTags()
+
   const countFor = (status: TaskStatus) =>
     status === 'open' ? counts.open : status === 'done' ? counts.done : counts.open + counts.done
 
@@ -69,6 +71,34 @@ export function FilterBar({ filters, counts, onChange }: FilterBarProps) {
           )
         })}
       </div>
+
+      {/* Only rendered once there is something to filter by: an empty row of chips is a
+          control that looks broken rather than one that looks unused. */}
+      {(tags.data?.length ?? 0) > 0 && (
+        <div className="flex items-center gap-1" data-testid="filter-tags">
+          {tags.data!.map((tag) => {
+            const active = filters.tag === tag
+
+            return (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={active}
+                title={`Only tasks tagged ${tag}`}
+                data-testid={`filter-tag-${tag}`}
+                onClick={() => onChange({ ...filters, tag: active ? undefined : tag })}
+                className={`rounded-full px-2 py-0.5 text-[10.5px] transition ${
+                  active
+                    ? 'bg-ink text-canvas'
+                    : 'bg-surface-sunk text-ink-faint hover:text-ink-muted'
+                }`}
+              >
+                {tag}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <label className="relative ml-auto">
         <Search

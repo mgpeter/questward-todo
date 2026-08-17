@@ -1,8 +1,17 @@
 import { useState } from 'react'
-import type { Difficulty, Priority, Task } from '../lib/api'
+import {
+  recurrenceLabels,
+  type Difficulty,
+  type Priority,
+  type Recurrence,
+  type Task,
+} from '../lib/api'
 import { DIFFICULTIES, PRIORITIES } from '../lib/difficulty'
 import { fromDateInputValue, toDateInputValue } from '../lib/format'
 import { useUpdateTask } from '../lib/queries'
+import { TagInput } from './TagInput'
+
+const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'monthly']
 
 interface TaskEditorProps {
   task: Task
@@ -16,6 +25,8 @@ export function TaskEditor({ task, onClose }: TaskEditorProps) {
   const [difficulty, setDifficulty] = useState<Difficulty>(task.difficulty)
   const [priority, setPriority] = useState<Priority>(task.priority)
   const [dueDate, setDueDate] = useState(toDateInputValue(task.dueDate))
+  const [tags, setTags] = useState<string[]>(task.tags)
+  const [recurrence, setRecurrence] = useState<Recurrence>(task.recurrence)
   const updateTask = useUpdateTask()
 
   const save = () => {
@@ -31,6 +42,8 @@ export function TaskEditor({ task, onClose }: TaskEditorProps) {
           difficulty,
           priority,
           dueDate: fromDateInputValue(dueDate),
+          tags,
+          recurrence,
         },
       },
       { onSuccess: onClose },
@@ -109,6 +122,28 @@ export function TaskEditor({ task, onClose }: TaskEditorProps) {
             className="cursor-pointer bg-transparent text-ink-muted outline-none"
           />
         </label>
+
+        {/* Subtasks pay nothing, so a repeat setting on one would be a control that does
+            nothing. The server drops it either way; hiding it is the honest half. */}
+        {task.parentId === null && (
+          <label className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+            Repeats
+            <select
+              value={recurrence}
+              onChange={(event) => setRecurrence(event.target.value as Recurrence)}
+              data-testid="task-edit-recurrence"
+              className="cursor-pointer bg-transparent text-ink-muted outline-none"
+            >
+              {RECURRENCES.map((rule) => (
+                <option key={rule} value={rule}>
+                  {recurrenceLabels[rule]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <TagInput value={tags} onChange={setTags} testId="task-edit-tags" />
 
         <div className="ml-auto flex gap-2">
           <button
