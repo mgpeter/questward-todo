@@ -38,6 +38,27 @@ public class CharacterConfiguration : IEntityTypeConfiguration<Character>
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
+        // --- RPG layer -------------------------------------------------------
+        builder.Property(c => c.ClassKey).HasColumnType("varchar(40)");
+
+        foreach (var ability in new[]
+                 {
+                     nameof(Character.Strength), nameof(Character.Dexterity),
+                     nameof(Character.Constitution), nameof(Character.Intelligence),
+                     nameof(Character.Wisdom), nameof(Character.Charisma)
+                 })
+        {
+            builder.Property<int>(ability).HasColumnType("integer").IsRequired().HasDefaultValue(10);
+        }
+
+        builder.Property(c => c.CurrentHitPoints).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(c => c.Stamina).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(c => c.Gold).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(c => c.HitPointsUpdatedAt).HasColumnType("timestamp with time zone");
+
+        // Computed from class, level and Constitution, never stored (DEC-002).
+        builder.Ignore(c => c.AbilityScores);
+
         builder.HasOne<User>()
             .WithOne()
             .HasForeignKey<Character>(c => c.UserId)

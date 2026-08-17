@@ -22,4 +22,21 @@ public static class DifficultyExtensions
         Difficulty.Epic => 100,
         _ => 10
     };
+
+    /// <summary>
+    /// Stamina granted for completing a task of this difficulty.
+    /// </summary>
+    /// <remarks>
+    /// The only source of stamina in the system, and stamina is the only thing that buys a
+    /// fight. This is what keeps the RPG layer a sink for real work rather than a
+    /// substitute for it (DEC-003).
+    /// </remarks>
+    public static int Stamina(this Difficulty difficulty) => difficulty switch
+    {
+        Difficulty.Easy => 1,
+        Difficulty.Medium => 2,
+        Difficulty.Hard => 3,
+        Difficulty.Epic => 5,
+        _ => 1
+    };
 }

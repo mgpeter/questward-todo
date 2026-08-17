@@ -5,6 +5,7 @@ import { LevelUpOverlay } from './components/LevelUpOverlay'
 import { ToastStack } from './components/ToastStack'
 import { XpFloatLayer } from './components/XpFloatLayer'
 import { useCharacter } from './lib/queries'
+import { AdventureView } from './views/AdventureView'
 import { BadgesView } from './views/BadgesView'
 import { RecordView } from './views/RecordView'
 import { TasksView } from './views/TasksView'
@@ -33,6 +34,7 @@ export default function App() {
 
         <div className="min-w-0">
           {tab === 'tasks' && <TasksView />}
+          {tab === 'adventure' && <AdventureView />}
           {tab === 'record' && <RecordView character={character.data} />}
           {tab === 'badges' && <BadgesView />}
         </div>

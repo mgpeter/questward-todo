@@ -4,6 +4,7 @@ using TodoApp.Api.Mapping;
 using TodoApp.Data;
 using TodoApp.Models;
 using TodoApp.Models.Progression;
+using TodoApp.Models.Rpg;
 
 namespace TodoApp.Api.Services;
 
@@ -16,7 +17,10 @@ namespace TodoApp.Api.Services;
 /// silently lets one user's activity unlock another user's badges, so the scoping is
 /// covered by isolation tests rather than left to review.
 /// </remarks>
-public sealed class GamificationService(TodoDbContext db, AchievementEvaluator evaluator)
+public sealed class GamificationService(
+    TodoDbContext db,
+    AchievementEvaluator evaluator,
+    Rpg.QuestService quests)
 {
     public async Task<Character> GetCharacterAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -88,6 +92,13 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
         character.TotalXp += xpGained;
         character.TasksCompleted += 1;
 
+        // The RPG layer is fuelled from here and nowhere else. Stamina buys fights and
+        // finishing work restores hit points, so the adventure always points back at the
+        // task list (DEC-003).
+        character.Stamina += task.Difficulty.Stamina();
+        character.CurrentHitPoints += task.Difficulty.Stamina();
+        character.HitPointsUpdatedAt = completedAtUtc;
+
         await db.SaveChangesAsync(cancellationToken);
 
         var newLevel = LevelCurve.LevelForXp(character.TotalXp);
@@ -112,6 +123,13 @@ public sealed class GamificationService(TodoDbContext db, AchievementEvaluator e
             evaluator.Evaluate(context),
             completedAtUtc,
             cancellationToken);
+
+        // Quest objectives that count real work, recorded inside the same transaction so
+        // a task and its quest progress can never disagree.
+        await quests.RecordAsync(userId, ObjectiveKind.CompleteTask, string.Empty, 1, cancellationToken);
+        await quests.RecordAsync(
+            userId, ObjectiveKind.CompleteTask, task.Difficulty.ToString(), 1, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 

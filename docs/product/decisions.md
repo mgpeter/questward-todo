@@ -432,3 +432,78 @@ project out of a self-hosted provider later.
 
 The three open questions on Phase 3 of the roadmap (offline instances, free-tier limits,
 and who may sign up) must be answered before this ships, not during.
+
+---
+
+## 2026-08-17: The RPG Layer Grants No Experience
+
+**ID:** DEC-012
+**Status:** Accepted
+**Category:** Product
+**Stakeholders:** Product Owner, Tech Lead
+**Related Spec:** `docs/specs/2026-08-17-rpg-combat-and-classes/`
+
+### Decision
+
+Classes, ability scores, equipment, monster combat and quests were added. **None of them
+grant character XP.** Monsters and quests pay gold and loot; levels remain a pure function
+of completed tasks. Every encounter costs Stamina, and the only thing in the system that
+produces Stamina is completing a real task.
+
+### Context
+
+An RPG layer is the most direct threat to DEC-003 that this product could add. The obvious
+implementation grants experience for kills, at which point the todo list becomes optional
+and the level stops meaning anything. Something had to give: either the RPG layer is
+cosmetic, or the progression system is.
+
+### Alternatives Considered
+
+1. **Monsters grant XP, like every RPG ever made**
+   - Pros: Familiar, immediately motivating, no extra concepts to explain.
+   - Cons: Destroys the one claim the product actually makes. A level would stop being a
+     record of work and become a record of clicking Attack.
+
+2. **Monsters grant reduced XP, capped daily**
+   - Pros: Keeps the familiar loop while limiting the damage.
+   - Cons: A cap is a number to tune forever, and the claim becomes "your level mostly
+     reflects real work", which is not a claim worth making.
+
+3. **Stamina as the gate; gold and loot as the reward** (chosen)
+   - Pros: The invariant survives intact and stays provable. The game becomes a reason to
+     clear the list rather than a way to avoid it.
+   - Cons: A novel loop that needs explaining, and a player with no tasks left simply
+     cannot play.
+
+### Rationale
+
+Your level is a record of work done; your gear is what you did with it. That division
+keeps both halves honest, and it means the RPG layer can be extended indefinitely without
+ever threatening the scoring system.
+
+The stronger argument is testability: "no code path outside task completion moves
+TotalXp" is a property a test can assert, and it is asserted, twice, once at the service
+layer and once through the HTTP surface. "XP from monsters is balanced" is not a property
+anything can assert.
+
+### Consequences
+
+**Positive:**
+- DEC-002 and DEC-003 hold unchanged, now with combat in the codebase.
+- The game is a sink for productivity, so more RPG content increases the incentive to
+  finish tasks rather than diluting it.
+- The API has no endpoint capable of granting XP, which makes the guarantee structural
+  rather than a matter of discipline.
+
+**Negative:**
+- Someone with an empty task list cannot fight, which will read as a limitation before it
+  reads as the point.
+- The loop needs explaining, since it is not what an RPG player expects.
+- Two currencies (XP and gold) with different sources is more to hold in the head than one.
+- Gold has nothing to spend it on yet beyond nothing at all; a shop is the obvious
+  follow-up and is currently missing.
+
+### Notes
+
+The migration grants a one-time 3 stamina so the feature is reachable without first
+completing a task. It is a welcome grant, not a repeatable source, so the invariant holds.

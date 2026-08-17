@@ -89,6 +89,12 @@ storing it, snapshots XP at the moment of completion, and makes completion idemp
 Progress reflects work done, which is the only thing that makes the number worth
 looking at.
 
+The stance survives contact with the RPG layer, which is where it would normally break.
+Monsters and quests pay gold and loot but never experience, and there is no endpoint in
+the entire API capable of moving XP outside task completion. A game bolted onto a todo app
+usually ends up replacing it; here it is deliberately built as a sink for the productivity
+rather than a second source of it.
+
 ### Small enough to read end to end
 
 Unlike the self-hosted project managers it sits alongside, Questward is roughly ninety
@@ -108,8 +114,20 @@ what their task list actually does.
   full board, finishing something before 6am, and taking down an Epic.
 - **Task management:** Create, edit, complete, reopen and delete tasks with notes, due
   dates and priority, filtered by status, difficulty or free-text search.
-- **User accounts (planned):** Auth0-backed sign-in so several people can share one
-  instance, each with their own tasks, XP and badges. See `roadmap.md` Phase 3.
+- **User accounts:** Auth0-backed sign-in so several people can share one instance, each
+  with their own tasks, XP, badges and character.
+
+### Adventure Features
+
+- **Classes and ability scores:** Six classes with distinct hit dice, ability spreads and
+  a rule-bending perk each, on the six familiar D&D abilities.
+- **d20 combat:** Fight monsters round by round, with every roll shown as arithmetic:
+  the dice, each labelled modifier, the total and the number it had to beat.
+- **Equipment and loot:** Wins drop gear with rolled rarities that change your ability
+  scores, armour class and damage. Three slots, and anything spare sells for gold.
+- **Quests:** Short goals that count real events, paying gold and equipment.
+- **Stamina, the bridge:** Fighting costs stamina, and only finishing a real task produces
+  it. The adventure is a reason to clear the list, never a way to avoid it.
 - **Due-date urgency:** Due pills shift colour as a task approaches and passes its date,
   so the list surfaces what is actually pressing.
 

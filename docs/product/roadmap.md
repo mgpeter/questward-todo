@@ -134,3 +134,38 @@ migrates without losing progress.
 - **Who may sign up.** An Auth0 tenant will accept any sign-up by default. A self-hosted
   instance needs an allowlist, an invite flow, or connection-level restriction, or the
   first stranger to find the URL gets an account.
+
+## Phase 4: The RPG Layer (Shipped 2026-08-17)
+
+**Goal:** Give the XP earned from real work somewhere to go, without ever becoming an
+alternative source of it.
+**Success Criteria:** Fighting and questing provably cannot move character XP, asserted by
+tests at both the service and HTTP layers.
+
+### Features
+
+- [x] **Ability scores and derived stats** - The six D&D abilities, with armour class,
+      attack bonus, damage, proficiency and max hit points all derived from class, level
+      and equipment `M`
+- [x] **Six classes** - Distinct hit dice, ability spreads, starting gear and one
+      rule-bending perk each `S`
+- [x] **A d20 engine** - Injectable dice roller, natural 20 and natural 1 overrides,
+      advantage and disadvantage, and a fully itemised roll breakdown on the wire `M`
+- [x] **Monster combat** - Code-held bestiary, round-by-round encounters gated on Stamina,
+      persistent hit points and a complete combat log `L`
+- [x] **Equipment and loot** - Rarity rolls, weighted loot tables, three equipment slots
+      and selling for gold `M`
+- [x] **Quests** - Code-held catalog with countable objectives driven by real events `M`
+
+### The Constraint That Shaped It
+
+Monsters and quests grant gold and loot, never XP, and every fight costs Stamina that only
+completing a task produces. Your level is a record of work done; your gear is what you did
+with it. See DEC-012.
+
+### Known Gaps
+
+- Gold accumulates with nothing to spend it on. A shop is the obvious next step.
+- No consumables, spells, multi-monster encounters or procedural items.
+- The Adventure UI has not been driven end to end in a browser, because that needs a
+  signed-in session.

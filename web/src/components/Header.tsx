@@ -1,13 +1,16 @@
+import { Zap } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
+import { useSheet } from '../lib/rpgQueries'
 import { AccountMenu } from './AccountMenu'
 import { ThemeToggle } from './ThemeToggle'
 import { XpRail } from './XpRail'
 
-export type TabKey = 'tasks' | 'record' | 'badges'
+export type TabKey = 'tasks' | 'adventure' | 'record' | 'badges'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'tasks', label: 'Quests' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'adventure', label: 'Adventure' },
   { key: 'record', label: 'Record' },
   { key: 'badges', label: 'Badges' },
 ]
@@ -34,6 +37,7 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
         </div>
 
         <div className="order-2 ml-auto flex items-center gap-2 sm:order-3">
+          <StaminaPip />
           <ThemeToggle />
           <AccountMenu />
         </div>
@@ -70,6 +74,32 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
         })}
       </nav>
     </header>
+  )
+}
+
+/**
+ * Stamina in the header, because it is the bridge between the two halves of the app:
+ * it only comes from finishing real work, and it is the only thing that buys a fight.
+ */
+function StaminaPip() {
+  const sheet = useSheet()
+
+  if (!sheet.data) return null
+
+  const { stamina } = sheet.data
+
+  return (
+    <span
+      title={`${stamina} stamina. Complete tasks to earn more.`}
+      data-testid="stamina-pip"
+      data-stamina={stamina}
+      className={`tabular hidden items-center gap-1 rounded-full border px-2 py-1 text-[11px] sm:flex ${
+        stamina > 0 ? 'border-teal/40 bg-teal/8 text-teal' : 'border-line text-ink-faint'
+      }`}
+    >
+      <Zap size={11} />
+      {stamina}
+    </span>
   )
 }
 

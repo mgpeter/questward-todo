@@ -221,6 +221,24 @@
     --mark: var(--mark-epic);
   }
 
+  /* Rarity reuses the already colourblind-validated difficulty hues plus gold, rather
+     than introducing a second palette that would need validating all over again. */
+  .rarity-common {
+    --tier: var(--ink-faint);
+  }
+  .rarity-uncommon {
+    --tier: var(--tier-easy);
+  }
+  .rarity-rare {
+    --tier: var(--tier-medium);
+  }
+  .rarity-epic {
+    --tier: var(--tier-epic);
+  }
+  .rarity-legendary {
+    --tier: var(--gold);
+  }
+
   .tier-chip {
     color: var(--tier);
     background-color: color-mix(in srgb, var(--tier) 12%, transparent);

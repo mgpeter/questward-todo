@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TodoApp.Models;
+using TodoApp.Models.Rpg;
 
 namespace TodoApp.Data;
 
@@ -12,6 +13,12 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
     public DbSet<Character> Characters => Set<Character>();
 
     public DbSet<AchievementUnlock> AchievementUnlocks => Set<AchievementUnlock>();
+
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+
+    public DbSet<Encounter> Encounters => Set<Encounter>();
+
+    public DbSet<QuestProgress> QuestProgress => Set<QuestProgress>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

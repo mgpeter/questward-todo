@@ -8,7 +8,9 @@ using Scalar.AspNetCore;
 using TodoApp.Api.Auth;
 using TodoApp.Api.Endpoints;
 using TodoApp.Api.Services;
+using TodoApp.Api.Services.Rpg;
 using TodoApp.Data;
+using TodoApp.Models.Dice;
 
 const string DevCorsPolicy = "questward-dev";
 
@@ -33,6 +35,15 @@ builder.Services.AddDbContext<TodoDbContext>((serviceProvider, options) =>
 builder.Services.AddScoped<AchievementEvaluator>();
 builder.Services.AddScoped<GamificationService>();
 builder.Services.AddScoped<UserProvisioner>();
+
+// The RPG layer. The dice roller is the only source of randomness in the domain and is
+// injected so the combat rules stay testable.
+builder.Services.AddSingleton<IDiceRoller, SecureDiceRoller>();
+builder.Services.AddScoped<CharacterSheetService>();
+builder.Services.AddScoped<LootService>();
+builder.Services.AddScoped<QuestService>();
+builder.Services.AddScoped<CombatService>();
+builder.Services.AddScoped<AdventurerService>();
 
 // Fail at startup rather than booting and rejecting every request with an opaque 401.
 builder.Services.AddOptions<Auth0Options>()
@@ -162,6 +173,7 @@ app.MapTaskEndpoints();
 app.MapCharacterEndpoints();
 app.MapAchievementEndpoints();
 app.MapStatsEndpoints();
+app.MapRpgEndpoints();
 
 // Unmatched API routes must 404 rather than fall through to the SPA shell below.
 // Deliberately anonymous: if this required authorization, an unauthenticated request to a

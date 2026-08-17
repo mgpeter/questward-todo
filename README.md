@@ -180,6 +180,43 @@ completed task also leaves its XP banked: the work still happened.
 
 ---
 
+## The adventure layer
+
+Behind the **Adventure** tab there is a small D&D-flavoured RPG: pick one of six classes,
+carry the six ability scores, fight monsters on a d20 system, collect equipment and
+complete quests.
+
+**It grants no experience, ever.** Monsters and quests pay gold and loot; your level stays
+a pure function of completed tasks. Every fight costs **Stamina**, and the only thing that
+produces Stamina is finishing a real task:
+
+| Difficulty | XP | Stamina |
+|---|---|---|
+| Easy | 10 | 1 |
+| Medium | 25 | 2 |
+| Hard | 50 | 3 |
+| Epic | 100 | 5 |
+
+Your level is a record of work done; your gear is what you did with it. The game is a sink
+for productivity rather than a substitute for it, and there is deliberately **no endpoint
+capable of moving XP** outside task completion. See DEC-012.
+
+**Classes.** Fighter (d10, Second Wind), Rogue (d8, crits on 19), Wizard (d6, some fights
+are free), Cleric (d8, rerolls its first natural 1), Ranger (d10, better loot rolls), Bard
+(d8, more gold).
+
+**The d20 core.** `d20 + modifier vs target`. A natural 20 always hits and doubles the
+damage dice; a natural 1 always misses. Every roll comes back fully itemised - the dice,
+each labelled modifier, the total and the target - so a miss reads as bad luck rather than
+an unexplained verdict. Dice go through an injectable roller, which is what makes the
+combat rules exhaustively testable.
+
+**Derived, never stored.** Armour class, attack bonus, damage and maximum hit points are
+all recomputed from class, level and equipment on every read, for the same reason level is
+derived from XP: two copies of a derived value eventually disagree.
+
+---
+
 ## Layout
 
 ```
@@ -225,11 +262,17 @@ In Development the OpenAPI document is at `/openapi/v1.json` with a browsable UI
 dotnet test
 ```
 
-106 tests: unit tests over the progression rules, plus integration tests that boot the
-real API against a throwaway Postgres container. The ones that matter most are in
-`tests/TodoApp.Tests/Isolation`, which assert that two accounts on one instance cannot
-see or touch each other's tasks, XP or badges through any path. Tests never call Auth0;
-a test authentication handler mints principals locally.
+244 tests: unit tests over the progression and combat rules, plus integration tests that
+boot the real API against a throwaway Postgres container. Tests never call Auth0; a test
+authentication handler mints principals locally.
+
+Two groups carry most of the weight:
+
+- `tests/TodoApp.Tests/Isolation` - two accounts on one instance cannot see or touch each
+  other's tasks, XP or badges through any path.
+- `Fighting_a_monster_to_death_never_moves_experience_or_level` and
+  `No_adventure_route_can_move_experience` - the guarantee the whole RPG design rests on,
+  asserted at both the service layer and through HTTP.
 
 The end-to-end scripts are destructive to task data, so run them against a development
 database. Both now need a token, since every `/api` route requires one.

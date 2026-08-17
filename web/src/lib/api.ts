@@ -1,4 +1,5 @@
 /** Typed client for the Questward API. Same-origin in production, Vite-proxied in dev. */
+import type * as Rpg from './rpg'
 
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'epic'
 export type Priority = 'low' | 'normal' | 'high'
@@ -226,4 +227,44 @@ export const api = {
   listAchievements: () => request<Achievement[]>('/api/achievements'),
 
   getStats: () => request<Stats>(`/api/stats?utcOffsetMinutes=${utcOffsetMinutes()}`),
+
+  // ------------------------------------------------------------- adventure
+  getSheet: () => request<Rpg.CharacterSheet>('/api/rpg/sheet'),
+
+  listClasses: () => request<Rpg.ClassOption[]>('/api/rpg/classes'),
+
+  chooseClass: (classKey: string) =>
+    request<Rpg.CharacterSheet>('/api/rpg/class', { method: 'PUT', ...body({ classKey }) }),
+
+  listMonsters: () => request<Rpg.Monster[]>('/api/rpg/monsters'),
+
+  startEncounter: (monsterKey: string) =>
+    request<Rpg.Encounter>('/api/rpg/encounters', { method: 'POST', ...body({ monsterKey }) }),
+
+  getActiveEncounter: () => request<Rpg.Encounter | undefined>('/api/rpg/encounters/active'),
+
+  attack: (id: string) =>
+    request<Rpg.AttackResult>(`/api/rpg/encounters/${id}/attack`, { method: 'POST' }),
+
+  flee: (id: string) =>
+    request<Rpg.Encounter>(`/api/rpg/encounters/${id}/flee`, { method: 'POST' }),
+
+  listInventory: () => request<Rpg.InventoryItem[]>('/api/rpg/inventory'),
+
+  equipItem: (id: string) =>
+    request<Rpg.EquipResult>(`/api/rpg/inventory/${id}/equip`, { method: 'POST' }),
+
+  unequipItem: (id: string) =>
+    request<Rpg.EquipResult>(`/api/rpg/inventory/${id}/unequip`, { method: 'POST' }),
+
+  sellItem: (id: string) =>
+    request<{ goldGained: number; gold: number }>(`/api/rpg/inventory/${id}`, { method: 'DELETE' }),
+
+  listQuests: () => request<Rpg.Quest[]>('/api/rpg/quests'),
+
+  claimQuest: (key: string) =>
+    request<{ goldGained: number; gold: number; item: Rpg.InventoryItem | null }>(
+      `/api/rpg/quests/${key}/claim`,
+      { method: 'POST' },
+    ),
 }
