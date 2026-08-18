@@ -47,6 +47,8 @@ public class TaskModelTests(PostgresFixture postgres) : IAsyncLifetime
         string Recurrence,
         bool AwardsProgression,
         int XpAwarded,
+        DateTimeOffset? DueDate,
+        int DaysOverdue,
         DateTimeOffset? StartedAt,
         TaskView[] Subtasks);
 
@@ -71,11 +73,12 @@ public class TaskModelTests(PostgresFixture postgres) : IAsyncLifetime
         string difficulty = "medium",
         Guid? parentId = null,
         string[]? tags = null,
-        string recurrence = "none")
+        string recurrence = "none",
+        DateTimeOffset? dueDate = null)
     {
         var response = await client.PostAsJsonAsync(
             "/api/tasks",
-            new { title, difficulty, parentId, tags, recurrence });
+            new { title, difficulty, parentId, tags, recurrence, dueDate });
 
         response.EnsureSuccessStatusCode();
 
@@ -233,96 +236,176 @@ public class TaskModelTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(Difficulty.Epic.BaseXp(), epic.XpEarned);
     }
 
+    // ---------------------------------------------------------------- recurrence
+    //
+    // Rewritten for DEC-015, which replaced the derived rollover with a spawned successor.
+    // Under the old model a repeat was ONE row that stayed stored as Completed and read back as
+    // Todo once its period elapsed, and a gate refused to pay twice inside a period. These
+    // assertions are not relaxed versions of the old ones: they describe a different mechanism,
+    // in which a completion produces the next occurrence and the finished row stays finished.
+
     [Fact]
-    public async Task A_rolled_over_daily_task_counts_as_open_again_in_the_record()
+    public async Task Completing_a_repeat_leaves_it_done_and_puts_the_next_one_on_the_board()
     {
         var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
+
         await CompleteAsync(_alice, task.Id);
 
-        var whileWithheld = await _alice.GetFromJsonAsync<StatsView>("/api/stats?utcOffsetMinutes=0");
-        Assert.Equal(0, whileWithheld!.OpenTasks);
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
 
-        await using (var db = postgres.CreateContext())
-        {
-            var row = await db.Tasks.SingleAsync(t => t.Id == task.Id);
-            row.XpEligibleFrom = DateTimeOffset.UtcNow.AddMinutes(-1);
-            await db.SaveChangesAsync();
-        }
+        var finished = Assert.Single(all!.Where(t => t.Id == task.Id));
+        Assert.True(finished.IsCompleted);
 
-        var afterRollover = await _alice.GetFromJsonAsync<StatsView>("/api/stats?utcOffsetMinutes=0");
-
-        Assert.Equal(1, afterRollover!.OpenTasks);
-
-        // Still completed: finishing it yesterday is a thing that happened.
-        Assert.Equal(1, afterRollover.CompletedTasks);
+        // The successor is a real row, not the same one wearing a different status.
+        var next = Assert.Single(all!.Where(t => t.Id != task.Id));
+        Assert.Equal("Water the plants", next.Title);
+        Assert.False(next.IsCompleted);
+        Assert.Equal("daily", next.Recurrence, ignoreCase: true);
     }
 
-    // ---------------------------------------------------------------- recurrence
+    [Fact]
+    public async Task The_successor_carries_the_due_date_a_cadence_on_from_the_last_one()
+    {
+        // Anchored on the previous DUE date, not on the completion. A weekly task due on a
+        // Monday and ticked on the Wednesday is still due the following Monday; anchoring on
+        // the completion would walk it forward through the week every time it was late.
+        var due = DateTimeOffset.UtcNow.AddDays(-2);
+        var task = await CreateAsync(
+            _alice, "Weekly report", "medium", recurrence: "weekly", dueDate: due);
+
+        await CompleteAsync(_alice, task.Id);
+
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        var next = Assert.Single(all!.Where(t => t.Id != task.Id));
+
+        Assert.NotNull(next.DueDate);
+        Assert.Equal(due.AddDays(7).UtcDateTime.Date, next.DueDate!.Value.UtcDateTime.Date);
+    }
 
     [Fact]
-    public async Task Ticking_a_daily_task_twice_in_its_period_pays_once()
+    public async Task A_repeat_with_no_due_date_gets_one_a_cadence_from_now()
     {
         var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
 
-        var first = await CompleteAsync(_alice, task.Id);
-        Assert.Equal(Difficulty.Medium.BaseXp(), first.XpGained);
+        await CompleteAsync(_alice, task.Id);
 
-        for (var i = 0; i < 5; i++)
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        var next = Assert.Single(all!.Where(t => t.Id != task.Id));
+
+        Assert.NotNull(next.DueDate);
+        Assert.Equal(DateTimeOffset.UtcNow.AddDays(1).UtcDateTime.Date, next.DueDate!.Value.UtcDateTime.Date);
+    }
+
+    [Fact]
+    public async Task A_badly_overdue_repeat_comes_back_due_in_the_future_not_the_past()
+    {
+        // Ticking off a month of missed dailies in one sitting should leave one task due
+        // tomorrow. A single cadence step from a due date thirty days gone would land the
+        // successor twenty-nine days overdue the moment it was created.
+        var due = DateTimeOffset.UtcNow.AddDays(-30);
+        var task = await CreateAsync(
+            _alice, "Water the plants", "medium", recurrence: "daily", dueDate: due);
+
+        await CompleteAsync(_alice, task.Id);
+
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        var next = Assert.Single(all!.Where(t => t.Id != task.Id));
+
+        Assert.NotNull(next.DueDate);
+        Assert.True(
+            next.DueDate!.Value > DateTimeOffset.UtcNow,
+            "successor was due " + next.DueDate + " which is already in the past");
+        Assert.Equal(0, next.DaysOverdue);
+    }
+
+    [Fact]
+    public async Task Each_completion_of_a_repeat_pays_because_each_is_its_own_task()
+    {
+        // The deliberate change of DEC-015. The old gate refused a second payout inside a
+        // period; it was protecting a boundary that never existed, because creating a task is
+        // free and unlimited, so "create an Epic task and complete it" already paid without
+        // limit. What is asserted here is that the LEDGER still balances, which is the
+        // invariant that actually matters.
+        var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
+
+        var current = task.Id;
+
+        for (var i = 0; i < 4; i++)
         {
-            var again = await CompleteAsync(_alice, task.Id);
-            Assert.Equal(0, again.XpGained);
+            var result = await CompleteAsync(_alice, current);
+            Assert.Equal(Difficulty.Medium.BaseXp(), result.XpGained);
+
+            var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+            current = all!.Single(t => !t.IsCompleted).Id;
         }
 
         var character = await CharacterAsync(_alice);
-        Assert.Equal(Difficulty.Medium.BaseXp(), character.TotalXp);
+        Assert.Equal(Difficulty.Medium.BaseXp() * 4, character.TotalXp);
+
+        await using var db = postgres.CreateContext();
+        var banked = await db.Tasks
+            .Where(t => t.Status == TaskProgress.Completed)
+            .SumAsync(t => t.XpAwarded);
+
+        Assert.Equal(banked, character.TotalXp);
     }
 
     [Fact]
-    public async Task A_daily_task_opens_again_and_pays_again_once_its_period_has_passed()
+    public async Task Reopening_a_repeat_takes_back_the_successor_it_spawned()
     {
         var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
 
         await CompleteAsync(_alice, task.Id);
-
-        // Wind the gate back rather than the clock forward: the gate is the whole
-        // mechanism, and moving time in a test proves less than moving the thing under test.
-        await using (var db = postgres.CreateContext())
-        {
-            var row = await db.Tasks.SingleAsync(t => t.Id == task.Id);
-            row.XpEligibleFrom = DateTimeOffset.UtcNow.AddMinutes(-1);
-            await db.SaveChangesAsync();
-        }
-
-        // No reopen, no nightly job: it simply reads as open again.
-        var open = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks?status=open");
-        Assert.Equal(task.Id, Assert.Single(open!).Id);
-        Assert.False(Assert.Single(open!).IsCompleted);
-
-        var tomorrow = await CompleteAsync(_alice, task.Id);
-
-        Assert.Equal(Difficulty.Medium.BaseXp(), tomorrow.XpGained);
-        Assert.Equal(Difficulty.Medium.BaseXp() * 2, tomorrow.Character.TotalXp);
-    }
-
-    [Fact]
-    public async Task Reopening_a_daily_task_hands_the_reward_back_and_lets_it_be_earned_again()
-    {
-        var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
-
-        await CompleteAsync(_alice, task.Id);
+        Assert.Equal(2, (await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks"))!.Length);
 
         (await _alice.PostAsJsonAsync($"/api/tasks/{task.Id}/reopen", new { }))
             .EnsureSuccessStatusCode();
 
-        var refunded = await CharacterAsync(_alice);
-        Assert.Equal(0, refunded.TotalXp);
+        // An accidental tick and untick must leave the list exactly as it was found, rather
+        // than a task behind.
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        var only = Assert.Single(all!);
+        Assert.Equal(task.Id, only.Id);
+        Assert.False(only.IsCompleted);
+        Assert.Equal(0, (await CharacterAsync(_alice)).TotalXp);
+    }
 
-        // An accidental tick and untick must not destroy the day's XP with no way to
-        // earn it back. The refund reopened the gate, so doing the work pays again.
-        var redone = await CompleteAsync(_alice, task.Id);
+    [Fact]
+    public async Task Reopening_leaves_a_successor_somebody_has_already_started()
+    {
+        // The sequence that broke the design this replaced. That one enforced "one live row
+        // per series" with a partial unique index, so completing A, starting its successor B
+        // and then reopening A put two live rows in one series and the write returned 500.
+        // Two live rows are fine here; what is not fine is deleting work somebody has begun.
+        var task = await CreateAsync(_alice, "Water the plants", "medium", recurrence: "daily");
 
-        Assert.Equal(Difficulty.Medium.BaseXp(), redone.XpGained);
-        Assert.Equal(Difficulty.Medium.BaseXp(), redone.Character.TotalXp);
+        await CompleteAsync(_alice, task.Id);
+
+        var successor = (await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks"))!
+            .Single(t => t.Id != task.Id);
+
+        (await _alice.PutAsJsonAsync($"/api/tasks/{successor.Id}/status", new { status = "inProgress" }))
+            .EnsureSuccessStatusCode();
+
+        var reopen = await _alice.PostAsJsonAsync($"/api/tasks/{task.Id}/reopen", new { });
+        reopen.EnsureSuccessStatusCode();
+
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        Assert.Equal(2, all!.Length);
+        Assert.Contains(all, t => t.Id == successor.Id);
+    }
+
+    [Fact]
+    public async Task A_subtask_never_spawns_a_successor()
+    {
+        var parent = await CreateAsync(_alice, "Move house");
+        var child = await CreateAsync(_alice, "Pack", parentId: parent.Id);
+
+        await CompleteAsync(_alice, child.Id);
+
+        var all = await _alice.GetFromJsonAsync<TaskView[]>("/api/tasks");
+        var top = Assert.Single(all!);
+        Assert.Single(top.Subtasks);
     }
 
     [Fact]

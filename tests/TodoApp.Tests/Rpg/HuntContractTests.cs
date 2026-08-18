@@ -551,32 +551,34 @@ public class HuntContractTests(PostgresFixture postgres)
 
         Assert.Equal(Difficulty.Medium.BaseXp(), paid.XpAwarded);
 
-        // The period rolls over, which is the only thing arranged here: the completion above
-        // wrote the gate, and this is that gate a day later.
-        paid.XpEligibleFrom = DateTimeOffset.UtcNow.AddHours(-1);
-        await harness.Db.SaveChangesAsync();
+        // The successor is the row a contract can be taken on now; the one just completed is
+        // finished for good (DEC-015). Found through the link the completion wrote, which is
+        // exact where a title match would not be.
+        Assert.NotNull(paid.SpawnedTaskId);
 
-        var contract = await AcceptAsync(harness, task.Id);
+        var successor = await harness.Db.Tasks.SingleAsync(t => t.Id == paid.SpawnedTaskId);
+
+        var contract = await AcceptAsync(harness, successor.Id);
         var before = await CharacterAsync(harness);
 
-        // The ordinary edit. UpdateTask writes exactly these two and, by its own comment,
-        // deliberately leaves Status, CompletedAt, XpAwarded and XpEligibleFrom alone.
-        var edited = await harness.Db.Tasks.SingleAsync(t => t.Id == task.Id);
+        // A completion that predates the contract, written on by hand and dressed to look
+        // exactly like a current one. Under the old model an ordinary edit could produce this
+        // state; it cannot now, which is precisely why the guard is worth a test of its own
+        // rather than being left to look like dead weight.
+        var edited = await harness.Db.Tasks.SingleAsync(t => t.Id == successor.Id);
 
-        edited.Recurrence = RecurrenceRule.None;
+        edited.Status = TaskProgress.Completed;
+        edited.CompletedAt = contract.AcceptedAt.AddHours(-1);
+        edited.XpAwarded = Difficulty.Medium.BaseXp();
         edited.UpdatedAt = DateTimeOffset.UtcNow;
         await harness.Db.SaveChangesAsync();
 
-        // The row now lies in exactly the way the old gate believed: complete, and paid.
-        Assert.True(edited.IsCompletedAt(DateTimeOffset.UtcNow));
+        // The row now lies in exactly the way the first two facts believe: complete, and paid.
+        Assert.True(edited.IsCompleted);
         Assert.True(edited.XpAwarded > 0);
 
         // Both doors into a settlement, and neither opens.
-        var repeat = await harness.Gamification.CompleteAsync(harness.UserId, task.Id, 0, default);
-
-        Assert.NotNull(repeat);
-        Assert.Equal(0, repeat.XpGained);
-        Assert.Null(await harness.Hunts.DischargeAsync(harness.UserId, task.Id, default));
+        Assert.Null(await harness.Hunts.DischargeAsync(harness.UserId, successor.Id, default));
 
         var refused = await harness.Hunts.FightAsync(harness.UserId, contract.Id, default);
 
@@ -1663,28 +1665,32 @@ public class HuntContractTests(PostgresFixture postgres)
 
         await harness.Gamification.CompleteAsync(harness.UserId, task.Id, 0, default);
 
-        // A day has passed and it is due again, which is the only thing arranged here: the
-        // completion above wrote the gate, and this is that gate a day later.
-        var live = await harness.Db.Tasks.SingleAsync(t => t.Id == task.Id);
+        // The successor is what is on the board now, and it is due tomorrow rather than a year
+        // ago however far behind the original had fallen. Nothing is arranged by hand here,
+        // which is the point: the completion itself moved the due date (DEC-015).
+        var completed = await harness.Db.Tasks.SingleAsync(t => t.Id == task.Id);
 
-        live.XpEligibleFrom = DateTimeOffset.UtcNow.AddHours(-1);
-        await harness.Db.SaveChangesAsync();
+        Assert.NotNull(completed.SpawnedTaskId);
+
+        var live = await harness.Db.Tasks.SingleAsync(t => t.Id == completed.SpawnedTaskId);
 
         var now = DateTimeOffset.UtcNow;
 
-        // What the model's own method says, quoted so the difference is on the record.
-        Assert.False(live.IsCompletedAt(now));
-        Assert.True(live.DaysOverdue(now) >= 365);
+        // What the model's own method says, quoted so the fix is on the record. It used to
+        // report 365 here, forever, and HuntService carried a second calculation to dodge it.
+        Assert.False(live.IsCompleted);
+        Assert.Equal(0, live.DaysOverdue(now));
+        Assert.True(live.DueDate > now);
 
         var board = await harness.Hunts.BoardAsync(harness.UserId, default);
-        var offer = Assert.Single(board.Offers, o => o.Task.Id == task.Id);
+        var offer = Assert.Single(board.Offers, o => o.Task.Id == live.Id);
 
         Assert.Equal(0, offer.DaysOverdue);
         Assert.Equal(BountyRules.BasePercent, BountyRules.BountyPercent(offer.DaysOverdue));
         Assert.Equal(HuntArchetypeCatalog.Drudge, offer.ArchetypeKey);
         Assert.Equal(HuntLadder.At(offer.Monster.Level).MinGold, offer.Monster.MinGold);
 
-        var contract = await AcceptAsync(harness, task.Id);
+        var contract = await AcceptAsync(harness, live.Id);
 
         Assert.Equal(0, contract.DaysOverdue);
 

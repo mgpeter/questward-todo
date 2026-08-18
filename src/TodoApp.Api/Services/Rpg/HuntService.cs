@@ -125,13 +125,11 @@ public sealed class HuntService(
             .AsNoTracking()
             .Where(t => t.UserId == userId && t.ParentId == null)
 
-            // The same predicate the task list's "open" filter uses, and it has to be: a
-            // recurring task whose period has rolled over is stored Completed and is open again.
-            .Where(t =>
-                t.Status != TaskProgress.Completed ||
-                (t.Recurrence != RecurrenceRule.None &&
-                 t.XpEligibleFrom != null &&
-                 t.XpEligibleFrom <= now))
+            // The same predicate the task list's "open" filter uses. It used to need a
+            // recurrence clause on top, because a repeat was one row that read Completed while
+            // being open again; a repeat is now its own row and the plain question is the
+            // whole question (DEC-015).
+            .Where(t => t.Status != TaskProgress.Completed)
 
             // One contract per task per window, derived rather than flagged. A contract accepted
             // in a previous period was accepted before that period's completion and does not
@@ -146,7 +144,7 @@ public sealed class HuntService(
 
             .ToListAsync(cancellationToken);
 
-        var huntable = candidates.Where(t => t.MayAwardAt(now) && !t.IsCompletedAt(now)).ToList();
+        var huntable = candidates.Where(t => t.IsProgressionBearing && !t.IsCompleted).ToList();
         var subtasks = await SubtaskCountsAsync(userId, huntable, cancellationToken);
         var standings = await StandingsAsync(userId, cancellationToken);
 
@@ -196,23 +194,19 @@ public sealed class HuntService(
 
         var now = DateTimeOffset.UtcNow;
 
-        // DEC-014's single gate, reused verbatim rather than re-derived as ParentId == null. It
-        // is false for a subtask, so splitting a task into twenty cannot mint twenty contracts,
-        // and false for a recurring task inside its own period, so a daily can be written up once
-        // a day rather than once a click.
-        if (!task.MayAwardAt(now))
+        // DEC-014's single gate, reused rather than re-derived as ParentId == null, so a task
+        // split into twenty subtasks cannot mint twenty contracts.
+        if (!task.IsProgressionBearing)
         {
             return RpgResult<HuntContractView>.Fail(
                 RpgFailure.NotHuntable,
-                task.IsProgressionBearing
-                    ? "You have already dealt with that one this time round."
-                    : "A subtask is part of a job, not a job. Take the contract on its parent.");
+                "A subtask is part of a job, not a job. Take the contract on its parent.");
         }
 
         // A contract is taken on work that is still outstanding. A finished task has nothing left
         // to promise: writing one up afterwards and discharging it on the completion that already
         // happened would be a free fight bought with no new work.
-        if (task.IsCompletedAt(now))
+        if (task.IsCompleted)
         {
             return RpgResult<HuntContractView>.Fail(
                 RpgFailure.NotHuntable, "That one is already done. There is nothing left to hunt.");
@@ -465,29 +459,22 @@ public sealed class HuntService(
     /// <remarks>
     /// Three facts, and the third is the one that makes the other two safe to trust.
     /// <para>
-    /// <c>IsCompletedAt</c> is the work being done, asked of the row rather than taken from the
+    /// <c>IsCompleted</c> is the work being done, asked of the row rather than taken from the
     /// caller. <c>XpAwarded</c> is DEC-014's own answer, snapshotted by the completion that asked
     /// it: it is written as <c>awards ? BaseXp : 0</c> and zeroed again by a reopen, so a
     /// completion that paid nothing discharges nothing.
     /// </para>
     /// <para>
-    /// <c>CompletedAt >= AcceptedAt</c> is the third, and without it the first two are two
-    /// snapshots that an ordinary edit can make stale-but-true. A daily task completed in a
-    /// previous period keeps <c>XpAwarded = 25</c> and a stored <c>Completed</c> that only
-    /// <c>StatusAt</c>'s recurrence branch masks back to Todo; setting the task's repeat to None
-    /// afterwards removes the mask and both read true with no work done in the current window.
-    /// Comparing the completion against the moment the contract was accepted refuses that
-    /// outright: a contract can only be accepted while the task reads open, so any completion
-    /// already on the row when it was written predates it and cannot discharge it.
-    /// </para>
-    /// <para>
-    /// MayAwardAt deliberately is not asked a second time here, and could not be: a paying
-    /// completion of a recurring task is exactly what closes that gate, so asking it after the
-    /// fact would refuse every recurring contract at the moment it was earned.
+    /// <c>CompletedAt >= AcceptedAt</c> is the third. It was added because the first two could
+    /// be made stale-but-true by an ordinary edit while a repeat was one row that read Completed
+    /// between periods; that row no longer exists, since a repeat now spawns its successor and
+    /// the finished row stays finished (DEC-015). The comparison stays anyway, and stays load
+    /// bearing: a contract is only ever accepted while the task reads open, so any completion
+    /// already on the row when it was written predates the contract and must not answer for it.
     /// </para>
     /// </remarks>
     private static bool IsDischargedBy(HuntContract contract, TodoTask task) =>
-        task.IsCompletedAt(DateTimeOffset.UtcNow)
+        task.IsCompleted
         && task.XpAwarded > 0
         && task.CompletedAt is { } completedAt
         && completedAt >= contract.AcceptedAt;
@@ -507,7 +494,12 @@ public sealed class HuntService(
         int subtasks,
         DateTimeOffset now)
     {
-        var daysOverdue = DaysOverdueFor(task, now);
+        // TodoTask.DaysOverdue, not a second calculation. There used to be one here, because a
+        // repeat's due date never moved and a faithfully-kept daily reported itself a year
+        // overdue, which would have paid the best-maintained task on the list the largest purse
+        // in the game. The successor carries the next due date now, so the plain reading is
+        // correct and the workaround is gone (DEC-015).
+        var daysOverdue = task.DaysOverdue(now);
 
         return new HuntContract
         {
@@ -525,40 +517,6 @@ public sealed class HuntService(
             Status = HuntContractStatus.Accepted,
             AcceptedAt = now
         };
-    }
-
-    /// <summary>
-    /// How overdue a task is for the purpose of a contract, which is not always what
-    /// <see cref="TodoTask.DaysOverdue"/> reports.
-    /// </summary>
-    /// <remarks>
-    /// A recurring task's due date is never advanced by recurrence. CompleteAsync writes Status,
-    /// CompletedAt, the two snapshots and XpEligibleFrom, and never touches DueDate, so "water
-    /// the plants", daily, due a year ago and completed faithfully every single day, reports 365
-    /// days overdue forever. A bounty keyed off that would pay the best maintained task on the
-    /// list the largest purse in the game, which is the exact opposite of what DEC-013 is for.
-    /// <para>
-    /// So a recurring task is measured from the gate that reopened it, which is the moment it
-    /// genuinely became due again. One that has never been completed has no gate and falls back
-    /// to its due date, which is the truth: it has never been done. When both exist the later one
-    /// wins, so a weekly task whose stated due date is still ahead is not overdue for having
-    /// rolled over.
-    /// </para>
-    /// <para>
-    /// Truncating, absolute UTC and never negative, matching TodoTask.DaysOverdue at both ends so
-    /// the board and the task card agree on every non-recurring row.
-    /// </para>
-    /// </remarks>
-    private static int DaysOverdueFor(TodoTask task, DateTimeOffset now)
-    {
-        var due = task.DueDate;
-
-        if (task.Recurrence != RecurrenceRule.None && task.XpEligibleFrom is { } reopened)
-        {
-            due = due is { } stated && stated > reopened ? stated : reopened;
-        }
-
-        return due is { } deadline && now > deadline ? (int)(now - deadline).TotalDays : 0;
     }
 
     private static HuntOffer Offer(

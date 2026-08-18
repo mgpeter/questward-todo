@@ -27,19 +27,27 @@ public enum RecurrenceRule
 public static class RecurrenceRules
 {
     /// <summary>
-    /// The next moment a recurring task becomes worth XP again.
+    /// The due date the next occurrence carries, one cadence on from <paramref name="from"/>.
     /// </summary>
     /// <remarks>
-    /// This is the anti-inflation gate for recurrence. Without it, a daily task is an XP
-    /// printer: complete, reopen, complete, forever. The rule is that a recurring task
-    /// pays once per period, and the eligibility stamp only ever moves forward.
+    /// Anchored on the previous DUE date where there is one, so a weekly task due every Monday
+    /// stays due on Mondays however late it is actually ticked. Only a task with no due date at
+    /// all anchors on the completion, because there is nothing else to anchor to. The caller
+    /// picks which; this only knows the cadence.
+    /// <para>
+    /// This replaced an "earliest completion that may pay again" gate. Recurrence used to hold
+    /// one row that silently reappeared, and the gate stopped a daily paying twice in a day.
+    /// It went with the model: completing a repeat now spawns a real successor, so the thing
+    /// a repeat produces is another task rather than permission to be ticked again. See
+    /// DEC-015.
+    /// </para>
     /// </remarks>
-    public static DateTimeOffset? NextEligibleAfter(RecurrenceRule rule, DateTimeOffset completedAt) =>
+    public static DateTimeOffset? Advance(RecurrenceRule rule, DateTimeOffset from) =>
         rule switch
         {
-            RecurrenceRule.Daily => completedAt.AddDays(1),
-            RecurrenceRule.Weekly => completedAt.AddDays(7),
-            RecurrenceRule.Monthly => completedAt.AddMonths(1),
+            RecurrenceRule.Daily => from.AddDays(1),
+            RecurrenceRule.Weekly => from.AddDays(7),
+            RecurrenceRule.Monthly => from.AddMonths(1),
             _ => null
         };
 

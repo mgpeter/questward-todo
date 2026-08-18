@@ -61,9 +61,8 @@ public sealed class GamificationService(
         var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
-        // Completing an already-complete task must never award a second time. Asked as of
-        // now, so a recurring task that has come round again counts as open.
-        if (task.IsCompletedAt(DateTimeOffset.UtcNow))
+        // Completing an already-complete task must never award a second time.
+        if (task.IsCompleted)
         {
             var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
@@ -93,7 +92,7 @@ public sealed class GamificationService(
         //
         // False for a subtask (splitting one task into twenty must not multiply its
         // reward) and for a recurring task completed again inside its own period.
-        var awards = task.MayAwardAt(completedAtUtc);
+        var awards = task.IsProgressionBearing;
 
         var xpGained = awards ? task.Difficulty.BaseXp() : 0;
         var staminaGained = awards ? task.Difficulty.Stamina() : 0;
@@ -104,16 +103,21 @@ public sealed class GamificationService(
         task.StaminaAwarded = staminaGained;
         task.UpdatedAt = completedAtUtc;
 
-        // Move the recurrence gate forward. Monotonic: it never moves back and is never
-        // cleared, so "set daily, complete, set none, complete, set daily" cannot mint XP.
-        if (task.Recurrence != RecurrenceRule.None)
-        {
-            var next = RecurrenceRules.NextEligibleAfter(task.Recurrence, completedAtUtc);
+        // A repeat produces the next occurrence, rather than this row quietly reappearing.
+        //
+        // The due date is what actually moves: anchored on the previous due date so a weekly
+        // task due on Mondays stays due on Mondays however late it is ticked, and on the
+        // completion only when there was no due date to anchor to. Getting that wrong is what
+        // made a faithfully-kept daily report itself a year overdue (DEC-015).
+        //
+        // Only a progression-bearing task spawns. A subtask that repeats would breed inside its
+        // parent's checklist, and a subtask cannot carry a recurrence anyway.
+        var successor = awards ? SpawnSuccessor(task, completedAtUtc) : null;
 
-            if (next is not null && (task.XpEligibleFrom is null || next > task.XpEligibleFrom))
-            {
-                task.XpEligibleFrom = next;
-            }
+        if (successor is not null)
+        {
+            db.Tasks.Add(successor);
+            task.SpawnedTaskId = successor.Id;
         }
 
         character.TotalXp += xpGained;
@@ -206,7 +210,7 @@ public sealed class GamificationService(
         var character = await GetCharacterAsync(userId, cancellationToken);
         var previousLevel = LevelCurve.LevelForXp(character.TotalXp);
 
-        if (!task.IsCompletedAt(DateTimeOffset.UtcNow))
+        if (!task.IsCompleted)
         {
             var unlockedCount = await CountUnlockedAsync(userId, cancellationToken);
 
@@ -227,14 +231,11 @@ public sealed class GamificationService(
         task.StaminaAwarded = 0;
         task.UpdatedAt = DateTimeOffset.UtcNow;
 
-        // Reopening a completion that paid hands the reward back, so the recurrence gate
-        // it closed has to open again. Otherwise an accidental tick and untick destroys
-        // the day's XP with no way to earn it back. Only when it actually paid: reopening
-        // a within-period repeat must leave the earlier payout's gate exactly where it is.
-        if (xpLost > 0)
-        {
-            task.XpEligibleFrom = null;
-        }
+        // Take the successor back with it, so an accidental tick and untick does not leave a
+        // task behind. Only if nobody has touched it: once somebody has started the next
+        // occurrence, or ticked something off inside it, it is work in progress and deleting
+        // it would throw that away to undo an unrelated click.
+        await RemoveUntouchedSuccessorAsync(task, cancellationToken);
 
         // Clamped: XP can never go negative, even if history was edited out from under us.
         character.TotalXp = Math.Max(0, character.TotalXp - xpLost);
@@ -262,6 +263,95 @@ public sealed class GamificationService(
             character.ToDto(totalUnlocked),
             LeveledDown: newLevel < previousLevel,
             previousLevel);
+    }
+
+    /// <summary>
+    /// The next occurrence of a repeating task, or null when it does not repeat.
+    /// </summary>
+    /// <remarks>
+    /// A copy rather than a reset, so the finished row stays in Done as the record of work
+    /// actually done and the new one starts clean. Subtask titles come across because a
+    /// checklist is part of what the task is; their completions do not, because those are the
+    /// part that was done.
+    /// </remarks>
+    private static TodoTask? SpawnSuccessor(TodoTask task, DateTimeOffset completedAt)
+    {
+        if (task.Recurrence == RecurrenceRule.None)
+        {
+            return null;
+        }
+
+        // Anchored on the due date where there is one. Anchoring everything on the completion
+        // would let a weekly task walk forward through the week every time it was ticked late.
+        var anchor = task.DueDate ?? completedAt;
+        var next = RecurrenceRules.Advance(task.Recurrence, anchor);
+
+        if (next is null)
+        {
+            return null;
+        }
+
+        // A due date that has already gone by helps nobody: ticking off a month of missed
+        // dailies in one sitting should leave one task due tomorrow, not thirty in the past.
+        while (next <= completedAt)
+        {
+            next = RecurrenceRules.Advance(task.Recurrence, next.Value);
+        }
+
+        return new TodoTask
+        {
+            UserId = task.UserId,
+            Title = task.Title,
+            Notes = task.Notes,
+            Difficulty = task.Difficulty,
+            Priority = task.Priority,
+            Tags = [.. task.Tags],
+            DueDate = next,
+            Recurrence = task.Recurrence,
+            SortOrder = task.SortOrder,
+            CreatedAt = completedAt,
+            UpdatedAt = completedAt
+        };
+    }
+
+    /// <summary>
+    /// Deletes the successor a completion spawned, if nobody has touched it yet.
+    /// </summary>
+    private async Task RemoveUntouchedSuccessorAsync(TodoTask task, CancellationToken cancellationToken)
+    {
+        if (task.SpawnedTaskId is not { } successorId)
+        {
+            return;
+        }
+
+        // Cleared either way. If the successor is kept because it has been started, the link
+        // has done its job and leaving it would make a later reopen delete a task that by then
+        // belongs to a different completion.
+        task.SpawnedTaskId = null;
+
+        var successor = await db.Tasks
+            .FirstOrDefaultAsync(t => t.Id == successorId && t.UserId == task.UserId, cancellationToken);
+
+        if (successor is null || successor.Status != TaskProgress.Todo || successor.StartedAt is not null)
+        {
+            return;
+        }
+
+        var touched = await db.Tasks.AnyAsync(
+            t => t.ParentId == successorId && t.Status != TaskProgress.Todo, cancellationToken);
+
+        if (touched)
+        {
+            return;
+        }
+
+        // Its own subtasks go with it. They were copied from the parent's checklist and have
+        // no meaning without it.
+        await db.Tasks
+            .Where(t => t.ParentId == successorId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        db.Tasks.Remove(successor);
     }
 
     private async Task<IReadOnlyList<AchievementDto>> PersistNewUnlocksAsync(

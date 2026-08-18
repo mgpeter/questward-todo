@@ -47,16 +47,10 @@ public static class StatsEndpoints
 
         var now = DateTimeOffset.UtcNow;
 
-        // A recurring task whose period has rolled over is stored Completed but is open
-        // again, so "open" and "overdue" have to ask what TodoTask.StatusAt asks. Completed
-        // deliberately does not: finishing it yesterday is still a thing that happened.
         var totalTasks = await mine.CountAsync(cancellationToken);
         var completedTasks = await mine.CountAsync(t => t.Status == TaskProgress.Completed, cancellationToken);
-        var open = mine.Where(t =>
-            t.Status != TaskProgress.Completed ||
-            (t.Recurrence != RecurrenceRule.None &&
-             t.XpEligibleFrom != null &&
-             t.XpEligibleFrom <= now));
+
+        var open = mine.Where(t => t.Status != TaskProgress.Completed);
 
         var openTasks = await open.CountAsync(cancellationToken);
         var overdueTasks = await open.CountAsync(
@@ -97,8 +91,6 @@ public static class StatsEndpoints
 
         return Results.Ok(new StatsDto(
             totalTasks,
-            // Counted, not subtracted. A daily task that has come round again is open and
-            // was also completed yesterday, so the two no longer sum to the total.
             openTasks,
             completedTasks,
             overdueTasks,

@@ -71,18 +71,20 @@ public class TodoTask
     public RecurrenceRule Recurrence { get; set; } = RecurrenceRule.None;
 
     /// <summary>
-    /// The earliest completion that may pay XP again. Null means always eligible.
+    /// The task this one spawned when it was completed, if it repeats.
     /// </summary>
     /// <remarks>
-    /// The anti-inflation gate for recurrence. It moves forward on a paying completion and
-    /// is never cleared by editing, so "set daily, complete, set none, complete, set daily"
-    /// is not a hundred XP for three clicks. It <i>is</i> cleared by reopening a completion
-    /// that paid, because reopening hands the XP back: leaving the gate shut there would
-    /// mean an accidental tick and untick destroyed the day's reward outright. The previous
-    /// paying completion was by definition a whole period earlier, so a fresh payout is
-    /// genuinely due.
+    /// Kept so reopening can take the successor back. Without it, complete-and-reopen leaves
+    /// a trail of rows nobody asked for.
+    /// <para>
+    /// Deliberately a plain nullable id and not one half of a unique index across the series.
+    /// An earlier design enforced "one live row per series" that way, and it broke the
+    /// ordinary path: complete A, start its successor B, then reopen A, and the series has two
+    /// live rows, the index rejects the write and reopening returns 500. Nothing here forbids
+    /// two live rows, because a started successor is a real thing somebody is doing.
+    /// </para>
     /// </remarks>
-    public DateTimeOffset? XpEligibleFrom { get; set; }
+    public Guid? SpawnedTaskId { get; set; }
 
     /// <summary>Manual ordering within the list; lower sorts first.</summary>
     public int SortOrder { get; set; }
@@ -106,38 +108,16 @@ public class TodoTask
     /// </remarks>
     public bool IsProgressionBearing => ParentId is null;
 
-    /// <summary>
-    /// Whether a completion at this moment may pay out, given recurrence.
-    /// </summary>
-    public bool MayAwardAt(DateTimeOffset moment) =>
-        IsProgressionBearing && (XpEligibleFrom is null || moment >= XpEligibleFrom.Value);
-
-    /// <summary>
-    /// The status as of a given moment, which is what the user should see.
-    /// </summary>
-    /// <remarks>
-    /// A recurring task comes back on its own. "Water the plants", ticked on Monday, is a
-    /// thing you still have to do on Tuesday, so once its period has rolled over the stored
-    /// Completed reads as Todo again. Derived rather than written by a nightly job, in
-    /// keeping with DEC-002: the eligibility stamp already holds the fact, and a scheduled
-    /// task that resets rows is a second copy of it that can be missed, run twice, or run
-    /// while the user is mid-edit.
-    /// </remarks>
-    public TaskProgress StatusAt(DateTimeOffset moment) =>
-        Status == TaskProgress.Completed
-        && Recurrence != RecurrenceRule.None
-        && XpEligibleFrom is not null
-        && moment >= XpEligibleFrom.Value
-            ? TaskProgress.Todo
-            : Status;
-
-    /// <summary>Completion as the user sees it, with recurrence rollover applied.</summary>
-    public bool IsCompletedAt(DateTimeOffset moment) =>
-        StatusAt(moment) == TaskProgress.Completed;
 
     /// <summary>Days past the due date, or zero. Drives the overdue bounty (DEC-013).</summary>
+    /// <remarks>
+    /// Honest for a repeating task now that completing one spawns a successor carrying the
+    /// next due date. It used to lie: the due date never moved, so a daily task kept
+    /// faithfully every day for a year reported itself a year overdue forever, and
+    /// HuntService carried a second overdue calculation purely to work around it.
+    /// </remarks>
     public int DaysOverdue(DateTimeOffset now) =>
-        DueDate is null || IsCompletedAt(now) || now <= DueDate.Value
+        DueDate is null || IsCompleted || now <= DueDate.Value
             ? 0
             : (int)(now - DueDate.Value).TotalDays;
 }

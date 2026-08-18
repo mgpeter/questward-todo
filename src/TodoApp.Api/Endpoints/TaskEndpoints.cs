@@ -68,23 +68,12 @@ public static class TaskEndpoints
         // all, because a checklist item torn out of its checklist means nothing.
         var query = db.Tasks.AsNoTracking().Where(t => t.UserId == user.Id && t.ParentId == null);
 
-        // A recurring task whose period has rolled over is stored Completed but is open
-        // again, so the filter has to ask the same question TodoTask.StatusAt asks. Written
-        // out in SQL rather than filtered in memory because it decides which rows come back.
         var now = DateTimeOffset.UtcNow;
 
         query = status?.ToLowerInvariant() switch
         {
-            "open" => query.Where(t =>
-                t.Status != TaskProgress.Completed ||
-                (t.Recurrence != RecurrenceRule.None &&
-                 t.XpEligibleFrom != null &&
-                 t.XpEligibleFrom <= now)),
-            "done" => query.Where(t =>
-                t.Status == TaskProgress.Completed &&
-                (t.Recurrence == RecurrenceRule.None ||
-                 t.XpEligibleFrom == null ||
-                 t.XpEligibleFrom > now)),
+            "open" => query.Where(t => t.Status != TaskProgress.Completed),
+            "done" => query.Where(t => t.Status == TaskProgress.Completed),
             _ => query
         };
 
@@ -123,7 +112,7 @@ public static class TaskEndpoints
             .ToDictionary(
                 group => group.Key,
                 group => (IReadOnlyList<TodoTask>)group
-                    .OrderBy(t => t.IsCompletedAt(now))
+                    .OrderBy(t => t.IsCompleted)
                     .ThenBy(t => t.SortOrder)
                     .ThenBy(t => t.CreatedAt)
                     .ToList());
@@ -131,8 +120,8 @@ public static class TaskEndpoints
         // Open tasks keep their manual order; completed ones show most recently finished first.
         // Sorted in memory because the two halves want different keys, and a personal list is small.
         var ordered = tasks
-            .OrderBy(t => t.IsCompletedAt(now))
-            .ThenBy(t => t.IsCompletedAt(now) ? 0 : t.SortOrder)
+            .OrderBy(t => t.IsCompleted)
+            .ThenBy(t => t.IsCompleted ? 0 : t.SortOrder)
             .ThenByDescending(t => t.CompletedAt ?? DateTimeOffset.MinValue)
             .ThenBy(t => t.CreatedAt)
             .Select(t => t.ToDto(childrenByParent.GetValueOrDefault(t.Id)))
@@ -342,7 +331,7 @@ public static class TaskEndpoints
 
         var now = DateTimeOffset.UtcNow;
 
-        if (request.Status == task.StatusAt(now))
+        if (request.Status == task.Status)
         {
             var character = await gamification.GetCharacterAsync(user.Id, cancellationToken);
             var unlocked = await gamification.CountUnlockedAsync(user.Id, cancellationToken);
@@ -383,7 +372,7 @@ public static class TaskEndpoints
                 discharged));
         }
 
-        if (task.IsCompletedAt(now))
+        if (task.IsCompleted)
         {
             var reopened = await gamification.ReopenAsync(user.Id, id, cancellationToken);
 

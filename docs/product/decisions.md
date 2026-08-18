@@ -824,3 +824,108 @@ No `ObjectiveKind` for dungeons. Phase 6 has a binding ruling that `WinHunt = 5`
 `ClearDungeon` objective would have to take 6, and that reservation has to be written down
 before either lands. Quests therefore ignore dungeons in this phase, apart from the
 ordinary `DefeatMonster`, `EarnGold` and `AcquireItem` progress every fight already makes.
+
+## 2026-08-18: A Repeat Spawns Its Successor
+
+**ID:** DEC-015
+**Status:** Accepted
+**Category:** product
+**Supersedes:** the recurrence half of DEC-014
+
+### Decision
+
+Completing a repeating task inserts the next occurrence as a **new row**, carrying a due date
+one cadence on. The completed row stays completed forever.
+
+The due date is anchored on the previous **due date** where there is one, and on the
+completion only when there is none, so a weekly task due on Mondays stays due on Mondays
+however late it is actually ticked. A successor is never created already overdue: ticking off
+a month of missed dailies in one sitting leaves one task due tomorrow, not thirty in the past.
+
+Reopening deletes the successor it spawned, but only while nobody has touched it.
+
+**There is no longer any gate on how often a repeat may pay.** Each occurrence is a task and
+each pays once.
+
+### Context
+
+DEC-014 made recurrence a derived rollover: one row that stayed stored as `Completed` and read
+back as `Todo` once `XpEligibleFrom` passed. It worked, and it had two costs that only showed
+up once the app was used.
+
+The first is that the due date never moved. `HuntService` recorded the consequence in its own
+source: "water the plants, daily, due a year ago and completed faithfully every single day,
+reports 365 days overdue forever". It carried a second overdue calculation, `DaysOverdueFor`,
+purely to stop the best-kept task on the list drawing the largest bounty in the game.
+
+The second is that a repeat was invisible as a thing to do. It sat in Done until its period
+elapsed and then quietly reappeared, so there was never a row saying "this is due on Tuesday".
+
+### The gate was protecting a boundary that never existed
+
+The obvious objection to removing the period gate is that a daily task can now be ticked
+twenty times for twenty payouts. That is true. It is also already true, and always was:
+creating a task is free and unlimited, and `Program.cs` rate-limits requests rather than
+economy, so "create an Epic task, complete it, repeat" has always paid 100 XP per two clicks.
+The recurrence gate stopped one click from doing what two clicks already did.
+
+The invariant that actually matters is untouched, and it is DEC-014's own:
+
+> At any moment, the character holds exactly the XP that its completed tasks record.
+
+Each spawned row pays once and snapshots its own `XpAwarded`, so
+`No_sequence_of_ticks_edits_and_reopens_can_unbalance_the_ledger` passes unmodified.
+
+This is a self-hosted personal todo list. The only person a farmed daily deceives is the
+person doing the farming.
+
+### Rationale
+
+Removing the gate removes the mechanism. `XpEligibleFrom`, `StatusAt`, `IsCompletedAt`,
+`MayAwardAt`'s recurrence branch, three hand-written SQL copies of the rollover predicate in
+`TaskEndpoints`, `StatsEndpoints` and `HuntService`, and `HuntService.DaysOverdueFor` are all
+deleted. `MayAwardAt` collapses into `IsProgressionBearing`, which was always the other half of
+it. **This change removes more code than it adds**, and it closes DEC-002's standing open
+question that "recurring tasks are the obvious next inflation vector" by making recurrence
+ordinary rather than special.
+
+### The successor link, and the design it is not
+
+`SpawnedTaskId` is a plain nullable id. An earlier design enforced "one live row per series"
+with a partial unique index and was rejected for breaking the ordinary path: complete A, start
+its successor B, then reopen A, and the series has two live rows, the index rejects the write
+and reopening returns 500.
+
+Nothing here forbids two live rows, because a started successor is a real thing somebody is
+doing. Reopen deletes the successor only while it is untouched, and clears the link either
+way. `Reopening_leaves_a_successor_somebody_has_already_started` walks exactly that sequence.
+
+### Consequences
+
+**Positive:**
+- A repeating task's due date is finally true, and the bounty workaround is gone.
+- The next occurrence is visible as a task, on a date, which is what a todo list is for.
+- One fewer stored fact, and one fewer predicate that every new query had to remember to
+  reproduce in SQL. DEC-014 listed that hazard as a known negative; it no longer exists.
+
+**Negative:**
+- A repeating task now generates rows forever. A daily kept for a year is 365 completed rows.
+  Nothing prunes them, and the Done column will need paging before that becomes pleasant.
+- Editing an occurrence edits that occurrence only. Changing the title of a daily changes it
+  from the next one onward and leaves history alone, which is right, but is not what somebody
+  expecting to edit "the series" will assume.
+- A repeat is farmable, deliberately. See above.
+
+### Migration
+
+`RecurrenceSpawnsSuccessor` is not mechanical. Under the old model a repeating task the user
+currently had outstanding was a row stored as `Completed`, so dropping `XpEligibleFrom` without
+a backfill would have made every one of them vanish from the list permanently. The migration
+gives each the successor it would have had, using `XpEligibleFrom` as the due date because that
+is precisely the moment the old model considered it due again.
+
+The finished row is left completed with its `XpAwarded` intact. Flipping it back to `Todo`
+would have kept the XP on a row that was no longer completed and broken the ledger invariant.
+
+Verified in both directions against a populated database, since the test fixture only ever
+migrates an empty one.

@@ -57,7 +57,7 @@ public class TodoTaskConfiguration : IEntityTypeConfiguration<TodoTask>
 
         builder.Property(t => t.Recurrence).HasColumnType("integer").IsRequired();
 
-        builder.Property(t => t.XpEligibleFrom).HasColumnType("timestamp with time zone");
+        builder.Property(t => t.SpawnedTaskId).HasColumnType("uuid");
 
         builder.Property(t => t.CompletedAt)
             .HasColumnType("timestamp with time zone");
