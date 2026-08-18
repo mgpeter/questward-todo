@@ -19,12 +19,15 @@
   --canvas-deep: #ebe3d3;
   --surface: #fffdf8;
   --surface-sunk: #efe8da;
-  --line: #e2d8c5;
-  --line-strong: #cbbda2;
+  /* Darkened alongside the dark ramp. The owner reported only the dark theme, but the
+     contrast test written for it measured this one too and found --ink-faint worse here,
+     at 3.09:1 against a near-white panel. The same 178 call sites, the same 10.5px. */
+  --line: #d0c0a2;
+  --line-strong: #a78f62;
 
   --ink: #221f19;
   --ink-muted: #6b6357;
-  --ink-faint: #9a9081;
+  --ink-faint: #7d7365;
 
   --gold: #b8801d;
   --gold-bright: #d09a2c;
@@ -50,17 +53,34 @@
   --grain-opacity: 0.035;
 }
 
+/*
+  The neutral ramp is lifted from its first draft, which was measured rather than eyeballed
+  and found wanting: --ink-faint sat at 3.40:1 on a panel while carrying 178 uses,
+  overwhelmingly at 10.5-11px. That is text, well under the size where 3:1 is permitted, so
+  it failed AA outright. Column headings, the empty-column prompts and every XP figure were
+  the casualties.
+
+  DEC-009 validated the four difficulty hues and never covered these tokens. Hues are
+  unchanged here; only lightness moves, so nothing DEC-009 checked is disturbed.
+
+  The two line tokens are deliberately NOT taken to 3:1. A global `* { border-color }` rule
+  means --line draws every edge in the app, and a 3:1 border reads as a wireframe rather than
+  a panel. --line-strong is the interactive boundary (checkboxes, the scrollbar thumb) and
+  does carry the non-text 3:1.
+
+  ContrastTests pins all of this in both themes.
+*/
 .dark {
   --canvas: #14120f;
   --canvas-deep: #0e0d0b;
-  --surface: #1d1a16;
-  --surface-sunk: #17150f;
-  --line: #322c23;
-  --line-strong: #4a4133;
+  --surface: #26221d;
+  --surface-sunk: #1b1912;
+  --line: #5b5040;
+  --line-strong: #7a6b54;
 
   --ink: #f2ece1;
   --ink-muted: #a89e8d;
-  --ink-faint: #766d5e;
+  --ink-faint: #938978;
 
   --gold: #e0ac4c;
   --gold-bright: #f2c569;

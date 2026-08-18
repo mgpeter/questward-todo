@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import type { AttackResult, CharacterSheet, Encounter, InventoryItem } from '../../lib/rpg'
 import { play } from '../../lib/sound'
 import { useAbility, useAttack, useConsumeItem, useFlee } from '../../lib/rpgQueries'
+import { useStickToBottom } from '../../lib/useStickToBottom'
 import { ConsumableTray } from './ConsumableTray'
 import { DiceRoll } from './DiceRoll'
 import { PhaseBanner, PhaseChip } from './PhaseBanner'
@@ -105,6 +106,11 @@ export function EncounterView({
 
   // Only the newest round animates; the rest of the log is history.
   const latestRound = encounter.log.length > 0 ? encounter.log[encounter.log.length - 1].round : 0
+
+  // The log reads oldest first, like a fight does, so the newest entry is the one off the
+  // bottom of the container. Follow it rather than reversing the order and making a fight
+  // read backwards.
+  const log = useStickToBottom<HTMLDivElement>(encounter.log.length)
 
   // Refusals from the round-resolving actions are worth a sentence. "You have none left" is
   // reachable by clicking a tray that is one refetch stale, and a silent no-op there reads
@@ -230,7 +236,12 @@ export function EncounterView({
           Combat log
         </h3>
 
-        <div className="max-h-96 divide-y divide-line overflow-y-auto" data-testid="combat-log">
+        <div
+          ref={log.ref}
+          onScroll={log.onScroll}
+          className="max-h-96 divide-y divide-line overflow-y-auto"
+          data-testid="combat-log"
+        >
           <AnimatePresence initial={false}>
             {encounter.log.map((roll, index) => (
               <DiceRoll
