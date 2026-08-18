@@ -1,9 +1,40 @@
-using TodoApp.Models.Dice;
+﻿using TodoApp.Models.Dice;
 
 namespace TodoApp.Models.Rpg;
 
 /// <param name="Weight">Relative chance within the table. Not a percentage; weights are summed.</param>
 public sealed record LootEntry(string ItemKey, int Weight);
+
+/// <summary>
+/// A gear a boss changes into partway through a fight.
+/// </summary>
+/// <remarks>
+/// Code-held with everything else about a monster (DEC-004), but only the name is resolved live:
+/// a row stores the number of the phase entered, and <see cref="MonsterDefinition.PhaseDefinition"/>
+/// reads the name back from here on every request, so a rename reaches fights in progress.
+/// <para>
+/// The line and the entry effects do not work that way, and a balance change has to know it. The
+/// line is composed into the combat log when the phase is entered and the log is history from
+/// then on; the effects are applied once onto that fight's own effect board, where their rounds
+/// are then spent down. So a retune reaches only fights that have not yet crossed the threshold.
+/// Re-resolving either on the read path is not the fix: it would fight the spend-on-use counter
+/// and the refresh-not-stack rule in <see cref="StatusEffects"/>.
+/// </para>
+/// </remarks>
+/// <param name="AtPercent">
+/// Entered when current hit points fall to or below this percent of the maximum. Declared from
+/// the highest threshold down, which a catalog integrity test enforces.
+/// </param>
+/// <param name="Line">The mechanical clause the log carries when the phase is entered.</param>
+/// <param name="OnEntry">
+/// Applied once, on entry. Magnitudes are fixed here rather than rolled, which is what keeps a
+/// phase change out of the blast radius of every hard-coded dice script in the suite.
+/// </param>
+public sealed record MonsterPhase(
+    int AtPercent,
+    string Name,
+    string Line,
+    IReadOnlyList<StatusEffect> OnEntry);
 
 public sealed record MonsterDefinition(
     string Key,
@@ -18,9 +49,35 @@ public sealed record MonsterDefinition(
     int MaxGold,
     /// <summary>Chance in 100 that a win drops anything at all.</summary>
     int DropChance,
-    IReadOnlyList<LootEntry> LootTable)
+    IReadOnlyList<LootEntry> LootTable,
+    /// <summary>
+    /// The gears this monster changes through, highest threshold first. Null for anything that
+    /// fights the same way all the way down.
+    /// </summary>
+    /// <remarks>
+    /// Trailing with a default on purpose, the precedent EquipmentEffects already set: every
+    /// existing construction site, tests included, keeps compiling untouched.
+    /// </remarks>
+    IReadOnlyList<MonsterPhase>? Phases = null)
 {
     public DiceExpression Damage => DiceExpression.Parse(DamageNotation);
+
+    /// <summary>
+    /// Which phase a monster on this many hit points belongs in. Zero means untouched by any
+    /// threshold.
+    /// </summary>
+    /// <remarks>
+    /// Cross-multiplied rather than dividing into a percentage, because integer division would
+    /// put a 7 hit point Giant Rat into its first phase the moment it took a scratch, while a
+    /// 132 hit point dragon rounded the other way. One rule has to hold at both ends of the
+    /// bestiary.
+    /// </remarks>
+    public int PhaseAt(int currentHitPoints) =>
+        Phases is null ? 0 : Phases.Count(p => currentHitPoints * 100 <= p.AtPercent * MaxHitPoints);
+
+    /// <summary>The definition of a phase by its stored number, or null when there is none.</summary>
+    public MonsterPhase? PhaseDefinition(int phase) =>
+        Phases is not null && phase >= 1 && phase <= Phases.Count ? Phases[phase - 1] : null;
 
     /// <summary>
     /// Monsters from two levels below the character to one level above, so the tavern always
@@ -362,6 +419,16 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.TowerShield, 2),
                 new LootEntry(ItemCatalog.GravewatchPlate, 2),
                 new LootEntry(ItemCatalog.QuarrymansGauntlets, 1)
+            ],
+            // The first boss anyone meets with a second gear, and the plainest one: it simply
+            // starts hitting harder. Level 11, so none of the exact-script tests can reach it.
+            Phases:
+            [
+                new MonsterPhase(50, "Kindled",
+                    "The Young Dragon stops testing you and draws a long breath.",
+                    [new StatusEffect(
+                        EffectKind.Empowered, EffectTarget.Monster, StatusEffects.Lasting, 2,
+                        YoungDragon)])
             ]),
 
         new(Basilisk, "Basilisk",
@@ -381,6 +448,16 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.OathkeepersMaul, 2),
                 new LootEntry(ItemCatalog.BreastplateOfDawn, 2),
                 new LootEntry(ItemCatalog.IronBand, 1)
+            ],
+            // Guarded rather than Empowered, so the fight gets longer rather than sharper. It
+            // is the answer to a player who has decided every boss is a damage race.
+            Phases:
+            [
+                new MonsterPhase(60, "Stone Skin",
+                    "The Basilisk's hide sets like rock left out in the cold.",
+                    [new StatusEffect(
+                        EffectKind.Guarded, EffectTarget.Monster, StatusEffects.Lasting, 2,
+                        Basilisk)])
             ]),
 
         new(Wyvern, "Wyvern",
@@ -400,6 +477,17 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.HeartwoodToken, 2),
                 new LootEntry(ItemCatalog.SiegeMaul, 2),
                 new LootEntry(ItemCatalog.GreatAxe, 1)
+            ],
+            // The only phase in the game that grows a round's roll count without the player
+            // having chosen it: a Weakened player rolls two d20s where they rolled one. It is
+            // called out here rather than left to be discovered, because it is the first thing
+            // in the game that makes the player themselves roll at disadvantage.
+            Phases:
+            [
+                new MonsterPhase(50, "Stooping",
+                    "The Wyvern gets above you and comes down out of the light.",
+                    [new StatusEffect(
+                        EffectKind.Weakened, EffectTarget.Player, 3, 0, Wyvern)])
             ]),
 
         new(ElderDragon, "Elder Dragon",
@@ -420,6 +508,29 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.PhilosophersInkstone, 2),
                 new LootEntry(ItemCatalog.HermitsBell, 1),
                 new LootEntry(ItemCatalog.QuarrymansGauntlets, 1)
+            ],
+            // Two gears, declared highest threshold first, which is the order PhaseAt counts in
+            // and the order the entry loop walks. The second is deliberately the only place in
+            // the bestiary that heals: at four a round it does not outpace a hitting player, it
+            // punishes a player who has stopped hitting.
+            Phases:
+            [
+                new MonsterPhase(60, "Roused",
+                    "The Elder Dragon stops treating this as an interruption.",
+                    [new StatusEffect(
+                        EffectKind.Empowered, EffectTarget.Monster, StatusEffects.Lasting, 2,
+                        ElderDragon)]),
+
+                new MonsterPhase(30, "Last Fire",
+                    "Something older than the Elder Dragon opens its eyes behind them.",
+                    [
+                        new StatusEffect(
+                            EffectKind.Regenerating, EffectTarget.Monster, StatusEffects.Lasting, 4,
+                            ElderDragon),
+                        new StatusEffect(
+                            EffectKind.Empowered, EffectTarget.Monster, StatusEffects.Lasting, 3,
+                            ElderDragon)
+                    ])
             ])
     ];
 

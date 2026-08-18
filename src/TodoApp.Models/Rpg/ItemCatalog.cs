@@ -50,6 +50,71 @@ public static class RarityRules
     public static string Describe(Rarity rarity) => rarity.ToString().ToLowerInvariant();
 }
 
+/// <summary>
+/// What one unit of a consumable does when it is used in a fight.
+/// </summary>
+/// <remarks>
+/// Every number here is fixed rather than rolled. A potion that healed 1d8 would cost a die and
+/// drag consumables into the blast radius of every hard-coded SequenceDiceRoller script in the
+/// suite, and a value the player can read before deciding is a better decision than a gamble.
+/// </remarks>
+/// <param name="Heal">Hit points restored on use, before any effect is applied.</param>
+/// <param name="Kind">Null when the item only heals.</param>
+/// <param name="Rounds">Applications the effect lasts. Deliberately not scaled by rarity.</param>
+/// <param name="Magnitude">The magnitude at Common. Rarity adds to it through <see cref="At"/>.</param>
+public sealed record ConsumableUse(
+    int Heal,
+    EffectKind? Kind,
+    EffectTarget Target,
+    int Rounds,
+    int Magnitude)
+{
+    /// <summary>This use as a given rarity rolls it.</summary>
+    /// <remarks>
+    /// Rarity buys size, never duration, so one catalog entry covers the whole range and a Rare
+    /// potion is better than a Common one with no new rule. A zero stays zero on purpose: a
+    /// Smoke Pellet's magnitude is unused and a Rare one must not start healing, and Weakened
+    /// carries no magnitude at all.
+    /// </remarks>
+    public ConsumableUse At(Rarity rarity)
+    {
+        var bonus = RarityRules.BonusFor(rarity);
+
+        return this with
+        {
+            Heal = Heal == 0 ? 0 : Heal + bonus,
+            Magnitude = Magnitude == 0 ? 0 : Magnitude + bonus
+        };
+    }
+
+    /// <summary>What the item card says this does, at the rarity that was rolled.</summary>
+    public string Describe(string monsterWord = "the monster")
+    {
+        var parts = new List<string>(2);
+
+        if (Heal > 0)
+        {
+            parts.Add($"Restores {Heal} hit points.");
+        }
+
+        if (Kind is { } kind)
+        {
+            var subject = Target == EffectTarget.Player ? "you" : monsterWord;
+
+            parts.Add(kind switch
+            {
+                EffectKind.Weakened => $"Leaves {subject} swinging at disadvantage for {Rounds} rounds.",
+                EffectKind.Empowered => $"Adds {Magnitude} to {subject} attacks and damage for {Rounds} rounds.",
+                EffectKind.Guarded => $"Makes {subject} {Magnitude} harder to hit for {Rounds} rounds.",
+                EffectKind.Poisoned => $"Poisons {subject} for {Magnitude} a round, {Rounds} rounds.",
+                _ => $"Knits {subject} back {Magnitude} a round, {Rounds} rounds."
+            });
+        }
+
+        return string.Join(" ", parts);
+    }
+}
+
 /// <param name="BonusAbility">
 /// Which ability the rarity bonus lands on. For a weapon this raises attack and damage
 /// together, which is why a rare sword feels different from a common one.
@@ -63,7 +128,17 @@ public sealed record ItemDefinition(
     bool Finesse = false,
     int ArmourBonus = 0,
     Ability? BonusAbility = null,
-    int BaseValue = 10)
+    int BaseValue = 10,
+    /// <summary>
+    /// What using one does, for a <see cref="ItemSlot.Consumable"/>. Null for everything worn.
+    /// </summary>
+    /// <remarks>
+    /// Trailing with a default on purpose, the same precedent MonsterDefinition.Phases follows:
+    /// every existing construction site, tests included, keeps compiling untouched. A catalog
+    /// integrity test holds the two in step, so a consumable can never be added without one and
+    /// a sword can never be given one.
+    /// </remarks>
+    ConsumableUse? Use = null)
 {
     public DiceExpression? Damage =>
         DamageNotation is null ? null : DiceExpression.Parse(DamageNotation);
@@ -175,6 +250,14 @@ public static class ItemCatalog
     public const string HermitsBell = "hermits-bell";
     public const string GuildSignet = "guild-signet";
     public const string EnvoysTorc = "envoys-torc";
+
+    // Phase 5 consumables. Used up rather than worn, so they never roll an affix and they
+    // stack: one row per key per rarity with a count, enforced by a partial unique index.
+    public const string DraughtOfMending = "draught-of-mending";
+    public const string VialOfSerpentsKiss = "vial-of-serpents-kiss";
+    public const string WhetstoneOil = "whetstone-oil";
+    public const string ElixirOfStone = "elixir-of-stone";
+    public const string SmokePellet = "smoke-pellet";
 
     public static IReadOnlyList<ItemDefinition> All { get; } =
     [
@@ -496,7 +579,43 @@ public static class ItemCatalog
 
         new(EnvoysTorc, "Envoy's Torc", ItemSlot.Trinket,
             "Worn so it can be read from the far end of a hall.",
-            BonusAbility: Ability.Charisma, BaseValue: 46)
+            BonusAbility: Ability.Charisma, BaseValue: 46),
+
+        // --- Phase 5 consumables ------------------------------------------------
+        // Priced above a trinket of comparable effect on purpose: a trinket is bought once and
+        // worn forever, and one of these is gone the moment it works. Deliberately absent from
+        // every monster's loot table, and a catalog test holds them out of one: a loot table's
+        // summed weight is the die size PickWeighted rolls, so an added entry would change
+        // which item an existing seeded script is handed with no change in the roll count to
+        // make the break visible.
+        new(DraughtOfMending, "Draught of Mending", ItemSlot.Consumable,
+            "Tastes of iron filings and someone else's garden.",
+            BaseValue: 30,
+            Use: new ConsumableUse(Heal: 8, Kind: null, EffectTarget.Player, Rounds: 0, Magnitude: 0)),
+
+        new(VialOfSerpentsKiss, "Vial of Serpent's Kiss", ItemSlot.Consumable,
+            "Milked from something that objected, and sold by someone who did not.",
+            BaseValue: 45,
+            Use: new ConsumableUse(
+                Heal: 0, EffectKind.Poisoned, EffectTarget.Monster, Rounds: 3, Magnitude: 3)),
+
+        new(WhetstoneOil, "Whetstone Oil", ItemSlot.Consumable,
+            "Half a minute's work and the edge remembers what it was for.",
+            BaseValue: 40,
+            Use: new ConsumableUse(
+                Heal: 0, EffectKind.Empowered, EffectTarget.Player, Rounds: 3, Magnitude: 1)),
+
+        new(ElixirOfStone, "Elixir of Stone", ItemSlot.Consumable,
+            "Thick, grey, and it settles before you can finish it.",
+            BaseValue: 40,
+            Use: new ConsumableUse(
+                Heal: 0, EffectKind.Guarded, EffectTarget.Player, Rounds: 3, Magnitude: 1)),
+
+        new(SmokePellet, "Smoke Pellet", ItemSlot.Consumable,
+            "Throw it down and be somewhere else by the time it clears.",
+            BaseValue: 35,
+            Use: new ConsumableUse(
+                Heal: 0, EffectKind.Weakened, EffectTarget.Monster, Rounds: 2, Magnitude: 0))
     ];
 
     private static readonly Dictionary<string, ItemDefinition> ByKey =

@@ -263,7 +263,8 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
         {
             // Quest rewards are guaranteed Uncommon: a fixed reward that could roll Common
             // would feel like a punishment for finishing.
-            item = loot.Grant(userId, quest.RewardItemKey, Rarity.Uncommon);
+            item = await loot.GrantAsync(
+                userId, quest.RewardItemKey, Rarity.Uncommon, cancellationToken);
         }
 
         // Deliberately absent: any change to character.TotalXp.

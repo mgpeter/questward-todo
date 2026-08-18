@@ -45,6 +45,9 @@ builder.Services.AddScoped<LootService>();
 builder.Services.AddScoped<QuestService>();
 builder.Services.AddScoped<BestiaryService>();
 builder.Services.AddScoped<CombatService>();
+// Scoped alongside CombatService on purpose: both resolve the same TodoDbContext, so the run a
+// room's fight ends is the very instance this service is holding, and the two commit together.
+builder.Services.AddScoped<DungeonService>();
 builder.Services.AddScoped<AdventurerService>();
 builder.Services.AddScoped<ShopService>();
 builder.Services.AddScoped<ForgeService>();

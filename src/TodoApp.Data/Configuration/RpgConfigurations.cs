@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TodoApp.Models;
 using TodoApp.Models.Rpg;
@@ -24,6 +24,10 @@ public class InventoryItemConfiguration : IEntityTypeConfiguration<InventoryItem
         // that AffixCatalog.Find would then have to be taught to ignore.
         builder.Property(i => i.PrefixKey).HasColumnType("varchar(40)");
         builder.Property(i => i.SuffixKey).HasColumnType("varchar(40)");
+
+        // Defaulted so the migration can add it to a populated table, which Postgres will not
+        // do for a NOT NULL column without one. Every row that already exists is one item.
+        builder.Property(i => i.Quantity).HasColumnType("integer").IsRequired().HasDefaultValue(1);
 
         builder.Property(i => i.AcquiredAt).HasColumnType("timestamp with time zone").IsRequired();
 
@@ -51,6 +55,16 @@ public class InventoryItemConfiguration : IEntityTypeConfiguration<InventoryItem
         builder.HasIndex(i => new { i.UserId, i.Slot })
             .IsUnique()
             .HasFilter("\"IsEquipped\"");
+
+        // One row per consumable per rarity, so a bag of six potions is one row with a count
+        // rather than six rows the shop and the forge each have to reason about separately.
+        // Filtered rather than global because everything worn is one row per item by design: a
+        // backpack of five identical swords is legal and Unequipped_duplicates_in_a_slot_are_fine
+        // says so. Consumables carry no affix at any rarity (AffixRules.RollableFor returns zero
+        // for the slot), so two of them can never differ by a word this key cannot see.
+        builder.HasIndex(i => new { i.UserId, i.ItemKey, i.Rarity })
+            .IsUnique()
+            .HasFilter($"\"Slot\" = {(int)ItemSlot.Consumable}");
     }
 }
 
@@ -101,7 +115,18 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
         builder.Property(e => e.GoldAwarded).HasColumnType("integer").IsRequired();
         builder.Property(e => e.BlessingUsed).HasColumnType("boolean").IsRequired();
         builder.Property(e => e.AbilityUses).HasColumnType("jsonb").IsRequired().HasDefaultValue("{}");
-        builder.Property(e => e.MonsterDisadvantageRounds).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(e => e.Effects).HasColumnType("jsonb").IsRequired().HasDefaultValue("[]");
+
+        // The high-water mark of the boss phases this fight has entered. One integer, because the
+        // phase's name is read back from the catalog by it (DEC-004). Its line and its entry
+        // effects are not read back: the line is composed into Log when the phase is entered and
+        // the effects are applied once onto Effects beside it, where their rounds are spent down.
+        builder.Property(e => e.Phase).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+
+        // Nullable, which is what lets the migration add it to a populated encounters table with
+        // no default and no backfill: every fight that already exists was taken at the tavern.
+        builder.Property(e => e.DungeonRunId).HasColumnType("uuid");
+
         builder.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
         builder.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
 
@@ -110,7 +135,18 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
             .HasForeignKey(e => e.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne<DungeonRun>()
+            .WithMany()
+            .HasForeignKey(e => e.DungeonRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(e => new { e.UserId, e.StartedAt });
+
+        // How deep a run has got is a count of its won rooms rather than a stored number
+        // (DEC-002), so this is the index that count is read through. Composite and in this
+        // order because the count is always "this run, won rooms only", and leading on the
+        // foreign key also means EF does not add a second index for the relationship above.
+        builder.HasIndex(e => new { e.DungeonRunId, e.Status });
 
         // One fight at a time. Without this, two concurrent requests could each spend one
         // stamina and open a second encounter, turning one unit of real work into two sets
@@ -118,6 +154,52 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
         builder.HasIndex(e => e.UserId)
             .IsUnique()
             .HasFilter($"\"Status\" = {(int)EncounterStatus.Active}");
+    }
+}
+
+public class DungeonRunConfiguration : IEntityTypeConfiguration<DungeonRun>
+{
+    public void Configure(EntityTypeBuilder<DungeonRun> builder)
+    {
+        builder.ToTable("dungeon_runs");
+
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(r => r.UserId).HasColumnType("uuid").IsRequired();
+        builder.Property(r => r.DungeonKey).HasColumnType("varchar(60)").IsRequired();
+
+        // The rolled chain of monster keys. jsonb for the same reason the combat log is: it is
+        // written once, always read whole, and never queried by its contents.
+        builder.Property(r => r.Rooms).HasColumnType("jsonb").IsRequired().HasDefaultValue("[]");
+
+        builder.Property(r => r.Status).HasColumnType("integer").IsRequired();
+        builder.Property(r => r.GoldAwarded).HasColumnType("integer").IsRequired();
+        builder.Property(r => r.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
+        builder.Property(r => r.EndedAt).HasColumnType("timestamp with time zone");
+
+        // Everything else about a dungeon is read from the catalog by its key (DEC-004). Named
+        // here for the same reason InventoryItem names its derived members: EF ignores a get-only
+        // property today, but the day one grows a setter it would map silently and the model
+        // would start expecting a column no migration ever wrote.
+        builder.Ignore(r => r.Dungeon);
+        builder.Ignore(r => r.IsOver);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(r => new { r.UserId, r.StartedAt });
+
+        // One run at a time, the parallel of the encounter index and there for the same reason.
+        // Two concurrent starts would otherwise each pass the service's AnyAsync check and open a
+        // run, and the loser of that race would be a run the player can never finish because the
+        // one encounter slot belongs to the other. The service check is the friendly path; this
+        // is what actually wins the race.
+        builder.HasIndex(r => r.UserId)
+            .IsUnique()
+            .HasFilter($"\"Status\" = {(int)DungeonRunStatus.Active}");
     }
 }
 

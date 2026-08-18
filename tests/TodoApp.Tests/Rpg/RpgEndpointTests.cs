@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
@@ -196,6 +196,10 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
 
         // The sheet rides along so the UI never has to refetch to update stamina or gold.
         Assert.NotNull(result.Sheet);
+
+        // A tavern fight has no run behind it, so the dungeon's slot is empty rather than
+        // absent. The two loot slots are separate because a cleared dungeon fills both.
+        Assert.Null(result.ClearReward);
     }
 
     [Fact]
@@ -445,7 +449,9 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     private sealed record ItemDto(
         Guid Id, string ItemKey, string Name, string Slot, string Rarity, bool IsEquipped,
         string? Prefix, string? Suffix, string? SetName);
-    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round);
+    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round, List<StatusEffectDto> Effects);
+
+    private sealed record StatusEffectDto(string Kind, string Target, int Rounds, int Magnitude, string Source);
     private sealed record DieDto(int Sides, int Value, bool Kept);
     private sealed record ModifierDto(string Label, int Value);
 
@@ -453,7 +459,9 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         string Actor, string Kind, List<DieDto> Dice, List<ModifierDto> Modifiers,
         int Total, int? Target, string Outcome);
 
-    private sealed record AttackDto(EncounterDto Encounter, List<RollDto> Rolls, SheetDto Sheet);
+    private sealed record AttackDto(
+        EncounterDto Encounter, List<RollDto> Rolls, ItemDto? Loot, ItemDto? ClearReward,
+        SheetDto Sheet);
     private sealed record EquipDto(SheetDto Sheet, List<ItemDto> Inventory);
     private sealed record SellDto(int GoldGained, int Gold);
     private sealed record MonsterListDto(string Key, string Name, int Level);

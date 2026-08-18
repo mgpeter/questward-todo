@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TodoApp.Data;
@@ -12,9 +13,11 @@ using TodoApp.Data;
 namespace TodoApp.Data.Migrations
 {
     [DbContext(typeof(TodoDbContext))]
-    partial class TodoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818033003_AddPhasesAndConsumables")]
+    partial class AddPhasesAndConsumables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -176,47 +179,6 @@ namespace TodoApp.Data.Migrations
                     b.ToTable("bestiary_entries", (string)null);
                 });
 
-            modelBuilder.Entity("TodoApp.Models.Rpg.DungeonRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DungeonKey")
-                        .IsRequired()
-                        .HasColumnType("varchar(60)");
-
-                    b.Property<DateTimeOffset?>("EndedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("GoldAwarded")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Rooms")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("jsonb")
-                        .HasDefaultValue("[]");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" = 0");
-
-                    b.HasIndex("UserId", "StartedAt");
-
-                    b.ToTable("dungeon_runs", (string)null);
-                });
-
             modelBuilder.Entity("TodoApp.Models.Rpg.Encounter", b =>
                 {
                     b.Property<Guid>("Id")
@@ -230,9 +192,6 @@ namespace TodoApp.Data.Migrations
 
                     b.Property<bool>("BlessingUsed")
                         .HasColumnType("boolean");
-
-                    b.Property<Guid?>("DungeonRunId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("Effects")
                         .IsRequired()
@@ -279,8 +238,6 @@ namespace TodoApp.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasFilter("\"Status\" = 0");
-
-                    b.HasIndex("DungeonRunId", "Status");
 
                     b.HasIndex("UserId", "StartedAt");
 
@@ -524,22 +481,8 @@ namespace TodoApp.Data.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("TodoApp.Models.Rpg.DungeonRun", b =>
-                {
-                    b.HasOne("TodoApp.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("TodoApp.Models.Rpg.Encounter", b =>
                 {
-                    b.HasOne("TodoApp.Models.Rpg.DungeonRun", null)
-                        .WithMany()
-                        .HasForeignKey("DungeonRunId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.HasOne("TodoApp.Models.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")

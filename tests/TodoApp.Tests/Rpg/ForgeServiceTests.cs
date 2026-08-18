@@ -148,7 +148,9 @@ public class ForgeServiceTests(PostgresFixture postgres)
         var roller = new SequenceDiceRoller();
         var loot = new LootService(harness.Db, roller);
 
-        var granted = loot.Grant(harness.UserId, ItemCatalog.SilveredBlade, Rarity.Legendary);
+        var granted = await loot.GrantAsync(
+            harness.UserId, ItemCatalog.SilveredBlade, Rarity.Legendary,
+            TestContext.Current.CancellationToken);
 
         Assert.Null(granted.PrefixKey);
         Assert.Null(granted.SuffixKey);

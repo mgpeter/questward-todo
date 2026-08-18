@@ -50,7 +50,9 @@ public sealed class ForgeService(TodoDbContext db, IDiceRoller roller)
         var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
         character.Essence += essence;
 
-        db.InventoryItems.Remove(item);
+        // One unit, not the row. Breaking down one potion out of six used to destroy the whole
+        // stack for one item's worth of essence.
+        InventoryStack.ConsumeOne(db, item);
 
         await db.SaveChangesAsync(cancellationToken);
 

@@ -263,6 +263,53 @@ public class ClassAbilityTests(PostgresFixture postgres)
         Assert.Equal(monsterBefore, result.Value.Encounter.MonsterHitPoints);
     }
 
+    /// <summary>
+    /// The Cleric's Blessing, which had no test at all until the attack path was rebuilt
+    /// around status effects.
+    /// </summary>
+    /// <remarks>
+    /// Two things are pinned here and they are separate. The first is the rule: one reroll per
+    /// fight, on the first natural 1 and no other. The second is the cost in dice, because the
+    /// reroll re-enters D20.Attack with the same mode and is therefore the one place in a round
+    /// where a perk multiplies an effect. A Weakened Cleric who fumbles spends four d20s on a
+    /// single swing, and nothing but a scripted count would notice if that quietly became two.
+    /// </remarks>
+    [Fact]
+    public async Task The_first_natural_one_of_a_fight_is_rerolled_and_only_the_first()
+    {
+        // Round one: a natural 1, rerolled into a 2 that still misses a giant rat, then the
+        // rat's own natural 1. Round two: a second natural 1, which stands, then another.
+        var script = new SequenceDiceRoller(1, 2, 1, 1, 1);
+        var roller = new RecordingDiceRoller(script);
+        var harness = await ArrangeAsync(roller, ClassCatalog.Cleric);
+
+        var start = await harness.Combat.StartAsync(harness.UserId, MonsterCatalog.GiantRat, default);
+        Assert.True(start.Ok);
+
+        var first = await harness.Combat.AttackAsync(harness.UserId, start.Value!.Id, default);
+        var firstSwing = first.Value!.Rolls.First(
+            r => r.Actor == CombatRoll.Player && r.Kind == "attack");
+
+        // The 1 is gone and the 2 is what the log carries, so the reroll's result is the one
+        // that counted rather than the fumble being merely forgiven.
+        Assert.Equal(2, Assert.Single(firstSwing.Dice).Value);
+        Assert.Equal("miss", firstSwing.Outcome);
+        Assert.True(first.Value.Encounter.BlessingUsed);
+        Assert.Equal(3, script.RollCount);
+
+        var second = await harness.Combat.AttackAsync(harness.UserId, start.Value.Id, default);
+        var secondSwing = second.Value!.Rolls.First(
+            r => r.Actor == CombatRoll.Player && r.Kind == "attack");
+
+        // Once per fight: the second natural 1 stands as a fumble.
+        Assert.Equal(1, Assert.Single(secondSwing.Dice).Value);
+        Assert.Equal("fumble", secondSwing.Outcome);
+
+        // Five d20s and nothing else: two swings, two answers, and the one reroll between them.
+        Assert.Equal(5, script.RollCount);
+        Assert.Equal([20, 20, 20, 20, 20], roller.Sides);
+    }
+
     [Fact]
     public async Task Power_attack_doubles_the_damage_dice()
     {
@@ -316,8 +363,11 @@ public class ClassAbilityTests(PostgresFixture postgres)
         Assert.Equal(2, monsterAttack.Dice.Count);
         Assert.Single(monsterAttack.Dice, d => d.Kept);
 
-        // Consumed by that counter, so it does not linger into later rounds.
-        Assert.Equal(0, mock.Value.Encounter.MonsterDisadvantageRounds);
+        // Consumed by that counter, so it does not linger into later rounds. Stated through the
+        // effect array rather than the MonsterDisadvantageRounds column it replaced: same fact,
+        // same round, new vocabulary.
+        Assert.Null(StatusEffects.Find(
+            StatusEffects.Read(mock.Value.Encounter), EffectKind.Weakened, EffectTarget.Monster));
 
         var next = await harness.Combat.AttackAsync(harness.UserId, start.Value.Id, default);
         var later = next.Value!.Rolls.FirstOrDefault(

@@ -1,5 +1,6 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
 
@@ -419,6 +420,173 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(0, bobsQuests!.Single(q => q.Key == QuestCatalog.FieldNotes).Objectives.Single().Current);
     }
 
+    /// <summary>
+    /// A run is a new table, a new set of routes and therefore a new place to leak.
+    /// </summary>
+    /// <remarks>
+    /// The dangerous one is enter: it opens a fight and spends stamina, so a missing UserId filter
+    /// would let one account burn another's stamina and drive their dungeon forward from outside.
+    /// </remarks>
+    [Fact]
+    public async Task One_users_dungeon_run_is_invisible_and_untouchable_to_another()
+    {
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+
+        // Epic tasks here, because the Sunken Warren does not open until level two.
+        await ReachDungeonLevelAsync(_alice);
+        await ReachDungeonLevelAsync(_bob);
+
+        var started = await _alice.PostAsJsonAsync(
+            "/api/rpg/dungeons", new { dungeonKey = DungeonCatalog.SunkenWarren });
+
+        started.EnsureSuccessStatusCode();
+
+        var run = await started.Content.ReadFromJsonAsync<DungeonRunDto>();
+        var bobsStaminaBefore = (await _bob.GetFromJsonAsync<SheetDto>("/api/rpg/sheet"))!.Stamina;
+
+        // 404 rather than 403, so run ids cannot be probed for existence.
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await _bob.PostAsync($"/api/rpg/dungeons/{run!.Id}/enter", null)).StatusCode);
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await _bob.PostAsync($"/api/rpg/dungeons/{run.Id}/abandon", null)).StatusCode);
+
+        // Bob's own view shows nothing, and none of his stamina went anywhere.
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await _bob.GetAsync("/api/rpg/dungeons/active")).StatusCode);
+
+        Assert.Equal(
+            bobsStaminaBefore,
+            (await _bob.GetFromJsonAsync<SheetDto>("/api/rpg/sheet"))!.Stamina);
+
+        // Alice's run is exactly where she left it.
+        var stillThere = await _alice.GetFromJsonAsync<DungeonRunDto>("/api/rpg/dungeons/active");
+
+        Assert.Equal(run.Id, stillThere!.Id);
+        Assert.Equal("active", stillThere.Status);
+        Assert.Equal(0, stillThere.Depth);
+    }
+
+    /// <summary>
+    /// A draught belongs to the bag it is in and to the fight its owner is standing in, and the
+    /// use route takes two ids, either of which could be somebody else's.
+    /// </summary>
+    /// <remarks>
+    /// Both halves are tried, because they are refused by different code: the item is scoped to
+    /// the caller in the query that finds it, and the encounter is scoped in a different query
+    /// in a different method. A leak in either one is enough, and each would look like the other
+    /// working.
+    /// <para>
+    /// What is asserted afterwards matters as much as the status codes. Using a draught is a
+    /// round, so a refusal that had got far enough to spend one would leave the victim's fight a
+    /// round further on with the monster's answering swing already taken, and there is no route
+    /// anywhere in the game that undoes a round.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task One_users_draught_cannot_be_drunk_in_anothers_fight()
+    {
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+        await GrantStaminaAsync(_alice);
+        await GrantStaminaAsync(_bob);
+
+        var alicesDraughts = await StockDraughtsAsync("auth0|alice");
+        var bobsDraughts = await StockDraughtsAsync("auth0|bob");
+
+        var alicesFight = await StartFightAsync(_alice);
+        var bobsFight = await StartFightAsync(_bob);
+
+        // Bob reaching into Alice's bag, from his own fight.
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await _bob.PostAsync(
+                $"/api/rpg/encounters/{bobsFight.Id}/use/{alicesDraughts}", null)).StatusCode);
+
+        // Bob reaching into his own bag, from Alice's fight.
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await _bob.PostAsync(
+                $"/api/rpg/encounters/{alicesFight.Id}/use/{bobsDraughts}", null)).StatusCode);
+
+        // Neither stack was opened.
+        Assert.Equal(3, await QuantityAsync(_alice, alicesDraughts));
+        Assert.Equal(3, await QuantityAsync(_bob, bobsDraughts));
+
+        // And neither fight moved, because a refused use is not a round.
+        Assert.Equal(0, (await _alice.GetFromJsonAsync<EncounterDto>("/api/rpg/encounters/active"))!.Round);
+        Assert.Equal(0, (await _bob.GetFromJsonAsync<EncounterDto>("/api/rpg/encounters/active"))!.Round);
+    }
+
+    /// <summary>
+    /// Puts a stack in a bag directly, because the shop is the only route to one and its shelf
+    /// is a function of a user id these tests cannot choose.
+    /// </summary>
+    private async Task<Guid> StockDraughtsAsync(string subject)
+    {
+        await using var db = postgres.CreateContext();
+
+        var userId = await db.Users
+            .Where(u => u.Auth0Sub == subject)
+            .Select(u => u.Id)
+            .SingleAsync(TestContext.Current.CancellationToken);
+
+        var item = new InventoryItem
+        {
+            UserId = userId,
+            ItemKey = ItemCatalog.DraughtOfMending,
+            Slot = ItemSlot.Consumable,
+            Rarity = Rarity.Common,
+            Quantity = 3
+        };
+
+        db.InventoryItems.Add(item);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return item.Id;
+    }
+
+    private static async Task<int> QuantityAsync(HttpClient client, Guid itemId)
+    {
+        var bag = (await client.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory"))!;
+
+        return Assert.Single(bag, i => i.Id == itemId).Quantity;
+    }
+
+    private static async Task<EncounterDto> StartFightAsync(HttpClient client)
+    {
+        var start = await client.PostAsJsonAsync(
+            "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+
+        start.EnsureSuccessStatusCode();
+
+        return (await start.Content.ReadFromJsonAsync<EncounterDto>())!;
+    }
+
+    /// <summary>Real work, enough of it to open the shallowest dungeon.</summary>
+    private static async Task ReachDungeonLevelAsync(HttpClient client)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var task = await CreateTaskAsync(client, $"Real work {attempt}", "epic");
+
+            await client.PostAsJsonAsync($"/api/tasks/{task.Id}/complete", new { utcOffsetMinutes = 0 });
+
+            var character = await client.GetFromJsonAsync<CharacterDto>("/api/character");
+
+            if (character!.Level >= 2)
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException("Ten Epic tasks did not reach level two.");
+    }
+
     private static async Task ChooseClassAsync(HttpClient client) =>
         (await client.PutAsJsonAsync("/api/rpg/class", new { classKey = ClassCatalog.Fighter }))
             .EnsureSuccessStatusCode();
@@ -439,9 +607,9 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
 
     private sealed record TaskDto(Guid Id, string Title, int SortOrder, bool IsCompleted);
 
-    private sealed record ItemDto(Guid Id, string ItemKey, string Name, bool IsEquipped);
+    private sealed record ItemDto(Guid Id, string ItemKey, string Name, bool IsEquipped, int Quantity);
 
-    private sealed record SheetDto(int Gold, int Essence);
+    private sealed record SheetDto(int Gold, int Essence, int Stamina);
 
     private sealed record CharacterDto(
         string Name,
@@ -469,7 +637,9 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         int TotalXp,
         List<DifficultyBreakdownDto> ByDifficulty);
 
-    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round);
+    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round, List<StatusEffectDto> Effects);
+
+    private sealed record StatusEffectDto(string Kind, string Target, int Rounds, int Magnitude, string Source);
 
     private sealed record AttackDto(EncounterDto Encounter);
 
@@ -501,4 +671,6 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         string Key, string Name, string Blurb, List<LoreFragmentDto> Fragments, int Unlocked, int Total);
 
     private sealed record LoreDto(List<LorePlaceDto> Places, int Unlocked, int Total);
+
+    private sealed record DungeonRunDto(Guid Id, string DungeonKey, string Status, int Depth);
 }

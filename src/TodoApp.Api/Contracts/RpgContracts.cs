@@ -118,6 +118,25 @@ public sealed record CombatRollDto(
         roll.Flavour);
 }
 
+/// <summary>
+/// One affliction or blessing riding a fight, as the strip renders it.
+/// </summary>
+/// <remarks>
+/// <paramref name="Kind"/> and <paramref name="Target"/> are lowercased at the mapping site the
+/// way <see cref="EncounterDto.Status"/> is, so the client reads one casing everywhere.
+/// </remarks>
+/// <param name="Rounds">
+/// Applications remaining, not rounds elapsed, which is why a chip reading "2 left" can still be
+/// spent twice inside one exchange.
+/// </param>
+/// <param name="Source">Key of whatever applied it: an ability, an item or a monster phase.</param>
+public sealed record StatusEffectDto(
+    string Kind,
+    string Target,
+    int Rounds,
+    int Magnitude,
+    string Source);
+
 public sealed record EncounterDto(
     Guid Id,
     string MonsterKey,
@@ -126,6 +145,19 @@ public sealed record EncounterDto(
     int MonsterMaxHitPoints,
     string Status,
     int Round,
+    /// <summary>The highest boss phase this fight has entered. Zero for anything with none.</summary>
+    int Phase,
+    /// <param name="PhaseName">
+    /// The catalog name of that phase, so the client can label the fight without knowing the
+    /// thresholds. Null until a phase has been entered.
+    /// </param>
+    string? PhaseName,
+    /// <param name="Effects">
+    /// Both combatants' afflictions and blessings, in one array. Without it the client cannot
+    /// show why a swing is suddenly rolled at disadvantage, and the rule change a boss phase
+    /// announces would be invisible for the rest of the fight.
+    /// </param>
+    IReadOnlyList<StatusEffectDto> Effects,
     int GoldAwarded,
     IReadOnlyList<CombatRollDto> Log,
     DateTimeOffset StartedAt,
@@ -163,8 +195,24 @@ public sealed record InventoryItemDto(
     int AffixSlots,
     int SalvageValue,
     int ImbueCost,
-    int ReforgeCost);
+    int ReforgeCost,
+    /// <summary>
+    /// How many of this item the row holds. One for everything worn; a consumable stacks.
+    /// </summary>
+    int Quantity,
+    /// <summary>
+    /// What using one does, at this row's rarity. Null for anything that is not a consumable, so
+    /// the client can tell a usable item from a worn one without a slot lookup.
+    /// </summary>
+    string? UseDescription);
 
+/// <param name="Loot">What the monster itself dropped, or null when it dropped nothing.</param>
+/// <param name="ClearReward">
+/// The dungeon's guaranteed reward, on the round that cleared the last room. Its own member
+/// rather than folded into <paramref name="Loot"/> because a clear round can hand over two
+/// items, and the one that reported a single slot showed nothing at all on the common case
+/// where the boss's own drop failed its roll while the run still paid out.
+/// </param>
 public sealed record AttackResponse(
     EncounterDto Encounter,
     IReadOnlyList<CombatRollDto> Rolls,
@@ -172,8 +220,50 @@ public sealed record AttackResponse(
     int PlayerMaxHitPoints,
     int GoldAwarded,
     InventoryItemDto? Loot,
+    InventoryItemDto? ClearReward,
     IReadOnlyList<QuestAdvanceDto> QuestsAdvanced,
     CharacterSheetDto Sheet);
+
+/// <param name="StaminaPerRoom">One fight's worth, because a room is one fight.</param>
+/// <param name="TotalStaminaCost">
+/// What the whole run costs, spelled out rather than left to the client to multiply. A five room
+/// run is five units of real work (DEC-012), and the screen that sells the run should say so
+/// before it is started rather than after the fourth room refuses to open.
+/// </param>
+public sealed record DungeonDto(
+    string Key,
+    string Name,
+    string Blurb,
+    int Level,
+    int Rooms,
+    string BossKey,
+    string BossName,
+    int ClearGold,
+    string RewardFloor,
+    int StaminaPerRoom,
+    int TotalStaminaCost);
+
+/// <param name="State">"cleared", "current" for the room to enter next, or "ahead".</param>
+public sealed record DungeonRoomDto(int Index, string MonsterKey, string MonsterName, string State);
+
+/// <param name="Depth">
+/// Rooms won, derived from the encounters rather than stored (DEC-002). Also the index of the
+/// room to enter next, which is all a reloaded client needs to pick the run back up.
+/// </param>
+/// <param name="Encounter">The fight in progress, or null when the next room is unopened.</param>
+public sealed record DungeonRunDto(
+    Guid Id,
+    string DungeonKey,
+    string Name,
+    string Status,
+    IReadOnlyList<DungeonRoomDto> Rooms,
+    int Depth,
+    int GoldAwarded,
+    EncounterDto? Encounter,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? EndedAt);
+
+public sealed record StartDungeonRequest(string DungeonKey);
 
 public sealed record QuestAdvanceDto(string Key, string Name, string Progress, bool JustCompleted);
 

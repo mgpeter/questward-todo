@@ -115,6 +115,57 @@ public static class RpgMapping
         monster.MaxGold,
         CombatService.StaminaPerEncounter);
 
+    public static DungeonDto ToDto(this DungeonDefinition dungeon) => new(
+        dungeon.Key,
+        dungeon.Name,
+        dungeon.Blurb,
+        dungeon.Level,
+        dungeon.Rooms,
+        dungeon.BossKey,
+        dungeon.Boss?.Name ?? dungeon.BossKey,
+        dungeon.ClearGold,
+        RarityRules.Describe(dungeon.RewardFloor),
+        CombatService.StaminaPerEncounter,
+        dungeon.Rooms * CombatService.StaminaPerEncounter);
+
+    /// <summary>
+    /// A run as the dungeon screen renders it, rooms and all.
+    /// </summary>
+    /// <remarks>
+    /// The room names come from the catalog by key (DEC-004), so a retuned monster is renamed in
+    /// every run in progress at once, and a key retired from the bestiary reads as its own key
+    /// rather than as an empty label.
+    /// </remarks>
+    public static DungeonRunDto ToDto(this DungeonRunView view) => new(
+        view.Run.Id,
+        view.Run.DungeonKey,
+        view.Run.Dungeon?.Name ?? view.Run.DungeonKey,
+        view.Run.Status.ToString().ToLowerInvariant(),
+        [.. view.Rooms.Select((key, index) => new DungeonRoomDto(
+            index,
+            key,
+            MonsterCatalog.Find(key)?.Name ?? key,
+            RoomState(index, view.Depth, view.Run.IsOver)))],
+        view.Depth,
+        view.Run.GoldAwarded,
+        view.Encounter?.ToDto(),
+        view.Run.StartedAt,
+        view.Run.EndedAt);
+
+    /// <summary>
+    /// Where a room sits relative to the player.
+    /// </summary>
+    /// <remarks>
+    /// A finished run has no current room, whichever way it finished. On a failed or abandoned run
+    /// the room that ended it reads as ahead, which is the truth: it was never won.
+    /// </remarks>
+    private static string RoomState(int index, int depth, bool runIsOver) => index switch
+    {
+        _ when index < depth => "cleared",
+        _ when index == depth && !runIsOver => "current",
+        _ => "ahead"
+    };
+
     public static EncounterDto ToDto(this Encounter encounter)
     {
         var monster = encounter.Monster;
@@ -127,11 +178,34 @@ public static class RpgMapping
             monster?.MaxHitPoints ?? encounter.MonsterHitPoints,
             encounter.Status.ToString().ToLowerInvariant(),
             encounter.Round,
+            encounter.Phase,
+            // Looked up from the catalog by the stored number (DEC-004), which is also why a
+            // phase retired from the catalog reads as no name rather than as a stale one.
+            monster?.PhaseDefinition(encounter.Phase)?.Name,
+            // Pruned on the way out, so an effect spent down to nothing in the round just
+            // resolved cannot be rendered as still riding the fight.
+            [.. StatusEffects.Prune(StatusEffects.Read(encounter)).Select(ToDto)],
             encounter.GoldAwarded,
             CombatService.ReadLog(encounter).Select(CombatRollDto.From).ToList(),
             encounter.StartedAt,
             encounter.EndedAt);
     }
+
+    /// <summary>
+    /// One effect as the strip renders it.
+    /// </summary>
+    /// <remarks>
+    /// Both enums are lowercased here rather than sent as their member names, matching
+    /// <see cref="EncounterDto.Status"/> and <see cref="InventoryItemDto.Slot"/>. The client
+    /// keys its icons and its colours off these two strings, so one producer sending PascalCase
+    /// would silently render an unlabelled chip rather than fail.
+    /// </remarks>
+    private static StatusEffectDto ToDto(StatusEffect effect) => new(
+        effect.Kind.ToString().ToLowerInvariant(),
+        effect.Target.ToString().ToLowerInvariant(),
+        effect.Rounds,
+        effect.Magnitude,
+        effect.Source);
 
     public static InventoryItemDto ToDto(this InventoryItem item)
     {
@@ -168,7 +242,10 @@ public static class RpgMapping
             AffixRules.RollableFor(item.Slot, item.Rarity),
             ForgeRules.EssenceFor(item),
             ForgeRules.ImbueCost(item.Rarity),
-            ForgeRules.ReforgeCost(item.Rarity));
+            ForgeRules.ReforgeCost(item.Rarity),
+            item.Quantity,
+            // At the rolled rarity, not at Common, so the card says what this row actually does.
+            definition?.Use?.At(item.Rarity).Describe());
     }
 
     public static QuestDto ToDto(this QuestView quest) => new(

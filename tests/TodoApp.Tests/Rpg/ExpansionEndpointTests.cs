@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using TodoApp.Models.Rpg;
@@ -585,7 +585,9 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         string? Prefix, string? Suffix, string? SetName, int AffixSlots,
         int SalvageValue, int ImbueCost, int ReforgeCost);
     private sealed record LogDto(string Kind, string Text);
-    private sealed record EncounterDto(Guid Id, string Status, int Round, List<LogDto> Log);
+    private sealed record EncounterDto(Guid Id, string Status, int Round, List<LogDto> Log, List<StatusEffectDto> Effects);
+
+    private sealed record StatusEffectDto(string Kind, string Target, int Rounds, int Magnitude, string Source);
     private sealed record AttackDto(EncounterDto Encounter, SheetDto Sheet);
     private sealed record SummaryDto(int Fought, int Won, int Lost, int Fled, int GoldEarned);
     private sealed record ChronicleDto(SummaryDto Summary, List<EncounterDto> Encounters);

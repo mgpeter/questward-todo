@@ -337,6 +337,34 @@ export const api = {
       method: 'POST',
     }),
 
+  /**
+   * Drinks or throws one of a stack. Resolves a whole round, so it answers the same shape
+   * an attack does and the encounter view can treat all three actions identically.
+   */
+  useItem: (encounterId: string, itemId: string) =>
+    request<Rpg.AttackResult>(`/api/rpg/encounters/${encounterId}/use/${itemId}`, {
+      method: 'POST',
+    }),
+
+  /** Only what the character's level has unlocked. A dungeon is never retired afterwards. */
+  listDungeons: () => request<Rpg.Dungeon[]>('/api/rpg/dungeons'),
+
+  startDungeon: (dungeonKey: string) =>
+    request<Rpg.DungeonRun>('/api/rpg/dungeons', { method: 'POST', ...body({ dungeonKey }) }),
+
+  /**
+   * The whole of what a reloaded client needs to pick a run back up: the rolled chain, how
+   * deep it got, and the fight in progress if a room is open. Undefined on 204.
+   */
+  getActiveDungeonRun: () => request<Rpg.DungeonRun | undefined>('/api/rpg/dungeons/active'),
+
+  /** Opens the next room, charging one stamina. The run comes back with the new fight on it. */
+  enterRoom: (id: string) =>
+    request<Rpg.DungeonRun>(`/api/rpg/dungeons/${id}/enter`, { method: 'POST' }),
+
+  abandonDungeonRun: (id: string) =>
+    request<Rpg.DungeonRun>(`/api/rpg/dungeons/${id}/abandon`, { method: 'POST' }),
+
   getChronicle: (limit = 20) => request<Rpg.Chronicle>(`/api/rpg/encounters?limit=${limit}`),
 
   rest: () => request<Rpg.RestResult>('/api/rpg/rest', { method: 'POST' }),

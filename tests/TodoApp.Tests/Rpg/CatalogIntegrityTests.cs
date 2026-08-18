@@ -459,4 +459,140 @@ public class CatalogIntegrityTests
             Assert.Equal(ItemSlot.Armour, ItemCatalog.Find(c.StartingArmourKey)!.Slot);
         });
     }
+
+    // ---- boss phases --------------------------------------------------------
+
+    /// <summary>
+    /// Highest threshold first, which is the order <see cref="MonsterDefinition.PhaseAt"/>
+    /// counts in and the order the entry loop walks.
+    /// </summary>
+    /// <remarks>
+    /// Declared the other way round, PhaseAt still counts the same number of thresholds crossed,
+    /// so nothing throws: the fight would simply enter the wrong phase, name it after another
+    /// one and apply its effects. A silent mis-tune rather than a failure, which is exactly the
+    /// kind of thing a catalog test is for.
+    /// </remarks>
+    [Fact]
+    public void Boss_phases_are_declared_from_the_highest_threshold_down()
+    {
+        Assert.All(MonsterCatalog.All.Where(m => m.Phases is not null), monster =>
+        {
+            var thresholds = monster.Phases!.Select(p => p.AtPercent).ToList();
+
+            Assert.Equal(thresholds.OrderByDescending(t => t), thresholds);
+
+            // Two phases at the same percent would both be entered by one blow and the second
+            // would have no threshold of its own to mean anything.
+            Assert.Equal(thresholds.Count, thresholds.Distinct().Count());
+        });
+    }
+
+    /// <summary>
+    /// A hundred percent would fire before a blow had landed, and zero only on a corpse.
+    /// </summary>
+    [Fact]
+    public void Every_phase_threshold_sits_between_one_and_ninety_nine()
+    {
+        Assert.All(MonsterCatalog.All.Where(m => m.Phases is not null), monster =>
+            Assert.All(monster.Phases!, phase =>
+                Assert.InRange(phase.AtPercent, 1, 99)));
+    }
+
+    [Fact]
+    public void Every_phase_says_something_and_does_something()
+    {
+        Assert.All(MonsterCatalog.All.Where(m => m.Phases is not null), monster =>
+            Assert.All(monster.Phases!, phase =>
+            {
+                Assert.NotEmpty(phase.Name);
+                Assert.NotEmpty(phase.Line);
+
+                // A phase with no entry effect is narration wearing a mechanic's clothes.
+                Assert.NotEmpty(phase.OnEntry);
+
+                // Lasting rather than an arbitrary large number, and never zero: an effect
+                // applied for no rounds is pruned before the monster ever reads it.
+                Assert.All(phase.OnEntry, e => Assert.InRange(e.Rounds, 1, StatusEffects.Lasting));
+            }));
+    }
+
+    /// <summary>
+    /// The line is written out rather than templated, so it must not carry the flavour
+    /// catalog's token: nothing substitutes it on this path and the player would read the
+    /// braces.
+    /// </summary>
+    [Fact]
+    public void No_phase_line_carries_the_flavour_token() =>
+        Assert.All(MonsterCatalog.All.Where(m => m.Phases is not null), monster =>
+            Assert.All(monster.Phases!, phase =>
+                Assert.DoesNotContain(FlavourCatalog.MonsterToken, phase.Line, StringComparison.Ordinal)));
+
+    // ---- consumables --------------------------------------------------------
+
+    /// <summary>
+    /// The slot and the use move together in both directions.
+    /// </summary>
+    /// <remarks>
+    /// A consumable without a use is an item the use endpoint refuses and the shop still sells.
+    /// A sword with one is worse: nothing would ever read it, so the effect would be paid for
+    /// and never delivered.
+    /// </remarks>
+    [Fact]
+    public void Every_consumable_has_a_use_and_nothing_else_does()
+    {
+        Assert.All(ItemCatalog.All, item => Assert.Equal(
+            item.Slot == ItemSlot.Consumable,
+            item.Use is not null));
+
+        // The arm exists at all, so the rest of the phase's tests are testing something.
+        Assert.Contains(ItemCatalog.All, i => i.Slot == ItemSlot.Consumable);
+    }
+
+    [Fact]
+    public void Every_consumable_actually_does_something()
+    {
+        Assert.All(ItemCatalog.All.Where(i => i.Slot == ItemSlot.Consumable), item =>
+        {
+            var use = item.Use!;
+
+            // Neither a heal nor an effect is a potion that costs a round and buys nothing.
+            Assert.True(use.Heal > 0 || use.Kind is not null, item.Key);
+
+            // An effect for zero rounds is pruned before anything reads it.
+            if (use.Kind is not null)
+            {
+                Assert.True(use.Rounds > 0, item.Key);
+            }
+
+            Assert.NotEmpty(use.Describe());
+        });
+    }
+
+    /// <summary>
+    /// Consumables stay off every loot table, and this is the test that keeps them there.
+    /// </summary>
+    /// <remarks>
+    /// Not a style rule. A table's summed weight is the die size LootService.PickWeighted rolls,
+    /// so adding an entry changes which item an existing seeded script is handed, with no change
+    /// in the roll count to make the break visible. There is a second reason as well: the drop
+    /// path adds its item with a bare Add rather than through InventoryStack, so a consumable on
+    /// a table would lose to the stacking index on the second one that dropped.
+    /// </remarks>
+    [Fact]
+    public void No_loot_table_can_drop_a_consumable()
+    {
+        Assert.All(MonsterCatalog.All, monster =>
+            Assert.All(monster.LootTable, entry =>
+                Assert.NotEqual(ItemSlot.Consumable, ItemCatalog.Find(entry.ItemKey)!.Slot)));
+    }
+
+    /// <summary>The same rule, for the other unstacked grant path.</summary>
+    [Fact]
+    public void No_quest_rewards_a_consumable()
+    {
+        Assert.All(QuestCatalog.All.Where(q => q.RewardItemKey is not null), quest =>
+            Assert.NotEqual(
+                ItemSlot.Consumable,
+                ItemCatalog.Find(quest.RewardItemKey)!.Slot));
+    }
 }

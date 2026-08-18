@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
@@ -281,7 +281,9 @@ public class BestiaryEndpointTests(PostgresFixture postgres) : IAsyncLifetime
 
     private sealed record TaskDto(Guid Id);
     private sealed record CharacterDto(int Level, int TotalXp);
-    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round);
+    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round, List<StatusEffectDto> Effects);
+
+    private sealed record StatusEffectDto(string Kind, string Target, int Rounds, int Magnitude, string Source);
     private sealed record AttackDto(EncounterDto Encounter);
 
     private sealed record BestiaryEntryDto(

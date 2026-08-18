@@ -20,6 +20,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<Encounter> Encounters => Set<Encounter>();
 
+    public DbSet<DungeonRun> DungeonRuns => Set<DungeonRun>();
+
     public DbSet<QuestProgress> QuestProgress => Set<QuestProgress>();
 
     public DbSet<BestiaryEntry> BestiaryEntries => Set<BestiaryEntry>();

@@ -16,6 +16,7 @@ import {
   affixesInForce,
   canImbue,
   canReforge,
+  isConsumable,
   type CharacterSheet,
   type InventoryItem,
   type SetProgress,
@@ -333,6 +334,10 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
       <ul className="space-y-2">
         {items.map((item) => {
           const free = item.affixSlots - affixesInForce(item)
+          // A consumable is a stack rather than a thing: it is never worn, and selling or
+          // breaking one down spends a single unit off the row instead of the whole pile.
+          const usable = isConsumable(item)
+          const one = item.quantity > 1 ? ' one of them' : ''
 
           return (
             <motion.li
@@ -358,6 +363,14 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                   <span className="tier-chip rounded-full px-2 py-0.5 text-[10px] font-medium capitalize">
                     {item.rarity}
                   </span>
+                  {item.quantity > 1 && (
+                    <span
+                      className="tabular rounded-full border border-line px-2 py-0.5 text-[10px] font-medium whitespace-nowrap text-ink-muted"
+                      data-testid="item-quantity"
+                    >
+                      x{item.quantity}
+                    </span>
+                  )}
                   {item.isEquipped && (
                     <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-gold">
                       Equipped
@@ -375,6 +388,12 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                     </span>
                   ))}
                 </p>
+
+                {usable && (
+                  <p className="mt-1 text-[11.5px] leading-snug text-teal" data-testid="item-use">
+                    {item.useDescription}
+                  </p>
+                )}
 
                 {(item.affixSlots > 0 || item.setName) && (
                   <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
@@ -401,15 +420,19 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => equip.mutate({ id: item.id, equip: !item.isEquipped })}
-                  disabled={equip.isPending}
-                  data-testid={item.isEquipped ? 'unequip' : 'equip'}
-                  className={`${ACTION} text-ink-muted hover:border-gold hover:text-gold`}
-                >
-                  {item.isEquipped ? 'Remove' : 'Equip'}
-                </button>
+                {/* Nothing wears a potion, and the server refuses the call. A button that
+                    could only ever produce an error is worse than no button. */}
+                {!usable && (
+                  <button
+                    type="button"
+                    onClick={() => equip.mutate({ id: item.id, equip: !item.isEquipped })}
+                    disabled={equip.isPending}
+                    data-testid={item.isEquipped ? 'unequip' : 'equip'}
+                    className={`${ACTION} text-ink-muted hover:border-gold hover:text-gold`}
+                  >
+                    {item.isEquipped ? 'Remove' : 'Equip'}
+                  </button>
+                )}
 
                 {canImbue(item) && (
                   <button
@@ -444,7 +467,7 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                     type="button"
                     onClick={() => sell.mutate(item.id)}
                     disabled={sell.isPending}
-                    title={`Sell for ${item.sellValue} gold`}
+                    title={`Sell${one} for ${item.sellValue} gold`}
                     data-testid="sell"
                     className={`${ACTION} text-ink-faint hover:border-gold hover:text-gold`}
                   >
@@ -457,7 +480,7 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                     type="button"
                     onClick={() => salvage.mutate(item.id)}
                     disabled={salvage.isPending}
-                    title={`Break it down for ${item.salvageValue} essence. The item is destroyed.`}
+                    title={`Break${one ? ' one' : ' it'} down for ${item.salvageValue} essence. It is destroyed.`}
                     data-testid="salvage"
                     className={`${ACTION} text-ink-faint hover:border-rose hover:text-rose`}
                   >

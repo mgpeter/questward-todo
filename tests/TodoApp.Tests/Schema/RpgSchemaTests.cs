@@ -83,6 +83,146 @@ public class RpgSchemaTests(PostgresFixture postgres)
         Assert.Equal(2, await db.InventoryItems.CountAsync(i => i.IsEquipped));
     }
 
+    /// <summary>
+    /// One row per consumable per rarity, enforced by the database rather than by the services.
+    /// </summary>
+    /// <remarks>
+    /// The shop and the loot service both acquire items, and both used to insert directly. Two
+    /// rows for the same potion would each carry their own count, so the bag would show the same
+    /// item twice and spending from one would leave the other untouched. Application logic loses
+    /// this race and the database does not, which is the same reasoning the equipped-slot index
+    /// rests on.
+    /// </remarks>
+    [Fact]
+    public async Task A_consumable_gets_one_row_per_rarity_and_no_more()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.InventoryItems.Add(new InventoryItem
+        {
+            UserId = alice.Id, ItemKey = ItemCatalog.DraughtOfMending,
+            Slot = ItemSlot.Consumable, Rarity = Rarity.Common, Quantity = 6
+        });
+        await db.SaveChangesAsync();
+
+        db.InventoryItems.Add(new InventoryItem
+        {
+            UserId = alice.Id, ItemKey = ItemCatalog.DraughtOfMending,
+            Slot = ItemSlot.Consumable, Rarity = Rarity.Common, Quantity = 1
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task The_same_potion_at_another_rarity_is_a_different_item()
+    {
+        // The rarity is part of the key because it is part of what the item does: a Rare
+        // Draught of Mending heals more than a Common one, so merging them would silently
+        // upgrade or downgrade whichever stack lost.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+        var bob = await postgres.CreateUserAsync("test|bob");
+
+        await using var db = postgres.CreateContext();
+
+        foreach (var rarity in new[] { Rarity.Common, Rarity.Uncommon, Rarity.Rare })
+        {
+            db.InventoryItems.Add(new InventoryItem
+            {
+                UserId = alice.Id, ItemKey = ItemCatalog.DraughtOfMending,
+                Slot = ItemSlot.Consumable, Rarity = rarity, Quantity = 2
+            });
+        }
+
+        // And the key is per user, or Alice holding a potion would stop Bob ever holding one.
+        db.InventoryItems.Add(new InventoryItem
+        {
+            UserId = bob.Id, ItemKey = ItemCatalog.DraughtOfMending,
+            Slot = ItemSlot.Consumable, Rarity = Rarity.Common, Quantity = 1
+        });
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(4, await db.InventoryItems.CountAsync(i => i.Slot == ItemSlot.Consumable));
+    }
+
+    /// <summary>
+    /// The stacking index is filtered on the slot, so nothing worn is touched by it.
+    /// </summary>
+    /// <remarks>
+    /// Unfiltered it would forbid a backpack of five identical swords, which
+    /// <see cref="Unequipped_duplicates_in_a_slot_are_fine"/> says is legal and which every
+    /// existing bag relies on.
+    /// </remarks>
+    [Fact]
+    public async Task Duplicate_gear_is_still_allowed_beside_the_stacking_index()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        for (var i = 0; i < 4; i++)
+        {
+            db.InventoryItems.Add(new InventoryItem
+            {
+                UserId = alice.Id, ItemKey = ItemCatalog.GreatAxe,
+                Slot = ItemSlot.Weapon, Rarity = Rarity.Common
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var rows = await db.InventoryItems
+            .Where(i => i.ItemKey == ItemCatalog.GreatAxe)
+            .ToListAsync();
+
+        Assert.Equal(4, rows.Count);
+
+        // And the default the migration wrote is one, so every existing row means one item.
+        Assert.All(rows, r => Assert.Equal(1, r.Quantity));
+    }
+
+    [Fact]
+    public async Task Encounter_phase_and_item_quantity_round_trip()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using (var write = postgres.CreateContext())
+        {
+            write.Encounters.Add(new Encounter
+            {
+                UserId = alice.Id, MonsterKey = MonsterCatalog.ElderDragon,
+                MonsterHitPoints = 30, Status = EncounterStatus.Active, Phase = 2
+            });
+
+            write.InventoryItems.Add(new InventoryItem
+            {
+                UserId = alice.Id, ItemKey = ItemCatalog.VialOfSerpentsKiss,
+                Slot = ItemSlot.Consumable, Rarity = Rarity.Rare, Quantity = 7
+            });
+
+            await write.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+
+        var encounter = await db.Encounters.SingleAsync(e => e.UserId == alice.Id);
+        var vials = await db.InventoryItems.SingleAsync(i => i.UserId == alice.Id);
+
+        Assert.Equal(2, encounter.Phase);
+        Assert.Equal(7, vials.Quantity);
+
+        // The name of the phase is not stored anywhere. It comes back from the catalog, keyed
+        // by the one integer that is (DEC-004).
+        Assert.Equal("Last Fire", encounter.Monster!.PhaseDefinition(encounter.Phase)!.Name);
+    }
+
     [Fact]
     public async Task Only_one_encounter_can_be_active_at_a_time()
     {
@@ -135,6 +275,158 @@ public class RpgSchemaTests(PostgresFixture postgres)
         await db.SaveChangesAsync();
 
         Assert.Equal(4, await db.Encounters.CountAsync(e => e.UserId == alice.Id));
+    }
+
+    [Fact]
+    public async Task Only_one_dungeon_run_can_be_active_at_a_time()
+    {
+        // The parallel of the encounter index, and there for the same reason. Two concurrent
+        // POST /dungeons would otherwise each pass the service's check and open a run, and the
+        // loser could never be finished because the one encounter slot belongs to the other.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.DungeonRuns.Add(new DungeonRun
+        {
+            UserId = alice.Id, DungeonKey = DungeonCatalog.SunkenWarren,
+            Status = DungeonRunStatus.Active
+        });
+        await db.SaveChangesAsync();
+
+        db.DungeonRuns.Add(new DungeonRun
+        {
+            UserId = alice.Id, DungeonKey = DungeonCatalog.BarrowDeeps,
+            Status = DungeonRunStatus.Active
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Finished_dungeon_runs_do_not_block_a_new_one()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var finished = new[]
+        {
+            DungeonRunStatus.Cleared, DungeonRunStatus.Failed, DungeonRunStatus.Abandoned
+        };
+
+        foreach (var status in finished)
+        {
+            db.DungeonRuns.Add(new DungeonRun
+            {
+                UserId = alice.Id, DungeonKey = DungeonCatalog.SunkenWarren,
+                Status = status, EndedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        db.DungeonRuns.Add(new DungeonRun
+        {
+            UserId = alice.Id, DungeonKey = DungeonCatalog.SunkenWarren,
+            Status = DungeonRunStatus.Active
+        });
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(4, await db.DungeonRuns.CountAsync(r => r.UserId == alice.Id));
+    }
+
+    [Fact]
+    public async Task Two_adventurers_can_each_be_in_their_own_dungeon()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+        var bob = await postgres.CreateUserAsync("test|bob");
+
+        await using var db = postgres.CreateContext();
+
+        foreach (var id in new[] { alice.Id, bob.Id })
+        {
+            db.DungeonRuns.Add(new DungeonRun
+            {
+                UserId = id, DungeonKey = DungeonCatalog.SunkenWarren,
+                Status = DungeonRunStatus.Active
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, await db.DungeonRuns.CountAsync());
+    }
+
+    /// <summary>
+    /// A room's fight is an ordinary encounter row, which is the ruling the whole feature rests
+    /// on: IX_encounters_UserId still governs it, so a dungeon cannot open a second fight.
+    /// </summary>
+    [Fact]
+    public async Task A_dungeon_room_is_still_governed_by_the_one_fight_index()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var run = new DungeonRun
+        {
+            UserId = alice.Id, DungeonKey = DungeonCatalog.SunkenWarren,
+            Status = DungeonRunStatus.Active
+        };
+
+        db.DungeonRuns.Add(run);
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.GiantRat,
+            MonsterHitPoints = 7, Status = EncounterStatus.Active, DungeonRunId = run.Id
+        });
+        await db.SaveChangesAsync();
+
+        // A tavern fight beside the room, which the service refuses and the index refuses under it.
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin,
+            MonsterHitPoints = 10, Status = EncounterStatus.Active
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task A_dungeon_run_round_trips_with_its_rolled_chain()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        var id = Guid.CreateVersion7();
+
+        await using (var seed = postgres.CreateContext())
+        {
+            var run = new DungeonRun
+            {
+                Id = id, UserId = alice.Id, DungeonKey = DungeonCatalog.SunkenWarren,
+                Status = DungeonRunStatus.Cleared, GoldAwarded = 60, EndedAt = DateTimeOffset.UtcNow
+            };
+
+            DungeonRuns.Write(run, [MonsterCatalog.GiantRat, MonsterCatalog.Goblin, MonsterCatalog.HedgeTroll]);
+
+            seed.DungeonRuns.Add(run);
+            await seed.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+
+        var loaded = await db.DungeonRuns.SingleAsync(r => r.Id == id);
+
+        Assert.Equal(DungeonRunStatus.Cleared, loaded.Status);
+        Assert.Equal(60, loaded.GoldAwarded);
+        Assert.Equal(
+            [MonsterCatalog.GiantRat, MonsterCatalog.Goblin, MonsterCatalog.HedgeTroll],
+            DungeonRuns.Read(loaded));
     }
 
     [Fact]
@@ -372,6 +664,11 @@ public class RpgSchemaTests(PostgresFixture postgres)
                 {
                     UserId = id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1, Kills = 1
                 });
+                seed.DungeonRuns.Add(new DungeonRun
+                {
+                    UserId = id, DungeonKey = DungeonCatalog.SunkenWarren,
+                    Status = DungeonRunStatus.Active
+                });
             }
 
             await seed.SaveChangesAsync();
@@ -386,11 +683,13 @@ public class RpgSchemaTests(PostgresFixture postgres)
         Assert.Empty(await db.Encounters.Where(e => e.UserId == alice.Id).ToListAsync());
         Assert.Empty(await db.QuestProgress.Where(q => q.UserId == alice.Id).ToListAsync());
         Assert.Empty(await db.BestiaryEntries.Where(b => b.UserId == alice.Id).ToListAsync());
+        Assert.Empty(await db.DungeonRuns.Where(r => r.UserId == alice.Id).ToListAsync());
 
         // Bob is untouched.
         Assert.Single(await db.InventoryItems.Where(i => i.UserId == bob.Id).ToListAsync());
         Assert.Single(await db.Encounters.Where(e => e.UserId == bob.Id).ToListAsync());
         Assert.Single(await db.BestiaryEntries.Where(b => b.UserId == bob.Id).ToListAsync());
+        Assert.Single(await db.DungeonRuns.Where(r => r.UserId == bob.Id).ToListAsync());
     }
 
     [Fact]

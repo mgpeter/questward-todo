@@ -34,13 +34,13 @@
   - [x] 4.4 Lore fragments, flavour text, combat sound - budget this as writing
   - [x] 4.5 Verify all tests pass
 
-- [ ] 5. Encounter depth
-  - [ ] 5.1 Write tests for effect ticks, phases, consumable stacking
-  - [ ] 5.2 `StatusEffect[]`; fold `MonsterDisadvantageRounds` into `Weakened`
-  - [ ] 5.3 Boss phases derived from `PhaseAt`, storing only the highest entered
-  - [ ] 5.4 Consumables, no affixes, one reserved shop slot
-  - [ ] 5.5 Dungeon runs - stop here if the budget is gone
-  - [ ] 5.6 Revisit every `SequenceDiceRoller` script; verify all tests pass
+- [x] 5. Encounter depth
+  - [x] 5.1 Write tests for effect ticks, phases, consumable stacking
+  - [x] 5.2 `StatusEffect[]`; fold `MonsterDisadvantageRounds` into `Weakened`
+  - [x] 5.3 Boss phases derived from `PhaseAt`, storing only the highest entered
+  - [x] 5.4 Consumables, no affixes, one reserved shop slot
+  - [x] 5.5 Dungeon runs - stop here if the budget is gone
+  - [x] 5.6 Revisit every `SequenceDiceRoller` script; verify all tests pass
 
 - [ ] 6. Tasks as monsters
   - [ ] 6.1 Write tests: hunt XP invariance, derived stats, bounty cap, isolation

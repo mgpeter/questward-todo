@@ -1,6 +1,11 @@
-namespace TodoApp.Models.Rpg;
+﻿namespace TodoApp.Models.Rpg;
 
 /// <summary>A point in a round that a narrative line can be attached to.</summary>
+/// <remarks>
+/// Append, never insert. <see cref="FlavourCatalog.Pick"/> folds the member's ordinal into the
+/// hash, so a member added in the middle renumbers everything after it and re-picks the line
+/// for every existing moment of every fight already in the database.
+/// </remarks>
 public enum FlavourMoment
 {
     Opening = 0,
@@ -13,7 +18,16 @@ public enum FlavourMoment
     MonsterCritical = 7,
     Kill = 8,
     Defeat = 9,
-    Flee = 10
+    Flee = 10,
+
+    /// <summary>
+    /// A monster crossing into a new phase of a fight. Emitted by every boss phase change,
+    /// so the lines under this key are player-visible and are not spare capacity.
+    /// </summary>
+    PhaseChange = 11,
+
+    /// <summary>A status effect landing on either side.</summary>
+    EffectApplied = 12
 }
 
 /// <summary>
@@ -307,6 +321,59 @@ public static class FlavourCatalog
             "You disengage before it becomes something worse.",
             "The {monster} returns to whatever it was doing.",
             "You keep your back to the wall going out."
+        ],
+        [FlavourMoment.PhaseChange] =
+        [
+            "The {monster} stops holding back.",
+            "Whatever the {monster} was saving, it is spending now.",
+            "The {monster} finds another gear.",
+            "Something in the {monster} gives way to something worse.",
+            "The {monster} has decided this is serious.",
+            "The easy part of this is over.",
+            "The {monster} changes how it stands.",
+            "There was more of the {monster} than there appeared to be.",
+            "The {monster} sheds whatever it was pretending to be.",
+            "It gets louder, and then it gets faster.",
+            "The {monster} stops treating this as routine.",
+            "You are being taken seriously now.",
+            "The {monster} draws on something it had in reserve.",
+            "Whatever governs the {monster} has changed its mind.",
+            "The air around the {monster} goes wrong.",
+            "The {monster} is finished being careful.",
+            "Something old wakes up inside the {monster}.",
+            "The {monster} moves like it has been waiting for this.",
+            "The rules of this fight have been rewritten by the {monster}.",
+            "The {monster} comes apart into something else.",
+            "There is a sound, and the {monster} answers it.",
+            "The {monster} sets down whatever it was carrying and begins."
+        ],
+        // Effect-agnostic on purpose. Selection is a hash and cannot be steered, so any line
+        // here has to read behind a poison, a ward and a cutting remark alike. A line that
+        // named what had landed would be wrong five times in six.
+        [FlavourMoment.EffectApplied] =
+        [
+            "Something in the shape of the fight has changed.",
+            "The {monster} adjusts to a situation it did not choose.",
+            "That will matter in a moment.",
+            "The odds move, quietly and by a little.",
+            "Neither of you pretends that did nothing.",
+            "The fight is not quite the fight it was.",
+            "It takes hold faster than expected.",
+            "The {monster} notices, which is most of the point.",
+            "Some advantages announce themselves.",
+            "The ground of the thing has tilted.",
+            "There is a moment where nothing happens, and then there is.",
+            "The change settles in and stays a while.",
+            "Whatever that was, it landed.",
+            "The {monster} will be working around that now.",
+            "A small thing, and it will be worth having.",
+            "The next exchange starts from somewhere else.",
+            "It reads on the {monster} before it reads anywhere else.",
+            "Nothing is decided, but something has moved.",
+            "The arithmetic of this has quietly altered.",
+            "That is going to cost somebody.",
+            "The {monster} carries it into whatever comes next.",
+            "Everything after this happens on different terms."
         ]
     };
 

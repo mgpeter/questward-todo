@@ -3,17 +3,27 @@ import { Bestiary } from '../components/rpg/Bestiary'
 import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
 import { Chronicle } from '../components/rpg/Chronicle'
 import { ClassSelect } from '../components/rpg/ClassSelect'
+import { Dungeons } from '../components/rpg/Dungeons'
 import { LoreCollection } from '../components/rpg/LoreCollection'
 import { QuestBoard } from '../components/rpg/QuestBoard'
 import { Shop } from '../components/rpg/Shop'
 import { Tavern } from '../components/rpg/Tavern'
 import { useInventory, useSheet } from '../lib/rpgQueries'
 
-type Panel = 'sheet' | 'tavern' | 'shop' | 'quests' | 'bestiary' | 'lore' | 'chronicle'
+type Panel =
+  | 'sheet'
+  | 'tavern'
+  | 'dungeons'
+  | 'shop'
+  | 'quests'
+  | 'bestiary'
+  | 'lore'
+  | 'chronicle'
 
 const PANELS: { key: Panel; label: string }[] = [
   { key: 'sheet', label: 'Character' },
   { key: 'tavern', label: 'Tavern' },
+  { key: 'dungeons', label: 'Dungeons' },
   { key: 'shop', label: 'Market' },
   { key: 'quests', label: 'Quests' },
   { key: 'bestiary', label: 'Bestiary' },
@@ -80,7 +90,10 @@ export function AdventureView() {
         />
       )}
 
-      {panel === 'tavern' && <Tavern sheet={sheet.data} />}
+      {panel === 'tavern' && <Tavern sheet={sheet.data} inventory={inventory.data ?? []} />}
+      {panel === 'dungeons' && (
+        <Dungeons sheet={sheet.data} inventory={inventory.data ?? []} />
+      )}
       {panel === 'shop' && <Shop />}
       {panel === 'quests' && <QuestBoard />}
       {panel === 'bestiary' && <Bestiary />}

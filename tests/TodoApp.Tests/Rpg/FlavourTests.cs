@@ -382,6 +382,10 @@ public class FlavourTests(PostgresFixture postgres)
     [InlineData(FlavourMoment.Kill, "falls")]
     [InlineData(FlavourMoment.Defeat, "driven off")]
     [InlineData(FlavourMoment.Flee, "withdraw")]
+    // Vicious Mockery's clause is the only one an effect line ships behind today. It is two
+    // sentences, so both of its verbs are named.
+    [InlineData(FlavourMoment.EffectApplied, "rattled")]
+    [InlineData(FlavourMoment.EffectApplied, "goes wide")]
     public void No_line_repeats_the_verb_of_the_clause_it_is_appended_to(
         FlavourMoment moment,
         string verb) =>

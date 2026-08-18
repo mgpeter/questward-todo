@@ -30,7 +30,14 @@ public static class RpgEndpoints
         group.MapGet("/encounters", GetChronicle);
         group.MapPost("/encounters/{id:guid}/attack", Attack);
         group.MapPost("/encounters/{id:guid}/ability/{abilityKey}", UseAbility);
+        group.MapPost("/encounters/{id:guid}/use/{itemId:guid}", UseItem);
         group.MapPost("/encounters/{id:guid}/flee", Flee);
+
+        group.MapGet("/dungeons", GetDungeons);
+        group.MapPost("/dungeons", StartDungeon).ValidateBody<StartDungeonRequest>();
+        group.MapGet("/dungeons/active", GetActiveDungeon);
+        group.MapPost("/dungeons/{id:guid}/enter", EnterRoom);
+        group.MapPost("/dungeons/{id:guid}/abandon", AbandonDungeon);
 
         group.MapPost("/rest", Rest);
         group.MapGet("/shop", GetShop);
@@ -158,6 +165,25 @@ public static class RpgEndpoints
             currentUser, combat, db, sheets, cancellationToken,
             (service, userId) => service.UseAbilityAsync(userId, id, abilityKey, cancellationToken));
 
+    /// <summary>
+    /// Spends a consumable as the player's half of a round.
+    /// </summary>
+    /// <remarks>
+    /// Through the same helper as an attack and returning the same response, because it is a
+    /// round: the player forfeits the swing and the monster still answers.
+    /// </remarks>
+    private static Task<IResult> UseItem(
+        Guid id,
+        Guid itemId,
+        ICurrentUser currentUser,
+        CombatService combat,
+        TodoDbContext db,
+        CharacterSheetService sheets,
+        CancellationToken cancellationToken) =>
+        ResolveRoundAsync(
+            currentUser, combat, db, sheets, cancellationToken,
+            (service, userId) => service.UseItemAsync(userId, id, itemId, cancellationToken));
+
     private static async Task<IResult> ResolveRoundAsync(
         ICurrentUser currentUser,
         CombatService combat,
@@ -184,6 +210,7 @@ public static class RpgEndpoints
             outcome.PlayerMaxHitPoints,
             outcome.GoldAwarded,
             outcome.Loot?.ToDto(),
+            outcome.ClearReward?.ToDto(),
             outcome.QuestsAdvanced.Select(q => q.ToDto()).ToList(),
             // Remaining ability uses come from the encounter the round just ran on.
             loaded.Sheet.ToDto(loaded.Character, loaded.Equipped, outcome.Encounter)));
@@ -286,6 +313,77 @@ public static class RpgEndpoints
     {
         var user = await currentUser.GetAsync(cancellationToken);
         var result = await combat.FleeAsync(user.Id, id, cancellationToken);
+
+        return result.Ok ? Results.Ok(result.Value!.ToDto()) : Problem(result.Failure, result.Message);
+    }
+
+    // --------------------------------------------------------------- dungeons
+
+    private static async Task<IResult> GetDungeons(
+        ICurrentUser currentUser,
+        DungeonService dungeons,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var available = await dungeons.AvailableAsync(user.Id, cancellationToken);
+
+        return Results.Ok(available.Select(d => d.ToDto()).ToList());
+    }
+
+    private static async Task<IResult> StartDungeon(
+        StartDungeonRequest request,
+        ICurrentUser currentUser,
+        DungeonService dungeons,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await dungeons.StartAsync(user.Id, request.DungeonKey, cancellationToken);
+
+        return result.Ok
+            ? Results.Created($"/api/rpg/dungeons/{result.Value!.Run.Id}", result.Value.ToDto())
+            : Problem(result.Failure, result.Message);
+    }
+
+    /// <summary>
+    /// The whole of what a reloaded client needs to pick a run back up.
+    /// </summary>
+    /// <remarks>
+    /// The client holds nothing between requests. This answers 204 when there is no run, and
+    /// otherwise returns the run with the fight in progress attached, if one is open. A run with
+    /// no open fight is resumed by entering room <c>Depth</c>; one with an open fight is resumed
+    /// through the ordinary attack routes.
+    /// </remarks>
+    private static async Task<IResult> GetActiveDungeon(
+        ICurrentUser currentUser,
+        DungeonService dungeons,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var run = await dungeons.ActiveAsync(user.Id, cancellationToken);
+
+        return run is null ? Results.NoContent() : Results.Ok(run.ToDto());
+    }
+
+    private static async Task<IResult> EnterRoom(
+        Guid id,
+        ICurrentUser currentUser,
+        DungeonService dungeons,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await dungeons.EnterAsync(user.Id, id, cancellationToken);
+
+        return result.Ok ? Results.Ok(result.Value!.ToDto()) : Problem(result.Failure, result.Message);
+    }
+
+    private static async Task<IResult> AbandonDungeon(
+        Guid id,
+        ICurrentUser currentUser,
+        DungeonService dungeons,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await dungeons.AbandonAsync(user.Id, id, cancellationToken);
 
         return result.Ok ? Results.Ok(result.Value!.ToDto()) : Problem(result.Failure, result.Message);
     }
@@ -508,12 +606,21 @@ public static class RpgEndpoints
         RpgFailure.AlreadyAtFullHealth => Results.Problem(message, statusCode: 409),
         RpgFailure.CannotUpgrade => Results.Problem(message, statusCode: 409),
         RpgFailure.OfferSoldOut => Results.Problem(message, statusCode: 409),
+        RpgFailure.NoneLeft => Results.Problem(message, statusCode: 409),
+        RpgFailure.DungeonInProgress => Results.Problem(message, statusCode: 409),
+        RpgFailure.DungeonOver => Results.Problem(message, statusCode: 409),
+        // 404 beside NotFound rather than folded into it, so a run that is genuinely missing and
+        // one that belongs to somebody else stay one answer while keeping their own message.
+        // Carrying the sentence gives nothing away: both cases produce this same failure with
+        // this same message, which is what keeps run ids unprobeable.
+        RpgFailure.NoDungeonRun => Results.Problem(message, statusCode: 404),
         RpgFailure.NotEnoughStamina => Results.Problem(message, statusCode: 422),
         RpgFailure.NotEnoughGold => Results.Problem(message, statusCode: 422),
         RpgFailure.NotEnoughEssence => Results.Problem(message, statusCode: 422),
         RpgFailure.AbilityExhausted => Results.Problem(message, statusCode: 422),
         RpgFailure.MonsterOutOfRange => Results.Problem(message, statusCode: 400),
         RpgFailure.UnknownClass => Results.Problem(message, statusCode: 400),
+        RpgFailure.ItemNotUsable => Results.Problem(message, statusCode: 400),
         _ => Results.Problem(message, statusCode: 500)
     };
 }

@@ -742,3 +742,85 @@ backfill was hand-added and the drop moved after it. `Tags` also needed an expli
 rows without one.
 
 Both directions were verified against a populated database, not just an empty one.
+
+---
+
+## 2026-08-18: A Dungeon Room Costs One Stamina, Like Every Other Fight
+
+**ID:** DEC-015
+**Status:** Accepted
+**Category:** Product
+**Stakeholders:** Product Owner, Tech Lead
+**Related Spec:** `docs/specs/2026-08-17-task-model-and-rpg-depth/`
+
+### Decision
+
+A dungeon run is priced per room, not per run. Opening a run costs nothing; each
+`POST /api/rpg/dungeons/{id}/enter` charges one stamina through
+`CombatService.StartAsync`, the identical method and the identical check a tavern fight
+goes through. A five room dungeon therefore costs five stamina and pays five fights' worth
+of gold and drops plus the clear reward.
+
+### Context
+
+DEC-012 made stamina the gate that keeps the RPG layer a sink for real work rather than a
+substitute for it. Dungeons are the first feature that bundles several fights behind one
+verb, so they are the first place that gate could be quietly undone.
+
+### Alternatives Considered
+
+1. **Charge once, at the door, for the whole run**
+   - Pros: Reads as a single decision the player makes. One charge, one refusal, one
+     screen to explain.
+   - Cons: One unit of real work would buy N fights, N sets of gold and N drops. That is
+     precisely the inflation DEC-012 exists to forbid, wearing the costume of a feature.
+     It would also make a long dungeon strictly better gold per stamina than a short one,
+     so the tavern would stop being worth visiting at all.
+
+2. **Charge once, but scaled: a run costs N stamina up front**
+   - Pros: The arithmetic comes out the same, and a player who cannot afford the whole run
+     finds out before starting it rather than at room four.
+   - Cons: Puts a second, different charging path beside the one DEC-012's invariant is
+     written against, and the day someone changes the price of a fight there are two
+     places to change it. It also makes abandoning at room two a total loss of the
+     unspent stamina, which is a punishment for stopping.
+
+3. **One stamina per room, charged at the room** (chosen)
+   - Pros: There is exactly one place in the codebase that spends stamina on a fight, and
+     a dungeon goes through it. The price of a run is the price of its fights by
+     construction rather than by arithmetic anybody has to keep in step. Walking out early
+     costs only the rooms actually fought.
+   - Cons: A run can strand a player mid-way with no stamina left. The run is not lost,
+     it waits, but the dungeon screen has to say so rather than looking broken.
+
+### Rationale
+
+The testable form of DEC-012 is "no code path outside task completion moves TotalXp". The
+testable form of this is "fighting an N room dungeon to a clear reduces stamina by exactly
+N", and `A_three_room_run_costs_three_stamina_and_pays_on_the_last_blow` asserts it. A
+single shared charging path is what makes that assertion cheap to keep true: there is no
+second implementation to drift.
+
+The Wizard's Arcane Recovery applies per room, exactly as it applies per tavern fight. That
+is not a dungeon rule, it is the existing perk reaching new content unchanged, which is the
+point of routing rooms through the same method.
+
+### Consequences
+
+**Positive:**
+- The gate holds with several fights behind one feature, and holds by construction.
+- `DungeonDto` reports `totalStaminaCost`, so the price of a run is on the screen that
+  sells it rather than discovered at room four.
+- Abandoning is cheap and honest: you pay for the rooms you fought.
+
+**Negative:**
+- A run needs enough real work behind it to finish, which will read as friction before it
+  reads as the point. This is the same complaint DEC-012 already accepts.
+- Five separate `enter` calls is more chatter than one `run` call would have been.
+
+### Deliberately Not Decided
+
+No `ObjectiveKind` for dungeons. Phase 6 has a binding ruling that `WinHunt = 5`, so a
+`ClearDungeon` objective would have to take 6, and that reservation has to be written down
+before either lands. Quests therefore ignore dungeons in this phase, apart from the
+ordinary `DefeatMonster`, `EarnGold` and `AcquireItem` progress every fight already makes.

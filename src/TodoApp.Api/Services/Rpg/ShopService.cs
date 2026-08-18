@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using TodoApp.Data;
 using TodoApp.Models.Dice;
@@ -38,23 +38,46 @@ public sealed class ShopService(TodoDbContext db)
         (100, Rarity.Rare)
     ];
 
+    /// <summary>The two pools a shelf draws from, split once rather than filtered per draw.</summary>
+    /// <remarks>
+    /// Separate pools are what make the reserved slot a floor rather than a cap. Rejecting a
+    /// second consumable out of one shared pool caps the count at one but guarantees nothing:
+    /// five consumables in eighty-one items means two shelves in three carried none, and the
+    /// shop is the only route to one in the game.
+    /// </remarks>
+    private static readonly IReadOnlyList<ItemDefinition> Gear =
+        [.. ItemCatalog.All.Where(i => i.Slot != ItemSlot.Consumable)];
+
+    private static readonly IReadOnlyList<ItemDefinition> Potions =
+        [.. ItemCatalog.All.Where(i => i.Slot == ItemSlot.Consumable)];
+
     public static ShopStock StockFor(Guid userId, DateTimeOffset now)
     {
         var today = DateOnly.FromDateTime(now.UtcDateTime);
         var roller = new SeededDiceRoller(SeededDiceRoller.DailySeed(userId, today));
 
-        var catalogue = ItemCatalog.All;
         var offers = new List<ShopOffer>(OfferCount);
         var taken = new HashSet<string>(StringComparer.Ordinal);
 
+        // Exactly one of the six slots, and which one is rolled rather than fixed: a potion
+        // always in the last slot would read as an afterthought rather than as stock. One and
+        // not two, because a shelf of potions is a shelf with no gear on it, and the shop is
+        // the only priced route to either.
+        var reserved = Potions.Count == 0 ? -1 : roller.Roll(OfferCount) - 1;
+
         // Sampling without replacement, so one shelf never shows the same item twice.
-        for (var slot = 0; slot < OfferCount && taken.Count < catalogue.Count; slot++)
+        for (var slot = 0; slot < OfferCount; slot++)
         {
+            var pool = slot == reserved ? Potions : Gear;
             ItemDefinition item;
 
+            // Re-draws rather than filtering the pool, so a repeat costs a roll and nothing
+            // else. It always terminates: the gear pool holds far more than the five slots that
+            // draw from it, and the reserved slot is the only one drawing a potion, so it can
+            // never collide with anything already taken.
             do
             {
-                item = catalogue[roller.Roll(catalogue.Count) - 1];
+                item = pool[roller.Roll(pool.Count) - 1];
             }
             while (!taken.Add(item.Key));
 
@@ -134,17 +157,11 @@ public sealed class ShopService(TodoDbContext db)
 
         character.Gold -= offer.Price;
 
-        var item = new InventoryItem
-        {
-            UserId = userId,
-            ItemKey = offer.Item.Key,
-            Slot = offer.Item.Slot,
-            Rarity = offer.Rarity,
-            IsEquipped = false,
-            AcquiredAt = DateTimeOffset.UtcNow
-        };
-
-        db.InventoryItems.Add(item);
+        // Through the shared helper rather than a bare Add: buying the same potion at the same
+        // rarity a second time has to land on the row the first one is on, or it loses to the
+        // stacking index and the purchase comes back a 500 having already taken the gold.
+        var item = await InventoryStack.AcquireAsync(
+            db, userId, offer.Item, offer.Rarity, cancellationToken);
 
         db.ShopPurchases.Add(new ShopPurchase
         {
@@ -192,6 +209,16 @@ public sealed class ShopService(TodoDbContext db)
         {
             return RpgResult<UpgradeResult>.Fail(
                 RpgFailure.CannotUpgrade, "Legendary is as far as it goes.");
+        }
+
+        // Refused on two counts, either of which is enough. A stack is one row, so raising its
+        // rarity would upgrade every potion on it for the price of one; and the new rarity may
+        // already have a row of its own, in which case the write loses to the stacking index and
+        // comes back a 500 with the gold already spent.
+        if (item.Slot == ItemSlot.Consumable)
+        {
+            return RpgResult<UpgradeResult>.Fail(
+                RpgFailure.CannotUpgrade, "The bench does not work on what you drink.");
         }
 
         var definition = ItemCatalog.Find(item.ItemKey);

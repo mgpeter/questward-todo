@@ -40,6 +40,16 @@ public class InventoryItem
     /// <inheritdoc cref="PrefixKey"/>
     public string? SuffixKey { get; set; }
 
+    /// <summary>How many of this item the bag holds.</summary>
+    /// <remarks>
+    /// Only a <see cref="ItemSlot.Consumable"/> ever holds more than one, and the partial unique
+    /// index on (UserId, ItemKey, Rarity) is what keeps that true: one row per consumable per
+    /// rarity with a count, rather than six rows the shop and the forge each have to reason
+    /// about separately. Every acquisition therefore has to be an upsert, and every spend has to
+    /// go through one decrement that removes the row at zero.
+    /// </remarks>
+    public int Quantity { get; set; } = 1;
+
     public DateTimeOffset AcquiredAt { get; set; } = DateTimeOffset.UtcNow;
 
     public ItemDefinition? Definition => ItemCatalog.Find(ItemKey);

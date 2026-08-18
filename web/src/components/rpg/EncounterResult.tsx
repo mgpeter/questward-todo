@@ -1,6 +1,6 @@
 import { Coins, Scroll, Swords } from 'lucide-react'
 import { motion } from 'motion/react'
-import { splitFlavour, type AttackResult } from '../../lib/rpg'
+import { splitFlavour, type AttackResult, type InventoryItem } from '../../lib/rpg'
 
 const OUTCOME: Record<string, { title: string; tone: string; blurb: string }> = {
   won: {
@@ -30,10 +30,17 @@ export function EncounterResult({
   result,
   onDismiss,
   onFightAgain,
+  againLabel = 'Find another fight',
 }: {
   result: AttackResult
   onDismiss: () => void
   onFightAgain: () => void
+  /**
+   * What the primary button offers next. A room that has just been cleared leads back to
+   * the run rather than to another fight, and a button that said otherwise would be
+   * offering something the one-fight rule will refuse.
+   */
+  againLabel?: string
 }) {
   const outcome = OUTCOME[result.encounter.status] ?? OUTCOME.fled
   const won = result.encounter.status === 'won'
@@ -72,23 +79,15 @@ export function EncounterResult({
               tone="text-gold"
               testId="reward-gold"
             />
-            {result.loot && (
-              <div
-                className={`rarity-${result.loot.rarity} tier-chip rounded-xl px-3.5 py-2.5`}
-                data-testid="reward-loot"
-                data-rarity={result.loot.rarity}
-              >
-                <p className="text-[9.5px] font-medium uppercase tracking-[0.14em] opacity-80">
-                  {result.loot.rarity}
-                </p>
-                <p className="mt-0.5 text-[14px] font-medium">{result.loot.name}</p>
-                {/* The only place a set announces itself at the moment it is found. */}
-                {result.loot.setName && (
-                  <p className="mt-0.5 text-[10.5px] opacity-80" data-testid="reward-loot-set">
-                    {result.loot.setName} set
-                  </p>
-                )}
-              </div>
+            {result.loot && <Loot item={result.loot} testId="reward-loot" />}
+            {/* Its own chip beside the drop, because the round that clears a dungeon can
+                hand over both, and often hands over only this one. */}
+            {result.clearReward && (
+              <Loot
+                item={result.clearReward}
+                testId="reward-clear"
+                caption="Dungeon reward"
+              />
             )}
           </div>
         )}
@@ -123,10 +122,10 @@ export function EncounterResult({
             type="button"
             onClick={onFightAgain}
             data-testid="fight-again"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2 text-xs font-medium text-canvas transition hover:opacity-90"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2 text-xs font-medium whitespace-nowrap text-canvas transition hover:opacity-90"
           >
-            <Swords size={13} />
-            Find another fight
+            <Swords size={13} className="shrink-0" />
+            {againLabel}
           </button>
           <button
             type="button"
@@ -157,6 +156,42 @@ export function EncounterResult({
         </div>
       </section>
     </motion.div>
+  )
+}
+
+/**
+ * One item the round handed over.
+ *
+ * Shared by the monster's drop and the dungeon's clear reward so the two read as the same
+ * kind of thing, which is what they are: a row that has just landed in the bag.
+ */
+function Loot({
+  item,
+  testId,
+  caption,
+}: {
+  item: InventoryItem
+  testId: string
+  /** Names where the item came from, when that is not simply "the thing you just killed". */
+  caption?: string
+}) {
+  return (
+    <div
+      className={`rarity-${item.rarity} tier-chip rounded-xl px-3.5 py-2.5`}
+      data-testid={testId}
+      data-rarity={item.rarity}
+    >
+      <p className="text-[9.5px] font-medium uppercase tracking-[0.14em] opacity-80">
+        {caption ?? item.rarity}
+      </p>
+      <p className="mt-0.5 text-[14px] font-medium">{item.name}</p>
+      {/* The only place a set announces itself at the moment it is found. */}
+      {item.setName && (
+        <p className="mt-0.5 text-[10.5px] opacity-80" data-testid={`${testId}-set`}>
+          {item.setName} set
+        </p>
+      )}
+    </div>
   )
 }
 

@@ -1,6 +1,6 @@
 /** Client types and calls for the adventure layer. */
 
-export type ItemSlotName = 'weapon' | 'armour' | 'trinket'
+export type ItemSlotName = 'weapon' | 'armour' | 'trinket' | 'consumable'
 export type RarityName = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 export type EncounterStatusName = 'active' | 'won' | 'lost' | 'fled'
 
@@ -126,6 +126,142 @@ export interface CombatRoll {
   flavour: string | null
 }
 
+/**
+ * What an effect does. One member per place in the round the server reads it, so a new
+ * effect is a new case here rather than another flag to interpret.
+ */
+export type EffectKindName = 'weakened' | 'empowered' | 'guarded' | 'poisoned' | 'regenerating'
+
+/** Who an effect sits on. Both sides share one array, because both die with the fight. */
+export type EffectTargetName = 'player' | 'monster'
+
+/**
+ * One affliction or blessing riding a fight.
+ *
+ * `rounds` is applications remaining, not rounds elapsed, which is why a strip that reads
+ * "2 left" can still be spent twice in a single exchange.
+ */
+export interface StatusEffect {
+  kind: EffectKindName
+  target: EffectTargetName
+  rounds: number
+  magnitude: number
+  /** Key of whatever applied it: an ability, an item or a monster phase. */
+  source: string
+}
+
+/**
+ * The server's marker for an effect meant to last the whole fight rather than a stated
+ * number of applications. Shown as a word, because "99 rounds left" reads as a bug.
+ */
+export const LASTING_ROUNDS = 99
+
+export const isLasting = (effect: StatusEffect): boolean => effect.rounds >= LASTING_ROUNDS
+
+interface EffectShape {
+  label: string
+  /** True when the effect helps whoever is carrying it. */
+  favoursBearer: boolean
+  /**
+   * The magnitude in as few characters as it can be said in, or null for a kind that
+   * carries none.
+   *
+   * Terse on purpose. A chip cannot wrap without breaking mid-phrase, and "+3 to hit and
+   * damage" pushes one past the width of the narrow shell on its own. The sentence version
+   * lives in `explain` and is shown on hover, where there is room for it.
+   */
+  detail: ((magnitude: number) => string) | null
+  explain: (magnitude: number) => string
+}
+
+const EFFECT_SHAPES: Record<EffectKindName, EffectShape> = {
+  weakened: {
+    label: 'Weakened',
+    favoursBearer: false,
+    detail: null,
+    explain: () => 'Attacks are made at disadvantage',
+  },
+  empowered: {
+    label: 'Empowered',
+    favoursBearer: true,
+    detail: (magnitude) => `+${magnitude} hit/dmg`,
+    explain: (magnitude) => `Adds ${magnitude} to attack rolls and to the damage they deal`,
+  },
+  guarded: {
+    label: 'Guarded',
+    favoursBearer: true,
+    detail: (magnitude) => `+${magnitude} AC`,
+    explain: (magnitude) => `${magnitude} harder to hit`,
+  },
+  poisoned: {
+    label: 'Poisoned',
+    favoursBearer: false,
+    detail: (magnitude) => `${magnitude}/round`,
+    explain: (magnitude) => `Loses ${magnitude} hit points at the end of each round`,
+  },
+  regenerating: {
+    label: 'Regenerating',
+    favoursBearer: true,
+    detail: (magnitude) => `+${magnitude}/round`,
+    explain: (magnitude) => `Regains ${magnitude} hit points at the end of each round`,
+  },
+}
+
+export const effectLabel = (kind: EffectKindName): string => EFFECT_SHAPES[kind]?.label ?? kind
+
+/** The magnitude clause, or null for a kind that carries no number worth printing. */
+export const effectDetail = (effect: StatusEffect): string | null => {
+  const detail = EFFECT_SHAPES[effect.kind]?.detail
+
+  return detail && effect.magnitude > 0 ? detail(effect.magnitude) : null
+}
+
+/** The whole rule in a sentence, for the hover where there is room to say it. */
+export const effectExplain = (effect: StatusEffect): string =>
+  EFFECT_SHAPES[effect.kind]?.explain(effect.magnitude) ?? effectLabel(effect.kind)
+
+/**
+ * Whether an effect is in the player's favour, which is the only reading the colour is
+ * allowed to carry. Poison on the monster and poison on the player are the same mechanic
+ * and must not share a colour, or the strip teaches nothing.
+ */
+export const favoursPlayer = (effect: StatusEffect): boolean =>
+  EFFECT_SHAPES[effect.kind]?.favoursBearer === (effect.target === 'player')
+
+/** How long is left, in words. Never "99". */
+export const effectRemaining = (effect: StatusEffect): string =>
+  isLasting(effect) ? 'lasting' : `${effect.rounds} left`
+
+/**
+ * The effects riding a fight, with the two enum-shaped fields folded to the casing the rest
+ * of this module reads.
+ *
+ * Every other enum on this wire arrives lowercased by hand at the mapping site, the way
+ * `status` does. Folding here rather than trusting that costs one pass over an array that is
+ * never more than a handful long, and buys a strip that still renders if a producer ever
+ * sends `Poisoned` instead of `poisoned`. Silently showing nothing is the one failure mode
+ * this feature cannot afford: an effect the player cannot see reads as a bug in the fight.
+ */
+const readEffects = (encounter: Encounter): StatusEffect[] =>
+  (encounter.effects ?? []).map((effect) => ({
+    ...effect,
+    kind: String(effect.kind).toLowerCase() as EffectKindName,
+    target: String(effect.target).toLowerCase() as EffectTargetName,
+  }))
+
+/**
+ * The effects riding one combatant, worst first so an affliction is never pushed off the
+ * end of a narrow strip by a blessing.
+ *
+ * Tolerates an encounter carrying no effects array at all. The field is additive on the
+ * wire, and a client that reached the server before it shipped must render an empty strip
+ * rather than throw inside a live fight.
+ */
+export const effectsOn = (encounter: Encounter, target: EffectTargetName): StatusEffect[] =>
+  readEffects(encounter)
+    .filter((effect) => effect.target === target && effect.rounds > 0)
+    .sort((a, b) => Number(favoursPlayer(a)) - Number(favoursPlayer(b)))
+
 export interface Encounter {
   id: string
   monsterKey: string
@@ -134,11 +270,83 @@ export interface Encounter {
   monsterMaxHitPoints: number
   status: EncounterStatusName
   round: number
+  /** The highest boss phase this fight has entered. Zero for anything with no phases. */
+  phase: number
+  /** The catalog name of that phase. Null until one has been entered. */
+  phaseName: string | null
+  /**
+   * Afflictions and blessings riding the fight, both combatants in one array.
+   *
+   * Optional because it is additive on the wire: read it through `effectsOn`, never
+   * directly, so a response without it renders an empty strip instead of throwing.
+   */
+  effects?: StatusEffect[]
   goldAwarded: number
   log: CombatRoll[]
   startedAt: string
   endedAt: string | null
 }
+
+export type DungeonRunStatusName = 'active' | 'cleared' | 'failed' | 'abandoned'
+
+/** Where a room sits relative to the player. A finished run has no current room. */
+export type DungeonRoomState = 'cleared' | 'current' | 'ahead'
+
+export interface Dungeon {
+  key: string
+  name: string
+  blurb: string
+  /** The character level the dungeon unlocks at. It is never retired afterwards. */
+  level: number
+  rooms: number
+  bossKey: string
+  bossName: string
+  clearGold: number
+  rewardFloor: RarityName
+  staminaPerRoom: number
+  /** What the whole run costs, because a room is a fight and every fight is paid for. */
+  totalStaminaCost: number
+}
+
+export interface DungeonRoom {
+  index: number
+  monsterKey: string
+  monsterName: string
+  state: DungeonRoomState
+}
+
+export interface DungeonRun {
+  id: string
+  dungeonKey: string
+  name: string
+  status: DungeonRunStatusName
+  rooms: DungeonRoom[]
+  /** Rooms won. Also the index of the room to enter next, which is all a reload needs. */
+  depth: number
+  goldAwarded: number
+  /** The fight in progress, resumed through the ordinary attack routes. Null when none is open. */
+  encounter: Encounter | null
+  startedAt: string
+  endedAt: string | null
+}
+
+/** The room to enter next, or null when the run is finished. */
+export const nextRoom = (run: DungeonRun): DungeonRoom | null =>
+  run.rooms.find((room) => room.state === 'current') ?? null
+
+/** Everything past the current room, which is what the player is deciding whether to face. */
+export const roomsAhead = (run: DungeonRun): DungeonRoom[] =>
+  run.rooms.filter((room) => room.state === 'ahead')
+
+/**
+ * True while the run can still be pushed further. A cleared, failed or abandoned run keeps
+ * its rooms so the track can be read back, so status is the only honest test.
+ */
+export const isRunOpen = (run: DungeonRun): boolean => run.status === 'active'
+
+/** The last room is always the boss, which is what wires boss phases to dungeons. */
+export const isBossRoom = (run: DungeonRun, room: DungeonRoom): boolean =>
+  room.index === run.rooms.length - 1
 
 export interface InventoryItem {
   id: string
@@ -165,7 +373,31 @@ export interface InventoryItem {
   salvageValue: number
   imbueCost: number
   reforgeCost: number
+  /** How many this row holds. One for everything worn; a consumable stacks. */
+  quantity: number
+  /** What using one does, at this row's rarity. Null for anything that is not a consumable. */
+  useDescription: string | null
 }
+
+/** Usable in a fight, which is the same test the use endpoint applies. */
+export const isConsumable = (item: InventoryItem): boolean =>
+  item.slot === 'consumable' && item.useDescription !== null
+
+/**
+ * The bag's consumables, ordered best first within a key.
+ *
+ * A row is a stack, so this is already one entry per key and rarity; sorting by rarity
+ * descending puts the Rare draught in front of the Common one, which is the order a player
+ * reaching for a potion mid-fight wants and the opposite of acquisition order.
+ */
+export const usableConsumables = (items: InventoryItem[]): InventoryItem[] =>
+  items
+    .filter(isConsumable)
+    .sort(
+      (a, b) =>
+        RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) ||
+        a.name.localeCompare(b.name),
+    )
 
 /** Affixes in force, which is what imbue and reforge price themselves against. */
 export const affixesInForce = (item: InventoryItem): number =>
@@ -211,7 +443,15 @@ export interface AttackResult {
   playerHitPoints: number
   playerMaxHitPoints: number
   goldAwarded: number
+  /** What the monster itself dropped. Null when it dropped nothing. */
   loot: InventoryItem | null
+  /**
+   * The dungeon's guaranteed reward, on the round that cleared its last room.
+   *
+   * Beside `loot` rather than inside it because a clear round hands over two items, and the
+   * boss's own drop can fail its roll on the very round the run pays out.
+   */
+  clearReward: InventoryItem | null
   questsAdvanced: QuestAdvance[]
   sheet: CharacterSheet
 }

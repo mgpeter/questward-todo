@@ -36,8 +36,10 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
         // hand out a second set, or class-swapping becomes an item printer.
         if (isFirstChoice)
         {
-            var weapon = loot.Grant(userId, characterClass.StartingWeaponKey, Rarity.Common);
-            var armour = loot.Grant(userId, characterClass.StartingArmourKey, Rarity.Common);
+            var weapon = await loot.GrantAsync(
+                userId, characterClass.StartingWeaponKey, Rarity.Common, cancellationToken);
+            var armour = await loot.GrantAsync(
+                userId, characterClass.StartingArmourKey, Rarity.Common, cancellationToken);
 
             weapon.IsEquipped = true;
             armour.IsEquipped = true;
@@ -79,6 +81,16 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
         if (item is null)
         {
             return RpgResult<InventoryItem>.Fail(RpgFailure.NotFound, "No such item.");
+        }
+
+        // A consumable is used, never worn. Without this it would occupy the Consumable arm of
+        // the equipped-slot index and then reach the character sheet as though it were gear,
+        // where a potion with no damage and no armour would silently contribute nothing while
+        // the real item it displaced contributed nothing either.
+        if (item.Slot == ItemSlot.Consumable)
+        {
+            return RpgResult<InventoryItem>.Fail(
+                RpgFailure.ItemNotUsable, "That is drunk or thrown in a fight, not worn.");
         }
 
         if (item.IsEquipped)
@@ -154,7 +166,9 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
         var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
         character.Gold += gold;
 
-        db.InventoryItems.Remove(item);
+        // One unit, not the row. Selling one potion out of six used to take the other five with
+        // it, because everything else in the bag is a row that means exactly one item.
+        InventoryStack.ConsumeOne(db, item);
 
         await db.SaveChangesAsync(cancellationToken);
 
