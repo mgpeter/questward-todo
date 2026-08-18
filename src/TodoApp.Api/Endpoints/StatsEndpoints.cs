@@ -10,7 +10,15 @@ namespace TodoApp.Api.Endpoints;
 
 public static class StatsEndpoints
 {
-    private const int TrendDays = 14;
+    /// <summary>
+    /// Days the activity chart covers.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private because TaskEndpoints.ClearCompleted uses it as its floor.
+    /// Clearing finished tasks must never reach inside the window the chart is drawn from, and
+    /// tying the two to one constant is what stops raising this from quietly starting to eat it.
+    /// </remarks>
+    internal const int TrendDays = 14;
 
     public static IEndpointRouteBuilder MapStatsEndpoints(this IEndpointRouteBuilder app)
     {

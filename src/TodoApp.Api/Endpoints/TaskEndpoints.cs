@@ -26,6 +26,7 @@ public static class TaskEndpoints
         group.MapPost("/", CreateTask).ValidateBody<CreateTaskRequest>();
         group.MapPut("/{id:guid}", UpdateTask).ValidateBody<UpdateTaskRequest>();
         group.MapDelete("/{id:guid}", DeleteTask);
+        group.MapDelete("/completed", ClearCompleted);
         group.MapPost("/{id:guid}/complete", CompleteTask);
         group.MapPost("/{id:guid}/reopen", ReopenTask);
         group.MapPut("/{id:guid}/status", SetStatus).ValidateBody<SetStatusRequest>();
@@ -467,6 +468,74 @@ public static class TaskEndpoints
             .ExecuteDeleteAsync(cancellationToken);
 
         return deleted == 0 ? Results.NotFound() : Results.NoContent();
+    }
+
+    /// <summary>
+    /// Deletes finished tasks older than the record can see.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not "clear everything finished". The record panel is computed from these
+    /// rows: the fourteen day activity chart reads <c>CompletedAt</c> directly and the
+    /// difficulty breakdown groups them, so clearing the lot would blank the two panels that
+    /// justify keeping any of it. Older than the window, a finished task contributes to nothing
+    /// but the row count, which is the only thing anyone wanted rid of.
+    /// <para>
+    /// The floor is the stats window itself, so the two cannot drift apart: raising
+    /// <c>StatsEndpoints.TrendDays</c> without raising this would start eating the chart.
+    /// </para>
+    /// <para>
+    /// XP is not refunded and <c>Character.TasksCompleted</c> does not go down, matching what
+    /// deleting a single task has always done. Both are a memory of work done rather than a
+    /// balance, in the same way a badge is never revoked.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> ClearCompleted(
+        TodoDbContext db,
+        ICurrentUser currentUser,
+        CancellationToken cancellationToken,
+        int olderThanDays = StatsEndpoints.TrendDays)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+
+        // Never inside the window, whatever the caller asks for. A smaller number here is the
+        // one way this could quietly start deleting what the chart is drawing.
+        var days = Math.Max(StatsEndpoints.TrendDays, olderThanDays);
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-days);
+
+        // Subtasks go with their parents by cascade, so only top-level rows are matched. A
+        // subtask whose parent is still open is part of live work and is not swept up by it.
+        var doomed = await db.Tasks
+            .Where(t => t.UserId == user.Id
+                && t.ParentId == null
+                && t.Status == TaskProgress.Completed
+                && t.CompletedAt != null
+                && t.CompletedAt < cutoff)
+            .Select(t => t.Id)
+            .ToListAsync(cancellationToken);
+
+        if (doomed.Count == 0)
+        {
+            return Results.Ok(new ClearCompletedResponse(0, days));
+        }
+
+        // The same courtesy DeleteTask does: a contract still waiting on a task that is about
+        // to stop existing is torn up rather than left pointing at nothing.
+        await db.HuntContracts
+            .Where(c => c.UserId == user.Id
+                && c.TaskId != null
+                && doomed.Contains(c.TaskId.Value)
+                && c.Status == HuntContractStatus.Accepted)
+            .ExecuteUpdateAsync(
+                update => update
+                    .SetProperty(c => c.Status, HuntContractStatus.Abandoned)
+                    .SetProperty(c => c.ClosedAt, DateTimeOffset.UtcNow),
+                cancellationToken);
+
+        var deleted = await db.Tasks
+            .Where(t => doomed.Contains(t.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        return Results.Ok(new ClearCompletedResponse(deleted, days));
     }
 
     private static async Task<IResult> CompleteTask(

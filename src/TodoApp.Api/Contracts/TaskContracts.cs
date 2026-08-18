@@ -81,6 +81,9 @@ public sealed record SetStatusResponse(
 public sealed record CompleteTaskRequest(
     [property: Range(-840, 840)] int UtcOffsetMinutes = 0);
 
+/// <param name="OlderThanDays">The floor actually applied, which is never below the stats window.</param>
+public sealed record ClearCompletedResponse(int Deleted, int OlderThanDays);
+
 public sealed record ReorderRequest(
     [property: Required][property: MinLength(1)] IReadOnlyList<Guid> OrderedIds);
 

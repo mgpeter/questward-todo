@@ -134,6 +134,24 @@ export function useSetTaskStatus() {
   })
 }
 
+/**
+ * Deletes finished tasks older than the record can see.
+ *
+ * Invalidates the stats even though the endpoint cannot touch the fourteen day chart, because
+ * the total and completed counts on the record do move.
+ */
+export function useClearCompleted() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.clearCompleted(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['tasks'] })
+      void client.invalidateQueries({ queryKey: queryKeys.stats })
+    },
+  })
+}
+
 export function useReorderTasks() {
   const client = useQueryClient()
 

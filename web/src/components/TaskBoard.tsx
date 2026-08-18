@@ -1,8 +1,9 @@
+import { Eraser } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
 import { useRef, useState, type DragEvent } from 'react'
 import { taskProgressLabels, taskProgressOrder, type Task, type TaskProgress } from '../lib/api'
 import { useGameFeed } from '../game/GameFeed'
-import { useReorderTasks, useSetTaskStatus } from '../lib/queries'
+import { useClearCompleted, useReorderTasks, useSetTaskStatus } from '../lib/queries'
 import { TaskCard } from './TaskCard'
 
 interface TaskBoardProps {
@@ -22,6 +23,27 @@ interface DropTarget {
   column: TaskProgress
   beforeId: string | null
 }
+
+/**
+ * How many finished tasks the Done column draws before it stops.
+ *
+ * A repeating task spawns a successor on every completion (DEC-015), so a daily kept for a
+ * year is 365 finished rows in one column. They are worth keeping, since the record panel is
+ * computed from them, but nobody is scrolling to last March. The same cap and the same
+ * "and N more" line as the contract board.
+ *
+ * Only Done is capped. The other two columns are work outstanding, and hiding some of that
+ * would be hiding the point of the app.
+ */
+const DONE_LIMIT = 20
+
+/**
+ * Days of finished work the record panel draws, and therefore the floor on clearing.
+ *
+ * Mirrors StatsEndpoints.TrendDays. The server clamps to its own copy whatever is asked for,
+ * so this is only here to decide whether the button is worth offering at all.
+ */
+const KEPT_DAYS = 14
 
 const COLUMN_ACCENT: Record<TaskProgress, string> = {
   todo: 'bg-line-strong',
@@ -52,9 +74,17 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
   const [over, setOver] = useState<DropTarget | null>(null)
   const setStatus = useSetTaskStatus()
   const reorder = useReorderTasks()
+  const clear = useClearCompleted()
   const { celebrateStatusChange } = useGameFeed()
 
   const total = taskProgressOrder.reduce((sum, key) => sum + columns[key].length, 0)
+
+  // Only what the record has already stopped drawing. Offering to clear anything newer would
+  // be offering to blank the activity chart, which is the one thing this must not do.
+  const clearableBefore = Date.now() - KEPT_DAYS * 24 * 60 * 60 * 1000
+  const clearable = columns.completed.filter(
+    (task) => task.completedAt !== null && Date.parse(task.completedAt) < clearableBefore,
+  ).length
 
   if (isLoading) {
     return (
@@ -143,7 +173,9 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
   return (
     <div className="grid gap-3 sm:grid-cols-3" data-testid="task-list">
       {taskProgressOrder.map((column) => {
-        const tasks = columns[column]
+        const all = columns[column]
+        const tasks = column === 'completed' ? all.slice(0, DONE_LIMIT) : all
+        const hidden = all.length - tasks.length
         const isTarget = over?.column === column
 
         return (
@@ -163,8 +195,21 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
             <h3 className="mb-2 flex items-center gap-2 px-1 text-[10px] font-medium tracking-[0.18em] text-ink-faint uppercase">
               <span className={`h-1.5 w-1.5 rounded-full ${COLUMN_ACCENT[column]}`} />
               {taskProgressLabels[column]}
-              <span className="tabular">{tasks.length}</span>
+              <span className="tabular">{all.length}</span>
               <span className="h-px flex-1 bg-line" />
+              {column === 'completed' && clearable > 0 && (
+                <button
+                  type="button"
+                  onClick={() => clear.mutate()}
+                  disabled={clear.isPending}
+                  data-testid="clear-completed"
+                  title={`Delete ${clearable} finished ${clearable === 1 ? 'task' : 'tasks'} older than ${KEPT_DAYS} days. The record panel only reaches back ${KEPT_DAYS} days, so nothing it shows will change.`}
+                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9.5px] tracking-normal text-ink-faint normal-case transition hover:bg-surface-sunk hover:text-ink-muted disabled:opacity-40"
+                >
+                  <Eraser size={10} />
+                  Clear {clearable}
+                </button>
+              )}
             </h3>
 
             <ul className="space-y-2">
@@ -186,7 +231,16 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
               </AnimatePresence>
             </ul>
 
-            {tasks.length === 0 && (
+            {hidden > 0 && (
+              <p
+                className="px-1 pt-2.5 text-center text-[11px] text-ink-faint"
+                data-testid="done-hidden"
+              >
+                and {hidden.toLocaleString()} more finished
+              </p>
+            )}
+
+            {all.length === 0 && (
               <p className="px-1 py-6 text-center text-[11.5px] text-ink-faint">
                 {column === 'completed' ? 'Nothing finished yet' : 'Drop a task here'}
               </p>

@@ -128,6 +128,12 @@ export interface Stats {
   last14Days: DailyCompletion[]
 }
 
+/** What a clear-out actually removed, and the floor it honoured. */
+export interface ClearedCompleted {
+  deleted: number
+  olderThanDays: number
+}
+
 export interface CreateTaskInput {
   title: string
   notes?: string | null
@@ -275,6 +281,9 @@ export const api = {
     request<Task>(`/api/tasks/${id}`, { method: 'PUT', ...body(input) }),
 
   deleteTask: (id: string) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
+
+  clearCompleted: () =>
+    request<ClearedCompleted>('/api/tasks/completed', { method: 'DELETE' }),
 
   completeTask: (id: string) =>
     request<CompleteResult>(`/api/tasks/${id}/complete`, {
