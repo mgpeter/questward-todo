@@ -50,8 +50,11 @@ public static class MonsterCatalog
             MinGold: 1, MaxGold: 5, DropChance: 15,
             [
                 new LootEntry(ItemCatalog.WornDagger, 3),
+                new LootEntry(ItemCatalog.ThrowingKnives, 3),
                 new LootEntry(ItemCatalog.PaddedJerkin, 2),
+                new LootEntry(ItemCatalog.OilskinCloak, 2),
                 new LootEntry(ItemCatalog.LeatherArmour, 1),
+                new LootEntry(ItemCatalog.HeraldsBaton, 1),
                 new LootEntry(ItemCatalog.LuckyCoin, 1)
             ]),
 
@@ -62,9 +65,13 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.GoblinCleaver, 4),
                 new LootEntry(ItemCatalog.LeatherArmour, 3),
+                new LootEntry(ItemCatalog.MilitiaSpear, 3),
                 new LootEntry(ItemCatalog.IronMace, 2),
                 new LootEntry(ItemCatalog.GlovesOfTheThief, 2),
-                new LootEntry(ItemCatalog.BootsOfSpeed, 1)
+                new LootEntry(ItemCatalog.HideHarness, 2),
+                new LootEntry(ItemCatalog.PoachersShortbow, 2),
+                new LootEntry(ItemCatalog.BootsOfSpeed, 1),
+                new LootEntry(ItemCatalog.GuildSignet, 1)
             ]),
 
         new(Skeleton, "Skeleton",
@@ -74,10 +81,16 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.RustyLongsword, 3),
                 new LootEntry(ItemCatalog.ChainShirt, 3),
+                new LootEntry(ItemCatalog.AcolytesVestment, 3),
                 new LootEntry(ItemCatalog.OakenStaff, 2),
                 new LootEntry(ItemCatalog.StuddedLeather, 2),
                 new LootEntry(ItemCatalog.RingOfFocus, 2),
-                new LootEntry(ItemCatalog.AmuletOfInsight, 1)
+                new LootEntry(ItemCatalog.ApprenticeRod, 2),
+                new LootEntry(ItemCatalog.PilgrimsCudgel, 2),
+                new LootEntry(ItemCatalog.RingmailVest, 2),
+                new LootEntry(ItemCatalog.AmuletOfInsight, 1),
+                new LootEntry(ItemCatalog.AugursBeads, 1),
+                new LootEntry(ItemCatalog.CartographersLens, 1)
             ]),
 
         new(Bandit, "Bandit",
@@ -85,11 +98,17 @@ public static class MonsterCatalog
             Level: 3, ArmourClass: 13, MaxHitPoints: 22, AttackBonus: 4, DamageNotation: "1d8",
             MinGold: 12, MaxGold: 35, DropChance: 40,
             [
-                new LootEntry(ItemCatalog.SilveredBlade, 2),
                 new LootEntry(ItemCatalog.DuellingRapier, 3),
                 new LootEntry(ItemCatalog.StuddedLeather, 3),
+                new LootEntry(ItemCatalog.WayfarersCoat, 3),
+                new LootEntry(ItemCatalog.SilveredBlade, 2),
+                new LootEntry(ItemCatalog.CavalrySabre, 2),
                 new LootEntry(ItemCatalog.ChoirmastersLute, 2),
-                new LootEntry(ItemCatalog.CharmOfPresence, 2)
+                new LootEntry(ItemCatalog.OratorsCane, 2),
+                new LootEntry(ItemCatalog.Brigandine, 2),
+                new LootEntry(ItemCatalog.CharmOfPresence, 2),
+                new LootEntry(ItemCatalog.TumblersSash, 2),
+                new LootEntry(ItemCatalog.EnvoysTorc, 1)
             ]),
 
         new(DireWolf, "Dire Wolf",
@@ -99,9 +118,14 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.BootsOfSpeed, 4),
                 new LootEntry(ItemCatalog.HuntingBow, 3),
+                new LootEntry(ItemCatalog.BoarSpear, 3),
+                new LootEntry(ItemCatalog.PoachersShortbow, 3),
                 new LootEntry(ItemCatalog.PendantOfTheBear, 2),
+                new LootEntry(ItemCatalog.HideHarness, 2),
+                new LootEntry(ItemCatalog.HeartwoodToken, 2),
                 new LootEntry(ItemCatalog.ShadowweaveCloak, 1),
-                new LootEntry(ItemCatalog.RingOfVigour, 1)
+                new LootEntry(ItemCatalog.RingOfVigour, 1),
+                new LootEntry(ItemCatalog.QuickstringBracer, 1)
             ]),
 
         new(Ogre, "Ogre",
@@ -112,8 +136,15 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.ScaleMail, 4),
                 new LootEntry(ItemCatalog.GreatAxe, 3),
                 new LootEntry(ItemCatalog.GoblinCleaver, 3),
+                new LootEntry(ItemCatalog.BeardedAxe, 3),
+                new LootEntry(ItemCatalog.ChainHauberk, 3),
                 new LootEntry(ItemCatalog.PendantOfTheBear, 2),
-                new LootEntry(ItemCatalog.RingOfVigour, 2)
+                new LootEntry(ItemCatalog.RingOfVigour, 2),
+                new LootEntry(ItemCatalog.IronFlail, 2),
+                new LootEntry(ItemCatalog.OxhideBelt, 2),
+                new LootEntry(ItemCatalog.IronBand, 2),
+                new LootEntry(ItemCatalog.DuellistsHalfPlate, 1),
+                new LootEntry(ItemCatalog.SiegeMaul, 1)
             ]),
 
         new(Wraith, "Wraith",
@@ -123,10 +154,17 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.SilveredBlade, 4),
                 new LootEntry(ItemCatalog.RunedWand, 3),
+                new LootEntry(ItemCatalog.CircletOfClarity, 3),
+                new LootEntry(ItemCatalog.AmuletOfInsight, 3),
+                new LootEntry(ItemCatalog.ArcanistsWeave, 3),
                 new LootEntry(ItemCatalog.ShadowweaveCloak, 2),
                 new LootEntry(ItemCatalog.WardingShield, 2),
-                new LootEntry(ItemCatalog.CircletOfClarity, 3),
-                new LootEntry(ItemCatalog.AmuletOfInsight, 3)
+                new LootEntry(ItemCatalog.OrreryStaff, 2),
+                new LootEntry(ItemCatalog.CenserFlail, 2),
+                new LootEntry(ItemCatalog.BannerSpear, 2),
+                new LootEntry(ItemCatalog.TemplarsCuirass, 2),
+                new LootEntry(ItemCatalog.HermitsBell, 2),
+                new LootEntry(ItemCatalog.PhilosophersInkstone, 1)
             ]),
 
         new(YoungDragon, "Young Dragon",
@@ -136,10 +174,17 @@ public static class MonsterCatalog
             [
                 new LootEntry(ItemCatalog.DragonfangSpear, 3),
                 new LootEntry(ItemCatalog.LongbowOfTheVale, 3),
+                new LootEntry(ItemCatalog.WardingShield, 3),
                 new LootEntry(ItemCatalog.ReliquaryHammer, 2),
                 new LootEntry(ItemCatalog.BreastplateOfDawn, 2),
-                new LootEntry(ItemCatalog.WardingShield, 3),
-                new LootEntry(ItemCatalog.ScaleMail, 2)
+                new LootEntry(ItemCatalog.ScaleMail, 2),
+                new LootEntry(ItemCatalog.SiegeMaul, 2),
+                new LootEntry(ItemCatalog.OathkeepersMaul, 2),
+                new LootEntry(ItemCatalog.BulwarkHalberd, 2),
+                new LootEntry(ItemCatalog.LodestoneSceptre, 2),
+                new LootEntry(ItemCatalog.TowerShield, 2),
+                new LootEntry(ItemCatalog.GravewatchPlate, 2),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 1)
             ])
     ];
 

@@ -1,7 +1,26 @@
-import { Coins, Heart, Moon, Shield, Swords, Zap } from 'lucide-react'
+import {
+  Coins,
+  Gem,
+  Heart,
+  Moon,
+  Recycle,
+  RefreshCw,
+  Shapes,
+  Shield,
+  Sparkles,
+  Swords,
+  Zap,
+} from 'lucide-react'
 import { motion } from 'motion/react'
-import type { CharacterSheet, InventoryItem } from '../../lib/rpg'
-import { useEquip, useRest, useSellItem } from '../../lib/rpgQueries'
+import {
+  affixesInForce,
+  canImbue,
+  canReforge,
+  type CharacterSheet,
+  type InventoryItem,
+  type SetProgress,
+} from '../../lib/rpg'
+import { useCraftItem, useEquip, useRest, useSalvageItem, useSellItem } from '../../lib/rpgQueries'
 
 export function CharacterSheetPanel({
   sheet,
@@ -38,7 +57,8 @@ export function CharacterSheetPanel({
           </button>
         </header>
 
-        <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+        {/* Four columns at lg, not five: Recovery spans two, so seven tiles fill 4 + 4 exactly. */}
+        <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
           <Stat icon={<Heart size={13} />} label="Hit points" testId="stat-hp">
             <span className="tabular">
               {sheet.currentHitPoints}
@@ -60,6 +80,9 @@ export function CharacterSheetPanel({
           </Stat>
           <Stat icon={<Coins size={13} />} label="Gold" testId="stat-gold">
             <span className="tabular text-gold">{sheet.gold.toLocaleString()}</span>
+          </Stat>
+          <Stat icon={<Gem size={13} />} label="Essence" testId="stat-essence">
+            <span className="tabular text-teal">{sheet.essence.toLocaleString()}</span>
           </Stat>
         </div>
 
@@ -88,7 +111,9 @@ export function CharacterSheetPanel({
         </div>
       </section>
 
-      <Inventory items={inventory} />
+      <Sets sets={sheet.sets} />
+
+      <Inventory items={inventory} essence={sheet.essence} />
     </div>
   )
 }
@@ -103,7 +128,7 @@ function Recovery({ sheet }: { sheet: CharacterSheet }) {
 
   return (
     <div
-      className="col-span-2 rounded-xl border border-line bg-surface-sunk px-3 py-2.5 sm:col-span-1 lg:col-span-2"
+      className="col-span-2 rounded-xl border border-line bg-surface-sunk px-3 py-2.5"
       data-testid="recovery"
     >
       <p className="flex items-center gap-1.5 text-[9.5px] font-medium uppercase tracking-[0.14em] text-ink-faint">
@@ -181,9 +206,79 @@ function Stat({
   )
 }
 
-function Inventory({ items }: { items: InventoryItem[] }) {
+/**
+ * The sheet only lists sets the wearer already holds a piece of, so an empty list means
+ * "no set pieces worn" rather than "no sets exist". Rendering nothing is correct: the
+ * other sets are advertised on the pieces themselves, in the inventory below.
+ */
+function Sets({ sets }: { sets: SetProgress[] }) {
+  if (sets.length === 0) return null
+
+  return (
+    <section className="panel rounded-2xl p-5" data-testid="sets">
+      <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
+        <Shapes size={12} />
+        Sets
+      </h3>
+
+      <ul className="grid gap-2.5 lg:grid-cols-2">
+        {sets.map((set) => {
+          const complete = set.equipped >= set.total
+
+          return (
+            <motion.li
+              key={set.key}
+              layout
+              className="rounded-xl border border-line bg-surface-sunk p-3"
+              data-testid="set"
+              data-set={set.key}
+              data-complete={complete}
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="min-w-0 text-[13.5px]">{set.name}</p>
+                <p
+                  className={`tabular shrink-0 text-[11px] ${complete ? 'text-gold' : 'text-ink-faint'}`}
+                  data-testid="set-count"
+                >
+                  {set.equipped} of {set.total}
+                </p>
+              </div>
+
+              <p className="mt-1 text-[11.5px] leading-snug text-ink-muted">{set.blurb}</p>
+
+              <ul className="mt-2 space-y-1">
+                {set.tiers.map((tier) => (
+                  <li
+                    key={tier.pieces}
+                    className={`flex items-baseline gap-2 text-[11px] ${
+                      tier.active ? 'text-teal' : 'text-ink-faint'
+                    }`}
+                    data-testid="set-tier"
+                    data-pieces={tier.pieces}
+                    data-active={tier.active}
+                  >
+                    <span className="tabular shrink-0">{tier.pieces} pc</span>
+                    <span className="min-w-0">{tier.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+/** Every action button in the inventory row wears the same shape. */
+const ACTION =
+  'tabular inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-line px-2.5 py-1.5 text-[11px] transition disabled:opacity-40'
+
+function Inventory({ items, essence }: { items: InventoryItem[]; essence: number }) {
   const equip = useEquip()
   const sell = useSellItem()
+  const salvage = useSalvageItem()
+  const craft = useCraftItem()
 
   if (items.length === 0) {
     return (
@@ -194,82 +289,198 @@ function Inventory({ items }: { items: InventoryItem[] }) {
     )
   }
 
+  // The forge is the only place a refusal carries a sentence worth reading ("There is no
+  // room on it for another word"), so it gets a visible line rather than a silent no-op.
+  //
+  // Only the most recently submitted of the two speaks. Each mutation holds its last
+  // result forever, so without this a failed salvage would keep printing its refusal
+  // underneath the success line of the craft that came after it.
+  const spoke = craft.submittedAt >= salvage.submittedAt ? craft : salvage
+  const refusal = spoke.error as Error | null
+
   return (
     <section className="panel rounded-2xl p-5" data-testid="inventory">
-      <h3 className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
-        Inventory
-      </h3>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
+          Inventory
+        </h3>
+        <p className="tabular flex items-center gap-1.5 text-[11.5px] text-teal" data-testid="inventory-essence">
+          <Gem size={12} />
+          {essence.toLocaleString()} essence
+        </p>
+      </div>
+
+      {refusal && (
+        <p role="alert" className="mb-2 text-[12px] text-rose" data-testid="forge-error">
+          {refusal.message}
+        </p>
+      )}
+
+      {spoke === craft && craft.isSuccess && craft.data && (
+        <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-[12px] text-teal" data-testid="forge-result">
+          <Sparkles size={12} className="shrink-0 self-center" />
+          <span>{craft.data.item.name}</span>
+          <span className="tabular text-ink-faint">-{craft.data.essenceSpent} essence</span>
+        </p>
+      )}
+
+      {spoke === salvage && salvage.isSuccess && salvage.data && (
+        <p className="tabular mb-2 text-[12px] text-teal" data-testid="salvage-result">
+          Broke it down for {salvage.data.essenceGained} essence.
+        </p>
+      )}
 
       <ul className="space-y-2">
-        {items.map((item) => (
-          <motion.li
-            key={item.id}
-            layout
-            className={`rarity-${item.rarity} flex flex-wrap items-center gap-3 rounded-xl border p-3 ${
-              item.isEquipped ? 'border-gold/40 bg-gold/6' : 'border-line'
-            }`}
-            data-testid="inventory-item"
-            data-rarity={item.rarity}
-            data-equipped={item.isEquipped}
-          >
-            <span
-              aria-hidden="true"
-              className="h-8 w-1 shrink-0 rounded-full"
-              style={{ backgroundColor: 'var(--tier)' }}
-            />
+        {items.map((item) => {
+          const free = item.affixSlots - affixesInForce(item)
 
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-2 text-[14px]">
-                {item.name}
-                <span className="tier-chip rounded-full px-2 py-0.5 text-[10px] font-medium capitalize">
-                  {item.rarity}
-                </span>
-                {item.isEquipped && (
-                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-gold">
-                    Equipped
+          return (
+            <motion.li
+              key={item.id}
+              layout
+              className={`rarity-${item.rarity} flex flex-wrap items-center gap-3 rounded-xl border p-3 ${
+                item.isEquipped ? 'border-gold/40 bg-gold/6' : 'border-line'
+              }`}
+              data-testid="inventory-item"
+              data-rarity={item.rarity}
+              data-equipped={item.isEquipped}
+              data-set={item.setName ?? undefined}
+            >
+              <span
+                aria-hidden="true"
+                className="h-8 w-1 shrink-0 rounded-full"
+                style={{ backgroundColor: 'var(--tier)' }}
+              />
+
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="flex flex-wrap items-center gap-2 text-[14px]">
+                  <span data-testid="item-name">{item.name}</span>
+                  <span className="tier-chip rounded-full px-2 py-0.5 text-[10px] font-medium capitalize">
+                    {item.rarity}
                   </span>
+                  {item.isEquipped && (
+                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-gold">
+                      Equipped
+                    </span>
+                  )}
+                </p>
+
+                <p className="tabular mt-1 flex flex-wrap gap-2 text-[11px] text-ink-faint">
+                  <span className="capitalize">{item.slot}</span>
+                  {item.damage && <span>{item.damage}</span>}
+                  {item.armourBonus > 0 && <span>+{item.armourBonus} AC</span>}
+                  {item.abilityBonuses.map((b) => (
+                    <span key={b.label} className="text-teal">
+                      +{b.value} {b.label}
+                    </span>
+                  ))}
+                </p>
+
+                {(item.affixSlots > 0 || item.setName) && (
+                  <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {item.prefix && <Affix word={item.prefix} />}
+                    {item.suffix && <Affix word={item.suffix} />}
+                    {free > 0 && (
+                      <span
+                        className="whitespace-nowrap rounded-full border border-dashed border-line-strong px-2 py-0.5 text-ink-faint"
+                        data-testid="item-affix-empty"
+                      >
+                        {free} empty {free === 1 ? 'slot' : 'slots'}
+                      </span>
+                    )}
+                    {item.setName && (
+                      <span
+                        className="whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-ink-muted"
+                        data-testid="item-set"
+                      >
+                        {item.setName} set
+                      </span>
+                    )}
+                  </p>
                 )}
-              </p>
+              </div>
 
-              <p className="tabular mt-1 flex flex-wrap gap-2 text-[11px] text-ink-faint">
-                <span className="capitalize">{item.slot}</span>
-                {item.damage && <span>{item.damage}</span>}
-                {item.armourBonus > 0 && <span>+{item.armourBonus} AC</span>}
-                {item.abilityBonuses.map((b) => (
-                  <span key={b.label} className="text-teal">
-                    +{b.value} {b.label}
-                  </span>
-                ))}
-              </p>
-            </div>
-
-            <div className="flex shrink-0 gap-1.5">
-              <button
-                type="button"
-                onClick={() => equip.mutate({ id: item.id, equip: !item.isEquipped })}
-                disabled={equip.isPending}
-                data-testid={item.isEquipped ? 'unequip' : 'equip'}
-                className="rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-ink-muted transition hover:border-gold hover:text-gold disabled:opacity-40"
-              >
-                {item.isEquipped ? 'Remove' : 'Equip'}
-              </button>
-
-              {!item.isEquipped && (
+              <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => sell.mutate(item.id)}
-                  disabled={sell.isPending}
-                  title={`Sell for ${item.sellValue} gold`}
-                  data-testid="sell"
-                  className="tabular rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-ink-faint transition hover:border-rose hover:text-rose disabled:opacity-40"
+                  onClick={() => equip.mutate({ id: item.id, equip: !item.isEquipped })}
+                  disabled={equip.isPending}
+                  data-testid={item.isEquipped ? 'unequip' : 'equip'}
+                  className={`${ACTION} text-ink-muted hover:border-gold hover:text-gold`}
                 >
-                  Sell {item.sellValue}
+                  {item.isEquipped ? 'Remove' : 'Equip'}
                 </button>
-              )}
-            </div>
-          </motion.li>
-        ))}
+
+                {canImbue(item) && (
+                  <button
+                    type="button"
+                    onClick={() => craft.mutate({ id: item.id, verb: 'imbue' })}
+                    disabled={craft.isPending || essence < item.imbueCost}
+                    title={`Roll a new word onto it for ${item.imbueCost} essence`}
+                    data-testid="imbue"
+                    className={`${ACTION} text-ink-muted hover:border-teal hover:text-teal`}
+                  >
+                    <Sparkles size={11} />
+                    {item.imbueCost}
+                  </button>
+                )}
+
+                {canReforge(item) && (
+                  <button
+                    type="button"
+                    onClick={() => craft.mutate({ id: item.id, verb: 'reforge' })}
+                    disabled={craft.isPending || essence < item.reforgeCost}
+                    title={`Reroll every word on it for ${item.reforgeCost} essence`}
+                    data-testid="reforge"
+                    className={`${ACTION} text-ink-muted hover:border-teal hover:text-teal`}
+                  >
+                    <RefreshCw size={11} />
+                    {item.reforgeCost}
+                  </button>
+                )}
+
+                {!item.isEquipped && (
+                  <button
+                    type="button"
+                    onClick={() => sell.mutate(item.id)}
+                    disabled={sell.isPending}
+                    title={`Sell for ${item.sellValue} gold`}
+                    data-testid="sell"
+                    className={`${ACTION} text-ink-faint hover:border-gold hover:text-gold`}
+                  >
+                    Sell {item.sellValue}
+                  </button>
+                )}
+
+                {!item.isEquipped && (
+                  <button
+                    type="button"
+                    onClick={() => salvage.mutate(item.id)}
+                    disabled={salvage.isPending}
+                    title={`Break it down for ${item.salvageValue} essence. The item is destroyed.`}
+                    data-testid="salvage"
+                    className={`${ACTION} text-ink-faint hover:border-rose hover:text-rose`}
+                  >
+                    <Recycle size={11} />
+                    {item.salvageValue}
+                  </button>
+                )}
+              </div>
+            </motion.li>
+          )
+        })}
       </ul>
     </section>
+  )
+}
+
+function Affix({ word }: { word: string }) {
+  return (
+    <span
+      className="whitespace-nowrap rounded-full border border-teal/35 bg-teal/8 px-2 py-0.5 text-teal"
+      data-testid="item-affix"
+    >
+      {word}
+    </span>
   )
 }

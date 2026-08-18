@@ -45,14 +45,27 @@ public sealed class CharacterSheetService(TodoDbContext db)
         return (next, next + (RegenerationInterval * (missing - 1)));
     }
 
-    public async Task<CharacterSheet> BuildAsync(Character character, CancellationToken cancellationToken)
-    {
-        var equipped = await db.InventoryItems
+    public Task<List<InventoryItem>> EquippedAsync(Guid userId, CancellationToken cancellationToken) =>
+        db.InventoryItems
             .AsNoTracking()
-            .Where(i => i.UserId == character.UserId && i.IsEquipped)
+            .Where(i => i.UserId == userId && i.IsEquipped)
             .ToListAsync(cancellationToken);
 
-        return Build(character, equipped);
+    public async Task<CharacterSheet> BuildAsync(Character character, CancellationToken cancellationToken) =>
+        Build(character, await EquippedAsync(character.UserId, cancellationToken));
+
+    /// <summary>
+    /// The sheet and the rows it was built from, for callers that also have to report set
+    /// progress. Set completion is a pure function of what is worn (DEC-002), so it is derived
+    /// from this same list rather than queried again and rather than cached on the character.
+    /// </summary>
+    public async Task<(CharacterSheet Sheet, List<InventoryItem> Equipped)> BuildWithEquipmentAsync(
+        Character character,
+        CancellationToken cancellationToken)
+    {
+        var equipped = await EquippedAsync(character.UserId, cancellationToken);
+
+        return (Build(character, equipped), equipped);
     }
 
     public static CharacterSheet Build(Character character, IReadOnlyList<InventoryItem> equipped) =>
@@ -62,11 +75,19 @@ public sealed class CharacterSheetService(TodoDbContext db)
             character.AbilityScores,
             EffectsOf(equipped));
 
+    /// <summary>
+    /// The one place a bonus of any origin becomes a sheet number: intrinsic item power,
+    /// rolled affixes, and set completion all flatten here.
+    /// </summary>
     public static EquipmentEffects EffectsOf(IReadOnlyList<InventoryItem> equipped)
     {
         var bonuses = AbilityScores.Zero;
         var armour = 0;
         DiceExpressionHolder weapon = default;
+
+        // Affixes and set bonuses are the same kind of thing said the same way, so they
+        // accumulate into one vector and are folded in once at the end.
+        var extra = BonusEffects.None;
 
         foreach (var item in equipped)
         {
@@ -90,14 +111,22 @@ public sealed class CharacterSheetService(TodoDbContext db)
             {
                 weapon = new DiceExpressionHolder(damage, definition.Finesse, definition.BonusAbility);
             }
+
+            // Deliberately outside the slot tests above. A Warded trinket grants armour class
+            // and a Vicious dagger grants damage, and gating either on the slot the base item
+            // happens to occupy is how an affix ends up silently doing nothing.
+            extra = extra.Plus(AffixRules.EffectsOf(item));
         }
+
+        extra = extra.Plus(SetCatalog.BonusesFor(equipped));
 
         return new EquipmentEffects(
             bonuses,
             armour,
             weapon.Damage,
             weapon.Finesse,
-            weapon.Ability ?? (weapon.Damage is null ? null : Ability.Strength));
+            weapon.Ability ?? (weapon.Damage is null ? null : Ability.Strength))
+            .Plus(extra);
     }
 
     /// <summary>

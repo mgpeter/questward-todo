@@ -386,10 +386,12 @@ public sealed class CombatService(
         {
             db.InventoryItems.Add(drop);
 
-            var name = ItemCatalog.Find(drop.ItemKey)?.Name ?? drop.ItemKey;
+            // The rolled name, not the catalog name. A log line that announced a plain
+            // Silvered Blade for a drop that rolled Keen would read as the affix having been
+            // lost between the roll and the row.
             rolls.Add(CombatRoll.Note(
                 encounter.Round, CombatRoll.Player,
-                $"{monster.Name} drops {RarityRules.Describe(drop.Rarity)} {name}."));
+                $"{monster.Name} drops {RarityRules.Describe(drop.Rarity)} {drop.DisplayName}."));
         }
 
         // Quest progress rides the same transaction as the fight it came from.
@@ -466,7 +468,12 @@ public sealed class CombatService(
             _ => RollMode.Normal
         };
 
-        var criticalOn = ability?.Kind == AbilityKind.AimedShot ? 19 : sheet.CriticalOn;
+        // Aimed Shot lowers the threshold to 19, it does not set it to 19. Assigning it flat
+        // would make a Keen weapon or a completed Nightfall Vigil worse on the one attack the
+        // player spent a use on.
+        var criticalOn = ability?.Kind == AbilityKind.AimedShot
+            ? Math.Min(19, sheet.CriticalOn)
+            : sheet.CriticalOn;
 
         var modifiers = ability?.Kind == AbilityKind.PowerAttack
             ? [.. sheet.AttackModifiers, new RollModifier("power attack", ClassAbilities.PowerAttackPenalty)]

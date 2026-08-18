@@ -134,6 +134,30 @@ export function useSellItem() {
   })
 }
 
+export function useSalvageItem() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => api.salvageItem(id),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+/**
+ * Imbue and reforge share one hook because they share one response shape and one
+ * invalidation. A single hook also means one pending flag, which is what stops a player
+ * spending essence twice on the same item by double-clicking through a slow round trip.
+ */
+export function useCraftItem() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, verb }: { id: string; verb: 'imbue' | 'reforge' }) =>
+      verb === 'imbue' ? api.imbueItem(id) : api.reforgeItem(id),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
 export const useChronicle = () =>
   useQuery({ queryKey: rpgKeys.chronicle, queryFn: () => api.getChronicle() })
 

@@ -20,12 +20,12 @@
   - [x] 2.1 Class, health, stamina and gold from the existing sheet endpoint
   - [x] 2.2 Verify the frontend builds and the SPA boots clean in Chrome
 
-- [ ] 3. Items, affixes and sets
-  - [ ] 3.1 Write tests for affix rolling, set completion, salvage and crafting
-  - [ ] 3.2 Affix mechanics against the existing 34 items, everything derived
-  - [ ] 3.3 `AffixRules.RollableFor` excludes `ItemSlot.Consumable`
-  - [ ] 3.4 42 new items as a separate catalog-only commit
-  - [ ] 3.5 Verify all tests pass
+- [x] 3. Items, affixes and sets
+  - [x] 3.1 Write tests for affix rolling, set completion, salvage and crafting
+  - [x] 3.2 Affix mechanics against the existing 34 items, everything derived
+  - [x] 3.3 `AffixRules.RollableFor` excludes `ItemSlot.Consumable`
+  - [x] 3.4 42 new items as a separate catalog-only commit
+  - [x] 3.5 Verify all tests pass
 
 - [ ] 4. Content, bestiary and feel
   - [ ] 4.1 Write tests for bestiary recording, isolation and level coverage

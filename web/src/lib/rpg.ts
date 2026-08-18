@@ -26,6 +26,22 @@ export interface ClassAbilityView {
   remaining: number
 }
 
+/** One threshold of a set bonus. Active once enough pieces are worn. */
+export interface SetTier {
+  pieces: number
+  description: string
+  active: boolean
+}
+
+export interface SetProgress {
+  key: string
+  name: string
+  blurb: string
+  equipped: number
+  total: number
+  tiers: SetTier[]
+}
+
 export interface CharacterSheet {
   classKey: string | null
   className: string | null
@@ -48,6 +64,13 @@ export interface CharacterSheet {
   fullyHealedAt: string | null
   /** Gold a full heal costs right now. Zero when whole. */
   restCost: number
+  /** The forge's currency. Earned only by breaking items down. */
+  essence: number
+  /**
+   * Only sets with at least one piece equipped. The rest are discovered through
+   * InventoryItem.setName on the pieces themselves.
+   */
+  sets: SetProgress[]
 }
 
 export interface ClassOption {
@@ -117,17 +140,38 @@ export interface Encounter {
 export interface InventoryItem {
   id: string
   itemKey: string
+  /** The display name, affixes included: "Keen Silvered Blade of the Fox". */
   name: string
   blurb: string
   slot: ItemSlotName
   rarity: RarityName
   isEquipped: boolean
   damage: string | null
+  /** Item plus affixes. Set bonuses are not attributed to a piece; they live on the sheet. */
   armourBonus: number
   abilityBonuses: RollModifier[]
   sellValue: number
   acquiredAt: string
+  /** The affix word, not its key: "Keen". Null when the slot is empty. */
+  prefix: string | null
+  /** "of the Fox". Null when the slot is empty. */
+  suffix: string | null
+  setName: string | null
+  /** How many affixes this rarity and slot can hold at all. Zero on a Common. */
+  affixSlots: number
+  salvageValue: number
+  imbueCost: number
+  reforgeCost: number
 }
+
+/** Affixes in force, which is what imbue and reforge price themselves against. */
+export const affixesInForce = (item: InventoryItem): number =>
+  (item.prefix ? 1 : 0) + (item.suffix ? 1 : 0)
+
+export const canImbue = (item: InventoryItem): boolean =>
+  affixesInForce(item) < item.affixSlots
+
+export const canReforge = (item: InventoryItem): boolean => affixesInForce(item) > 0
 
 export interface QuestObjective {
   id: string
@@ -204,6 +248,8 @@ export interface ShopOffer {
   abilityBonuses: RollModifier[]
   price: number
   affordable: boolean
+  /** Already bought today. Each offer sells once, and the shelf restocks at rotatesAt. */
+  soldOut: boolean
 }
 
 export interface Shop {
@@ -224,6 +270,18 @@ export interface UpgradeResult {
   to: RarityName
   goldSpent: number
   gold: number
+}
+
+export interface SalvageResult {
+  essenceGained: number
+  essence: number
+}
+
+/** The reply to both imbue and reforge: they differ only in what they cost. */
+export interface CraftResult {
+  item: InventoryItem
+  essenceSpent: number
+  essence: number
 }
 
 export interface RestResult {

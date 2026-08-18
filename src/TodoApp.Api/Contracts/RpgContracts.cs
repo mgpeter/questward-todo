@@ -36,7 +36,25 @@ public sealed record CharacterSheetDto(
     DateTimeOffset? NextRegenerationAt,
     DateTimeOffset? FullyHealedAt,
     /// <summary>Gold a full heal would cost right now. Zero when already whole.</summary>
-    int RestCost);
+    int RestCost,
+    /// <summary>The forge's currency. Earned only by breaking items down.</summary>
+    int Essence,
+    /// <summary>
+    /// Only sets the wearer has at least one piece equipped from. The rest are discovered
+    /// through <see cref="InventoryItemDto.SetName"/> on the pieces themselves.
+    /// </summary>
+    IReadOnlyList<SetProgressDto> Sets);
+
+/// <param name="Active">True when enough pieces are worn for this tier to be paying.</param>
+public sealed record SetTierDto(int Pieces, string Description, bool Active);
+
+public sealed record SetProgressDto(
+    string Key,
+    string Name,
+    string Blurb,
+    int Equipped,
+    int Total,
+    IReadOnlyList<SetTierDto> Tiers);
 
 public sealed record ClassOptionDto(
     string Key,
@@ -112,6 +130,17 @@ public sealed record EncounterDto(
 
 public sealed record StartEncounterRequest(string MonsterKey);
 
+/// <param name="Name">
+/// The rolled name, prefix and suffix included, never the bare catalog name. Every producer in
+/// the app goes through <see cref="AffixRules.DisplayName(InventoryItem)"/>, because a screen
+/// that showed the plain name would read to the player as the affix having been lost.
+/// </param>
+/// <param name="ArmourBonus">Item and affixes. Set bonuses belong to the wearer, not to a piece.</param>
+/// <param name="AbilityBonuses">Item and affixes, for the same reason.</param>
+/// <param name="AffixSlots">
+/// How many words this item could hold at its rarity, so the client can tell a full Uncommon
+/// from a half-filled Epic without knowing the rule.
+/// </param>
 public sealed record InventoryItemDto(
     Guid Id,
     string ItemKey,
@@ -124,7 +153,14 @@ public sealed record InventoryItemDto(
     int ArmourBonus,
     IReadOnlyList<RollModifierDto> AbilityBonuses,
     int SellValue,
-    DateTimeOffset AcquiredAt);
+    DateTimeOffset AcquiredAt,
+    string? Prefix,
+    string? Suffix,
+    string? SetName,
+    int AffixSlots,
+    int SalvageValue,
+    int ImbueCost,
+    int ReforgeCost);
 
 public sealed record AttackResponse(
     EncounterDto Encounter,
@@ -166,6 +202,10 @@ public sealed record ChronicleSummaryDto(
 
 public sealed record ChronicleDto(ChronicleSummaryDto Summary, IReadOnlyList<EncounterDto> Encounters);
 
+/// <param name="SoldOut">
+/// Already bought today. Each offer sells once, so without this the card would invite a click
+/// that can only come back a 409.
+/// </param>
 public sealed record ShopOfferDto(
     string OfferId,
     string ItemKey,
@@ -177,7 +217,8 @@ public sealed record ShopOfferDto(
     int ArmourBonus,
     IReadOnlyList<RollModifierDto> AbilityBonuses,
     int Price,
-    bool Affordable);
+    bool Affordable,
+    bool SoldOut);
 
 public sealed record ShopDto(IReadOnlyList<ShopOfferDto> Offers, DateTimeOffset RotatesAt, int Gold);
 
@@ -193,5 +234,9 @@ public sealed record UpgradeResponse(
 public sealed record RestResponse(int GoldSpent, int Gold, int HitPoints, int MaxHitPoints);
 
 public sealed record SellResponse(int GoldGained, int Gold);
+
+public sealed record SalvageResponse(int EssenceGained, int Essence);
+
+public sealed record CraftResponse(InventoryItemDto Item, int EssenceSpent, int Essence);
 
 public sealed record EquipResponse(CharacterSheetDto Sheet, IReadOnlyList<InventoryItemDto> Inventory);

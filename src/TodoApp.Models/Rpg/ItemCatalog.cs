@@ -6,7 +6,18 @@ public enum ItemSlot
 {
     Weapon = 0,
     Armour = 1,
-    Trinket = 2
+    Trinket = 2,
+
+    /// <summary>
+    /// Used up rather than worn, and therefore never affixed (see <see cref="AffixRules.RollableFor"/>).
+    /// </summary>
+    /// <remarks>
+    /// Declared before any item claims it, because the value 3 is already pinned by the
+    /// stacking rule that consumables will be counted with <c>WHERE Slot = 3</c>. Left
+    /// unassigned it invites a different number later, and renumbering a persisted enum
+    /// silently re-slots every row already written.
+    /// </remarks>
+    Consumable = 3
 }
 
 public enum Rarity
@@ -115,6 +126,55 @@ public static class ItemCatalog
     public const string GlovesOfTheThief = "gloves-of-the-thief";
     public const string CircletOfClarity = "circlet-of-clarity";
     public const string LuckyCoin = "lucky-coin";
+
+    // Phase 3 weapons. Every ability governs at least three now, at a low, a middle and a
+    // high price, so no class is ever offered a shelf it cannot use.
+    public const string MilitiaSpear = "militia-spear";
+    public const string BeardedAxe = "bearded-axe";
+    public const string SiegeMaul = "siege-maul";
+    public const string ThrowingKnives = "throwing-knives";
+    public const string PoachersShortbow = "poachers-shortbow";
+    public const string CavalrySabre = "cavalry-sabre";
+    public const string BoarSpear = "boar-spear";
+    public const string IronFlail = "iron-flail";
+    public const string BulwarkHalberd = "bulwark-halberd";
+    public const string ApprenticeRod = "apprentice-rod";
+    public const string OrreryStaff = "orrery-staff";
+    public const string LodestoneSceptre = "lodestone-sceptre";
+    public const string PilgrimsCudgel = "pilgrims-cudgel";
+    public const string CenserFlail = "censer-flail";
+    public const string OathkeepersMaul = "oathkeepers-maul";
+    public const string HeraldsBaton = "heralds-baton";
+    public const string OratorsCane = "orators-cane";
+    public const string BannerSpear = "banner-spear";
+
+    // Phase 3 armour
+    public const string OilskinCloak = "oilskin-cloak";
+    public const string AcolytesVestment = "acolytes-vestment";
+    public const string HideHarness = "hide-harness";
+    public const string RingmailVest = "ringmail-vest";
+    public const string WayfarersCoat = "wayfarers-coat";
+    public const string Brigandine = "brigandine";
+    public const string ChainHauberk = "chain-hauberk";
+    public const string ArcanistsWeave = "arcanists-weave";
+    public const string TemplarsCuirass = "templars-cuirass";
+    public const string DuellistsHalfPlate = "duellists-half-plate";
+    public const string TowerShield = "tower-shield";
+    public const string GravewatchPlate = "gravewatch-plate";
+
+    // Phase 3 trinkets
+    public const string IronBand = "iron-band";
+    public const string QuarrymansGauntlets = "quarrymans-gauntlets";
+    public const string TumblersSash = "tumblers-sash";
+    public const string QuickstringBracer = "quickstring-bracer";
+    public const string HeartwoodToken = "heartwood-token";
+    public const string OxhideBelt = "oxhide-belt";
+    public const string CartographersLens = "cartographers-lens";
+    public const string PhilosophersInkstone = "philosophers-inkstone";
+    public const string AugursBeads = "augurs-beads";
+    public const string HermitsBell = "hermits-bell";
+    public const string GuildSignet = "guild-signet";
+    public const string EnvoysTorc = "envoys-torc";
 
     public static IReadOnlyList<ItemDefinition> All { get; } =
     [
@@ -258,7 +318,185 @@ public static class ItemCatalog
 
         new(LuckyCoin, "Lucky Coin", ItemSlot.Trinket,
             "It has come up heads every time so far. Every single time.",
-            BonusAbility: Ability.Charisma, BaseValue: 26)
+            BonusAbility: Ability.Charisma, BaseValue: 26),
+
+        // --- Phase 3 weapons ---------------------------------------------------
+        // Added under DEC-004, which is why this is a list edit and not a migration: the
+        // key is the only part of an item that was ever written to a row.
+        new(MilitiaSpear, "Militia Spear", ItemSlot.Weapon,
+            "Issued by the hundred, and the finish says so.",
+            DamageNotation: "1d6", BonusAbility: Ability.Strength, BaseValue: 9),
+
+        new(BeardedAxe, "Bearded Axe", ItemSlot.Weapon,
+            "The hook below the blade is for pulling shields aside.",
+            DamageNotation: "1d8", BonusAbility: Ability.Strength, BaseValue: 30),
+
+        new(SiegeMaul, "Siege Maul", ItemSlot.Weapon,
+            "Built for doors. It has never been asked to stop there.",
+            DamageNotation: "1d12", BonusAbility: Ability.Strength, BaseValue: 78),
+
+        new(ThrowingKnives, "Throwing Knives", ItemSlot.Weapon,
+            "Sold in threes, on the assumption you will not get two back.",
+            DamageNotation: "1d4", Finesse: true, BonusAbility: Ability.Dexterity, BaseValue: 11),
+
+        new(PoachersShortbow, "Poacher's Shortbow", ItemSlot.Weapon,
+            "Unstrung it passes for a walking stick, which is the point.",
+            DamageNotation: "1d6", Finesse: true, BonusAbility: Ability.Dexterity, BaseValue: 16),
+
+        new(CavalrySabre, "Cavalry Sabre", ItemSlot.Weapon,
+            "Curved so the draw and the cut are the same motion.",
+            DamageNotation: "1d8", Finesse: true, BonusAbility: Ability.Dexterity, BaseValue: 46),
+
+        // The first weapons to govern with Constitution. ChooseAttackAbility already reads
+        // whatever the item names, so the hole was a missing item rather than a missing branch.
+        new(BoarSpear, "Boar Spear", ItemSlot.Weapon,
+            "The crossbar stops the boar reaching you. Usually in time.",
+            DamageNotation: "1d6", BonusAbility: Ability.Constitution, BaseValue: 13),
+
+        new(IronFlail, "Iron Flail", ItemSlot.Weapon,
+            "The chain does half the work and none of the aiming.",
+            DamageNotation: "1d8", BonusAbility: Ability.Constitution, BaseValue: 33),
+
+        new(BulwarkHalberd, "Bulwark Halberd", ItemSlot.Weapon,
+            "Long enough to keep the fight where you decided to have it.",
+            DamageNotation: "1d10", BonusAbility: Ability.Constitution, BaseValue: 74),
+
+        new(ApprenticeRod, "Apprentice Rod", ItemSlot.Weapon,
+            "Plain ash, with a term of notes pencilled down the shaft.",
+            DamageNotation: "1d6", BonusAbility: Ability.Intelligence, BaseValue: 11),
+
+        new(OrreryStaff, "Orrery Staff", ItemSlot.Weapon,
+            "The brass rings turn whether or not anyone winds them.",
+            DamageNotation: "1d8", BonusAbility: Ability.Intelligence, BaseValue: 38),
+
+        new(LodestoneSceptre, "Lodestone Sceptre", ItemSlot.Weapon,
+            "Every nail in the room leans a little toward it.",
+            DamageNotation: "1d10", BonusAbility: Ability.Intelligence, BaseValue: 76),
+
+        new(PilgrimsCudgel, "Pilgrim's Cudgel", ItemSlot.Weapon,
+            "Carried the whole road and used twice.",
+            DamageNotation: "1d6", BonusAbility: Ability.Wisdom, BaseValue: 11),
+
+        new(CenserFlail, "Censer Flail", ItemSlot.Weapon,
+            "Swung in procession first and in anger second.",
+            DamageNotation: "1d8", BonusAbility: Ability.Wisdom, BaseValue: 34),
+
+        new(OathkeepersMaul, "Oathkeeper's Maul", ItemSlot.Weapon,
+            "Heavy enough that you finish the thought before you lift it.",
+            DamageNotation: "1d12", BonusAbility: Ability.Wisdom, BaseValue: 84),
+
+        new(HeraldsBaton, "Herald's Baton", ItemSlot.Weapon,
+            "Made for pointing at things. Adequate for the rest.",
+            DamageNotation: "1d4", Finesse: true, BonusAbility: Ability.Charisma, BaseValue: 9),
+
+        new(OratorsCane, "Orator's Cane", ItemSlot.Weapon,
+            "Weighted at the head, for emphasis.",
+            DamageNotation: "1d6", Finesse: true, BonusAbility: Ability.Charisma, BaseValue: 24),
+
+        new(BannerSpear, "Banner Spear", ItemSlot.Weapon,
+            "People follow the flag, which is hard on whoever holds it.",
+            DamageNotation: "1d8", BonusAbility: Ability.Charisma, BaseValue: 50),
+
+        // --- Phase 3 armour ----------------------------------------------------
+        new(OilskinCloak, "Oilskin Cloak", ItemSlot.Armour,
+            "Keeps the rain out. Keeps very little else out.",
+            ArmourBonus: 1, BonusAbility: Ability.Dexterity, BaseValue: 7),
+
+        new(AcolytesVestment, "Acolyte's Vestment", ItemSlot.Armour,
+            "Laundered far more often than it is mended.",
+            ArmourBonus: 1, BonusAbility: Ability.Wisdom, BaseValue: 9),
+
+        new(HideHarness, "Hide Harness", ItemSlot.Armour,
+            "Cut from something that objected at the time.",
+            ArmourBonus: 2, BonusAbility: Ability.Strength, BaseValue: 14),
+
+        new(RingmailVest, "Ring Mail Vest", ItemSlot.Armour,
+            "Rings sewn flat to leather, and you can hear every one.",
+            ArmourBonus: 2, BonusAbility: Ability.Constitution, BaseValue: 16),
+
+        new(WayfarersCoat, "Wayfarer's Coat", ItemSlot.Armour,
+            "Cut well enough that people assume you were expected.",
+            ArmourBonus: 2, BonusAbility: Ability.Charisma, BaseValue: 18),
+
+        new(Brigandine, "Brigandine", ItemSlot.Armour,
+            "The plates are riveted inside the cloth, where you cannot check them.",
+            ArmourBonus: 3, BonusAbility: Ability.Constitution, BaseValue: 30),
+
+        new(ChainHauberk, "Chain Hauberk", ItemSlot.Armour,
+            "Down to the knee, and you feel every step of it.",
+            ArmourBonus: 3, BonusAbility: Ability.Strength, BaseValue: 34),
+
+        new(ArcanistsWeave, "Arcanist's Weave", ItemSlot.Armour,
+            "The threads hum when the weather is about to turn.",
+            ArmourBonus: 3, BonusAbility: Ability.Intelligence, BaseValue: 36),
+
+        new(TemplarsCuirass, "Templar's Cuirass", ItemSlot.Armour,
+            "Dented in the same place three times and repaired twice.",
+            ArmourBonus: 4, BonusAbility: Ability.Wisdom, BaseValue: 58),
+
+        new(DuellistsHalfPlate, "Duellist's Half Plate", ItemSlot.Armour,
+            "Articulated at the elbow, because the arm matters more than the ribs.",
+            ArmourBonus: 4, BonusAbility: Ability.Dexterity, BaseValue: 62),
+
+        new(TowerShield, "Tower Shield", ItemSlot.Armour,
+            "You can set it down and stand behind it, which is most of the idea.",
+            ArmourBonus: 5, BonusAbility: Ability.Strength, BaseValue: 84),
+
+        new(GravewatchPlate, "Gravewatch Plate", ItemSlot.Armour,
+            "Issued to whoever stands the night watch, and returned less often than issued.",
+            ArmourBonus: 5, BonusAbility: Ability.Constitution, BaseValue: 88),
+
+        // --- Phase 3 trinkets --------------------------------------------------
+        // Priced inside the band the existing trinkets already occupy. A trinket's whole
+        // effect is its rarity bonus, so a cheaper one is not a weaker item, it is the same
+        // item with a shorter road to Legendary.
+        new(IronBand, "Iron Band", ItemSlot.Trinket,
+            "Plain, heavy, and not inclined to come off.",
+            BonusAbility: Ability.Strength, BaseValue: 28),
+
+        new(QuarrymansGauntlets, "Quarryman's Gauntlets", ItemSlot.Trinket,
+            "The grip stays shut a moment after you decide to open it.",
+            BonusAbility: Ability.Strength, BaseValue: 46),
+
+        new(TumblersSash, "Tumbler's Sash", ItemSlot.Trinket,
+            "You find your footing half a step earlier than you used to.",
+            BonusAbility: Ability.Dexterity, BaseValue: 29),
+
+        new(QuickstringBracer, "Quickstring Bracer", ItemSlot.Trinket,
+            "The string comes back before the arm does.",
+            BonusAbility: Ability.Dexterity, BaseValue: 44),
+
+        new(HeartwoodToken, "Heartwood Token", ItemSlot.Trinket,
+            "Cut from the middle of the tree, where the years are tightest.",
+            BonusAbility: Ability.Constitution, BaseValue: 27),
+
+        new(OxhideBelt, "Oxhide Belt", ItemSlot.Trinket,
+            "Broad and plain, and it takes the weight off the back.",
+            BonusAbility: Ability.Constitution, BaseValue: 40),
+
+        new(CartographersLens, "Cartographer's Lens", ItemSlot.Trinket,
+            "Distances stop lying to you.",
+            BonusAbility: Ability.Intelligence, BaseValue: 31),
+
+        new(PhilosophersInkstone, "Philosopher's Inkstone", ItemSlot.Trinket,
+            "The argument arranges itself while you grind the ink.",
+            BonusAbility: Ability.Intelligence, BaseValue: 50),
+
+        new(AugursBeads, "Augur's Beads", ItemSlot.Trinket,
+            "You count them without deciding to.",
+            BonusAbility: Ability.Wisdom, BaseValue: 28),
+
+        new(HermitsBell, "Hermit's Bell", ItemSlot.Trinket,
+            "It rings just before something happens. Usually nothing does.",
+            BonusAbility: Ability.Wisdom, BaseValue: 48),
+
+        new(GuildSignet, "Guild Signet", ItemSlot.Trinket,
+            "Doors that were shut turn out to be merely closed.",
+            BonusAbility: Ability.Charisma, BaseValue: 26),
+
+        new(EnvoysTorc, "Envoy's Torc", ItemSlot.Trinket,
+            "Worn so it can be read from the far end of a hall.",
+            BonusAbility: Ability.Charisma, BaseValue: 46)
     ];
 
     private static readonly Dictionary<string, ItemDefinition> ByKey =

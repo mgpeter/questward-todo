@@ -15,7 +15,20 @@ public enum RpgFailure
     AbilityExhausted = 10,
     NotEnoughGold = 11,
     AlreadyAtFullHealth = 12,
-    CannotUpgrade = 13
+    CannotUpgrade = 13,
+
+    /// <summary>
+    /// Its own member rather than a reuse of <see cref="NotEnoughGold"/>. Essence and gold are
+    /// separate balances with separate sources, and a message telling someone to earn gold
+    /// when the forge wants essence sends them to the wrong screen.
+    /// </summary>
+    NotEnoughEssence = 14,
+
+    /// <summary>
+    /// The offer was already bought today. A state conflict rather than a missing offer: the
+    /// offer is on the shelf and a NotFound would tell the player to go looking for it.
+    /// </summary>
+    OfferSoldOut = 15
 }
 
 /// <summary>

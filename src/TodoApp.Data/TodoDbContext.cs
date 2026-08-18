@@ -16,6 +16,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
 
+    public DbSet<ShopPurchase> ShopPurchases => Set<ShopPurchase>();
+
     public DbSet<Encounter> Encounters => Set<Encounter>();
 
     public DbSet<QuestProgress> QuestProgress => Set<QuestProgress>();

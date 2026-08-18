@@ -1,7 +1,7 @@
-import { Coins, Hammer, Timer } from 'lucide-react'
+import { ChevronsUp, Coins, Timer } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useBuyOffer, useInventory, useShop, useUpgradeItem } from '../../lib/rpgQueries'
-import type { InventoryItem } from '../../lib/rpg'
+import { affixesInForce, type InventoryItem } from '../../lib/rpg'
 
 export function Shop() {
   const shop = useShop()
@@ -20,7 +20,7 @@ export function Shop() {
         <div>
           <h2 className="font-display text-2xl">The Market</h2>
           <p className="mt-0.5 text-[13px] text-ink-muted">
-            Today's stock. Nothing here beats what you can win, but it is reliable.
+            Today's stock, one of each. Nothing here beats what you can win, but it is reliable.
           </p>
         </div>
 
@@ -78,33 +78,48 @@ export function Shop() {
             <button
               type="button"
               onClick={() => buy.mutate(offer.offerId)}
-              disabled={!offer.affordable || buy.isPending}
+              disabled={offer.soldOut || !offer.affordable || buy.isPending}
               data-testid={`buy-${offer.itemKey}`}
+              data-sold-out={offer.soldOut}
               className="tabular mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-xs font-medium text-canvas transition hover:opacity-90 disabled:opacity-30"
             >
-              <Coins size={12} />
-              {offer.price.toLocaleString()}
+              {/* One of each per day. Showing the price on a card that cannot be bought
+                  again would read as the shop refusing a purchase it is offering. */}
+              {offer.soldOut ? (
+                'Bought today'
+              ) : (
+                <>
+                  <Coins size={12} />
+                  {offer.price.toLocaleString()}
+                </>
+              )}
             </button>
           </motion.li>
         ))}
       </ul>
 
-      {upgradeable.length > 0 && <Reforge items={upgradeable} />}
+      {upgradeable.length > 0 && <UpgradeBench items={upgradeable} />}
     </div>
   )
 }
 
-function Reforge({ items }: { items: InventoryItem[] }) {
+/**
+ * Named for the route it calls, not "Reforge" as it once was. The forge now has a reforge
+ * of its own that rerolls affix words for essence, and two buttons meaning different
+ * things under one word is how a player spends the wrong currency.
+ */
+function UpgradeBench({ items }: { items: InventoryItem[] }) {
   const upgrade = useUpgradeItem()
 
   return (
-    <section className="panel rounded-2xl p-5" data-testid="reforge">
+    <section className="panel rounded-2xl p-5" data-testid="upgrade-bench">
       <h3 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
-        <Hammer size={12} />
-        Reforge
+        <ChevronsUp size={12} />
+        Upgrade
       </h3>
       <p className="mt-1 text-[12px] text-ink-muted">
-        Pay to raise an item one rarity. Legendary is as far as it goes.
+        Pay gold to raise an item one rarity. Any words already on it grow with it, but gold
+        never buys a new one. Legendary is as far as it goes.
       </p>
 
       {upgrade.isError && (
@@ -117,8 +132,9 @@ function Reforge({ items }: { items: InventoryItem[] }) {
         {items.map((item) => (
           <li
             key={item.id}
-            className={`rarity-${item.rarity} flex items-center gap-3 rounded-xl border border-line p-3`}
-            data-testid="reforge-item"
+            className={`rarity-${item.rarity} flex flex-wrap items-center gap-3 rounded-xl border border-line p-3`}
+            data-testid="upgrade-item"
+            data-rarity={item.rarity}
           >
             <span
               aria-hidden="true"
@@ -126,9 +142,17 @@ function Reforge({ items }: { items: InventoryItem[] }) {
               style={{ backgroundColor: 'var(--tier)' }}
             />
 
-            <span className="min-w-0 flex-1">
+            <span className="min-w-0 flex-1 basis-48">
               <span className="block text-[13.5px]">{item.name}</span>
-              <span className="block text-[11px] capitalize text-ink-faint">{item.rarity}</span>
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-faint">
+                <span className="capitalize">{item.rarity}</span>
+                {affixesInForce(item) > 0 && (
+                  <span className="text-teal">
+                    {affixesInForce(item) === 1 ? '1 word' : `${affixesInForce(item)} words`} grow
+                    stronger
+                  </span>
+                )}
+              </span>
             </span>
 
             <button
@@ -138,7 +162,7 @@ function Reforge({ items }: { items: InventoryItem[] }) {
               data-testid={`upgrade-${item.itemKey}`}
               className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold disabled:opacity-40"
             >
-              Reforge
+              Upgrade
             </button>
           </li>
         ))}

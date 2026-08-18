@@ -154,6 +154,78 @@ public class RpgSchemaTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task An_offer_can_be_taken_off_the_shelf_only_once()
+    {
+        // The daily cap on the shop is this index. Two requests that both got past the shop's
+        // own check must not both mint an item, because the forge turns the second into
+        // essence and the shelf is the only priced route to any.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.ShopPurchases.Add(new ShopPurchase
+        {
+            UserId = alice.Id, OfferId = "20260101-0-silvered-blade"
+        });
+        await db.SaveChangesAsync();
+
+        db.ShopPurchases.Add(new ShopPurchase
+        {
+            UserId = alice.Id, OfferId = "20260101-0-silvered-blade"
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Two_shoppers_can_each_buy_their_own_shelf()
+    {
+        // Offer ids are rolled per user, but they collide by construction on the day the same
+        // item lands in the same slot on two shelves.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+        var bob = await postgres.CreateUserAsync("test|bob");
+
+        await using var db = postgres.CreateContext();
+
+        foreach (var id in new[] { alice.Id, bob.Id })
+        {
+            db.ShopPurchases.Add(new ShopPurchase { UserId = id, OfferId = "20260101-0-silvered-blade" });
+        }
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, await db.ShopPurchases.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_balance_written_from_a_stale_read_is_refused()
+    {
+        // Gold rather than essence on purpose: the token lives on the character row, so it
+        // guards every balance on it. Without one, both writers succeed and the larger spend
+        // is simply forgotten.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var first = postgres.CreateContext();
+        await using var second = postgres.CreateContext();
+
+        var mine = await first.Characters.SingleAsync(c => c.UserId == alice.Id);
+        var stale = await second.Characters.SingleAsync(c => c.UserId == alice.Id);
+
+        mine.Gold = 100;
+        await first.SaveChangesAsync();
+
+        stale.Gold = 40;
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
+
+        await using var reader = postgres.CreateContext();
+        Assert.Equal(100, (await reader.Characters.SingleAsync(c => c.UserId == alice.Id)).Gold);
+    }
+
+    [Fact]
     public async Task Deleting_a_user_removes_their_whole_adventure()
     {
         await postgres.ResetAsync();

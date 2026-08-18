@@ -19,7 +19,24 @@ public class InventoryItemConfiguration : IEntityTypeConfiguration<InventoryItem
         builder.Property(i => i.Rarity).HasColumnType("integer").IsRequired();
         builder.Property(i => i.Slot).HasColumnType("integer").IsRequired();
         builder.Property(i => i.IsEquipped).HasColumnType("boolean").IsRequired();
+
+        // Nullable, so an item with no affix stores no affix rather than a sentinel word
+        // that AffixCatalog.Find would then have to be taught to ignore.
+        builder.Property(i => i.PrefixKey).HasColumnType("varchar(40)");
+        builder.Property(i => i.SuffixKey).HasColumnType("varchar(40)");
+
         builder.Property(i => i.AcquiredAt).HasColumnType("timestamp with time zone").IsRequired();
+
+        // Everything derived from the three keys plus the rarity (DEC-002). Named here rather
+        // than left to convention: EF ignores a get-only property today, but the day one of
+        // these grows a setter it would map silently and the model would start expecting
+        // columns no migration ever wrote.
+        builder.Ignore(i => i.Definition);
+        builder.Ignore(i => i.Set);
+        builder.Ignore(i => i.DisplayName);
+        builder.Ignore(i => i.AffixEffects);
+        builder.Ignore(i => i.AbilityBonuses);
+        builder.Ignore(i => i.ArmourBonus);
 
         builder.HasOne<User>()
             .WithMany()
@@ -34,6 +51,35 @@ public class InventoryItemConfiguration : IEntityTypeConfiguration<InventoryItem
         builder.HasIndex(i => new { i.UserId, i.Slot })
             .IsUnique()
             .HasFilter("\"IsEquipped\"");
+    }
+}
+
+public class ShopPurchaseConfiguration : IEntityTypeConfiguration<ShopPurchase>
+{
+    public void Configure(EntityTypeBuilder<ShopPurchase> builder)
+    {
+        builder.ToTable("shop_purchases");
+
+        builder.HasKey(p => p.Id);
+
+        builder.Property(p => p.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(p => p.UserId).HasColumnType("uuid").IsRequired();
+
+        // Wide enough for "yyyyMMdd-<slot>-<item key>" at the longest key the catalog allows.
+        builder.Property(p => p.OfferId).HasColumnType("varchar(80)").IsRequired();
+
+        builder.Property(p => p.PurchasedAt).HasColumnType("timestamp with time zone").IsRequired();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(p => p.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // One purchase per offer per user, and the offer id carries its own date, so this is
+        // also the daily cap. A unique index rather than a check in the shop, for the same
+        // reason the equipped-slot index is one: application logic loses the race and the
+        // database does not, and losing this particular race mints essence out of gold.
+        builder.HasIndex(p => new { p.UserId, p.OfferId }).IsUnique();
     }
 }
 

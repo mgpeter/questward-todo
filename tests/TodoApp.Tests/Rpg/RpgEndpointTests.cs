@@ -78,6 +78,19 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(2, inventory!.Count);
         Assert.All(inventory, i => Assert.True(i.IsEquipped));
 
+        // Granted gear is never rolled for, so a starting piece carries its plain catalog
+        // name. Two people who chose the same class must start identically equipped.
+        Assert.All(inventory, i =>
+        {
+            Assert.Null(i.Prefix);
+            Assert.Null(i.Suffix);
+            Assert.Equal(ItemCatalog.Find(i.ItemKey)!.Name, i.Name);
+        });
+
+        // The forge starts empty, and the one set piece a Ranger begins with is already visible.
+        Assert.Equal(0, sheet.Essence);
+        Assert.Contains(sheet.Sets, s => s.Key == SetCatalog.Valewarden && s.Equipped == 1);
+
         // Equipped armour raises armour class above the bare 10 + DEX.
         Assert.True(sheet.ArmourClass > 10 + dexterity.Modifier - 1);
     }
@@ -419,12 +432,19 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     private sealed record CharacterDto(int Level, int TotalXp);
     private sealed record AbilityDto(string Abbreviation, int Score, int Modifier, int BonusFromItems);
 
+    private sealed record TierDto(int Pieces, string Description, bool Active);
+
+    private sealed record SetDto(
+        string Key, string Name, string Blurb, int Equipped, int Total, List<TierDto> Tiers);
+
     private sealed record SheetDto(
         string? ClassKey, string? ClassName, int Level, List<AbilityDto> Abilities,
         int ArmourClass, int AttackBonus, string Damage, int CurrentHitPoints,
-        int MaxHitPoints, int Stamina, int Gold);
+        int MaxHitPoints, int Stamina, int Gold, int Essence, List<SetDto> Sets);
 
-    private sealed record ItemDto(Guid Id, string ItemKey, string Name, string Slot, string Rarity, bool IsEquipped);
+    private sealed record ItemDto(
+        Guid Id, string ItemKey, string Name, string Slot, string Rarity, bool IsEquipped,
+        string? Prefix, string? Suffix, string? SetName);
     private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round);
     private sealed record DieDto(int Sides, int Value, bool Kept);
     private sealed record ModifierDto(string Label, int Value);

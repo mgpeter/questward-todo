@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using TodoApp.Api.Auth;
 using TodoApp.Api.Endpoints;
+using TodoApp.Api.Infrastructure;
 using TodoApp.Api.Services;
 using TodoApp.Api.Services.Rpg;
 using TodoApp.Data;
@@ -45,6 +46,7 @@ builder.Services.AddScoped<QuestService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddScoped<AdventurerService>();
 builder.Services.AddScoped<ShopService>();
+builder.Services.AddScoped<ForgeService>();
 
 // Fail at startup rather than booting and rejecting every request with an opaque 401.
 builder.Services.AddOptions<Auth0Options>()
@@ -126,6 +128,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 
 builder.Services.AddProblemDetails();
+
+// Registered ahead of the default handler, so a lost write is a 409 the client can retry
+// rather than a 500 that reads as the server having broken.
+builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
+
 builder.Services.AddOpenApi();
 
 if (builder.Environment.IsDevelopment())

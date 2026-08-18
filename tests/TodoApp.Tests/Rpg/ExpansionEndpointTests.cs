@@ -255,6 +255,66 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_offer_can_only_be_bought_once_a_day()
+    {
+        // The shelf is a pure function of the user and the date, so without a record of the
+        // purchase the same offer id is buyable for as long as the gold lasts, and the forge
+        // turns every copy into essence. Six offers a day is the whole cap.
+        await ChooseAsync(_alice);
+        await GrantGoldAsync(default, "auth0|alice", 100_000);
+
+        var shop = await _alice.GetFromJsonAsync<ShopDto>("/api/rpg/shop");
+        var offer = shop!.Offers[0];
+
+        Assert.All(shop.Offers, o => Assert.False(o.SoldOut));
+
+        var first = await _alice.PostAsync($"/api/rpg/shop/{offer.OfferId}/buy", null);
+        first.EnsureSuccessStatusCode();
+
+        var second = await _alice.PostAsync($"/api/rpg/shop/{offer.OfferId}/buy", null);
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+
+        // Paid once, and holding one of them.
+        var after = await _alice.GetFromJsonAsync<ShopDto>("/api/rpg/shop");
+
+        Assert.Equal(100_000 - offer.Price, after!.Gold);
+        Assert.True(after.Offers.Single(o => o.OfferId == offer.OfferId).SoldOut);
+        Assert.All(after.Offers.Where(o => o.OfferId != offer.OfferId), o => Assert.False(o.SoldOut));
+
+        var inventory = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
+
+        Assert.Single(inventory!, i => i.ItemKey == offer.ItemKey && !i.IsEquipped);
+    }
+
+    [Fact]
+    public async Task A_sold_out_offer_blocks_only_the_offer_and_only_for_its_owner()
+    {
+        // Sold out is per user per offer. Bob's shelf is rolled from his own id, and Alice
+        // buying the whole of hers must not empty his.
+        await ChooseAsync(_alice);
+        await ChooseAsync(_bob);
+        await GrantGoldAsync(default, "auth0|alice", 100_000);
+        await GrantGoldAsync(default, "auth0|bob", 100_000);
+
+        var alices = await _alice.GetFromJsonAsync<ShopDto>("/api/rpg/shop");
+
+        foreach (var offer in alices!.Offers)
+        {
+            (await _alice.PostAsync($"/api/rpg/shop/{offer.OfferId}/buy", null)).EnsureSuccessStatusCode();
+        }
+
+        var emptied = await _alice.GetFromJsonAsync<ShopDto>("/api/rpg/shop");
+        Assert.All(emptied!.Offers, o => Assert.True(o.SoldOut));
+
+        var bobs = await _bob.GetFromJsonAsync<ShopDto>("/api/rpg/shop");
+        Assert.All(bobs!.Offers, o => Assert.False(o.SoldOut));
+
+        (await _bob.PostAsync($"/api/rpg/shop/{bobs.Offers[0].OfferId}/buy", null))
+            .EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task A_forged_offer_cannot_be_bought()
     {
         // Stock is recomputed server-side precisely so an offer id cannot be invented.
@@ -343,6 +403,48 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         var response = await _alice.PostAsync($"/api/rpg/inventory/{id}/upgrade", null);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Upgrading_buys_tier_and_never_a_new_word()
+    {
+        // Gold buys tiers; dice and essence buy words. A Rare item carrying one prefix comes
+        // back from an upgrade as an Epic carrying the same one prefix, worth more, with a
+        // second slot it has to pay the forge to fill.
+        await ChooseAsync(_alice);
+        await GrantGoldAsync(default, "auth0|alice", 100_000);
+
+        Guid id;
+
+        await using (var db = postgres.CreateContext())
+        {
+            var user = await db.Users.SingleAsync(u => u.Auth0Sub == "auth0|alice");
+
+            var item = new InventoryItem
+            {
+                UserId = user.Id,
+                ItemKey = ItemCatalog.SilveredBlade,
+                Slot = ItemSlot.Weapon,
+                Rarity = Rarity.Rare,
+                PrefixKey = AffixCatalog.Vicious
+            };
+
+            db.InventoryItems.Add(item);
+            await db.SaveChangesAsync();
+
+            id = item.Id;
+        }
+
+        var upgrade = await _alice.PostAsync($"/api/rpg/inventory/{id}/upgrade", null);
+        upgrade.EnsureSuccessStatusCode();
+
+        var result = await upgrade.Content.ReadFromJsonAsync<UpgradeDto>();
+
+        Assert.Equal("epic", result!.Item.Rarity);
+        Assert.Equal("Vicious", result.Item.Prefix);
+        Assert.Null(result.Item.Suffix);
+        Assert.Equal(2, result.Item.AffixSlots);
+        Assert.Equal(ForgeRules.EssenceFor(Rarity.Epic, 1), result.Item.SalvageValue);
     }
 
     [Fact]
@@ -467,18 +569,28 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     private sealed record CharacterDto(int Level, int TotalXp);
     private sealed record AbilityDto(string Key, string Name, int UsesPerEncounter, int Remaining);
 
+    private sealed record TierDto(int Pieces, string Description, bool Active);
+
+    private sealed record SetDto(
+        string Key, string Name, string Blurb, int Equipped, int Total, List<TierDto> Tiers);
+
     private sealed record SheetDto(
         string? ClassKey, int Level, List<AbilityDto> ClassAbilities,
         int CurrentHitPoints, int MaxHitPoints, int Gold, int RestCost,
-        DateTimeOffset? NextRegenerationAt, DateTimeOffset? FullyHealedAt);
+        DateTimeOffset? NextRegenerationAt, DateTimeOffset? FullyHealedAt,
+        int Essence, List<SetDto> Sets);
 
-    private sealed record ItemDto(Guid Id, string ItemKey, string Name, string Rarity, bool IsEquipped);
+    private sealed record ItemDto(
+        Guid Id, string ItemKey, string Name, string Rarity, bool IsEquipped,
+        string? Prefix, string? Suffix, string? SetName, int AffixSlots,
+        int SalvageValue, int ImbueCost, int ReforgeCost);
     private sealed record LogDto(string Kind, string Text);
     private sealed record EncounterDto(Guid Id, string Status, int Round, List<LogDto> Log);
     private sealed record AttackDto(EncounterDto Encounter, SheetDto Sheet);
     private sealed record SummaryDto(int Fought, int Won, int Lost, int Fled, int GoldEarned);
     private sealed record ChronicleDto(SummaryDto Summary, List<EncounterDto> Encounters);
-    private sealed record OfferDto(string OfferId, string ItemKey, string Rarity, int Price, bool Affordable);
+    private sealed record OfferDto(
+        string OfferId, string ItemKey, string Rarity, int Price, bool Affordable, bool SoldOut);
     private sealed record ShopDto(List<OfferDto> Offers, DateTimeOffset RotatesAt, int Gold);
     private sealed record PurchaseDto(ItemDto Item, int GoldSpent, int Gold);
     private sealed record UpgradeDto(ItemDto Item, string From, string To, int GoldSpent, int Gold);

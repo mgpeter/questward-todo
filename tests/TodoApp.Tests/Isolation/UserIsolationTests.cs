@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
 
 namespace TodoApp.Tests.Isolation;
@@ -274,7 +275,59 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(0, bob!.TotalXp);
     }
 
+    [Fact]
+    public async Task Another_users_gear_cannot_be_broken_down_or_reforged()
+    {
+        // Three new routes that each take an item id and spend a currency. A missing UserId
+        // filter here does not throw: it lets one account destroy another's inventory.
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+
+        var alices = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
+        var target = alices![0].Id;
+
+        foreach (var verb in new[] { "salvage", "imbue", "reforge" })
+        {
+            // 404 rather than 403, so ids cannot be probed for existence.
+            Assert.Equal(
+                HttpStatusCode.NotFound,
+                (await _bob.PostAsync($"/api/rpg/inventory/{target}/{verb}", null)).StatusCode);
+        }
+
+        var stillThere = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
+        Assert.Contains(stillThere!, i => i.Id == target);
+    }
+
+    [Fact]
+    public async Task Essence_is_earned_only_by_the_account_that_broke_the_item()
+    {
+        // Essence is a balance on the character row, so an unscoped credit would be the same
+        // class of bug as XP leaking between accounts.
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+
+        var alices = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
+        var scrap = alices![0].Id;
+
+        await _alice.PostAsync($"/api/rpg/inventory/{scrap}/unequip", null);
+        (await _alice.PostAsync($"/api/rpg/inventory/{scrap}/salvage", null)).EnsureSuccessStatusCode();
+
+        Assert.True((await _alice.GetFromJsonAsync<SheetDto>("/api/rpg/sheet"))!.Essence > 0);
+        Assert.Equal(0, (await _bob.GetFromJsonAsync<SheetDto>("/api/rpg/sheet"))!.Essence);
+
+        // And Bob's own gear survived Alice's visit to the forge.
+        Assert.Equal(2, (await _bob.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory"))!.Count);
+    }
+
+    private static async Task ChooseClassAsync(HttpClient client) =>
+        (await client.PutAsJsonAsync("/api/rpg/class", new { classKey = ClassCatalog.Fighter }))
+            .EnsureSuccessStatusCode();
+
     private sealed record TaskDto(Guid Id, string Title, int SortOrder, bool IsCompleted);
+
+    private sealed record ItemDto(Guid Id, string ItemKey, string Name, bool IsEquipped);
+
+    private sealed record SheetDto(int Gold, int Essence);
 
     private sealed record CharacterDto(
         string Name,

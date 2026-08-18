@@ -350,4 +350,14 @@ export const api = {
 
   upgradeItem: (id: string) =>
     request<Rpg.UpgradeResult>(`/api/rpg/inventory/${id}/upgrade`, { method: 'POST' }),
+
+  /** Destroys the item for essence. Distinct from selling, which destroys it for gold. */
+  salvageItem: (id: string) =>
+    request<Rpg.SalvageResult>(`/api/rpg/inventory/${id}/salvage`, { method: 'POST' }),
+
+  imbueItem: (id: string) =>
+    request<Rpg.CraftResult>(`/api/rpg/inventory/${id}/imbue`, { method: 'POST' }),
+
+  reforgeItem: (id: string) =>
+    request<Rpg.CraftResult>(`/api/rpg/inventory/${id}/reforge`, { method: 'POST' }),
 }

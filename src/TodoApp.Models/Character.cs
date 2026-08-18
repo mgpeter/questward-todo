@@ -52,6 +52,14 @@ public class Character
 
     public int Gold { get; set; }
 
+    /// <summary>
+    /// Salvage material, spent at the forge. A balance rather than a computation: its credits
+    /// come from items that salvage destroys, so there is no surviving state to recompute it
+    /// from, which is the same argument that already justifies <see cref="Gold"/> and
+    /// <see cref="Stamina"/> on this row (DEC-002).
+    /// </summary>
+    public int Essence { get; set; }
+
     /// <summary>Anchor for passive hit point regeneration, avoiding a background job.</summary>
     public DateTimeOffset? HitPointsUpdatedAt { get; set; }
 

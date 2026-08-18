@@ -60,17 +60,30 @@ public sealed class LootService(TodoDbContext db, IDiceRoller roller)
             return null;
         }
 
+        // Rarity first, then affixes, because the affix roll reads the rarity it just got.
+        // A Common drop rolls zero slots and therefore spends no extra dice at all, which is
+        // what keeps every seeded script in the suite intact.
+        var rarity = RollRarity(rarityAdvantage);
+        var (prefix, suffix) = AffixRules.Roll(item.Slot, rarity, roller);
+
         return new InventoryItem
         {
             UserId = userId,
             ItemKey = item.Key,
             Slot = item.Slot,
-            Rarity = RollRarity(rarityAdvantage),
+            Rarity = rarity,
+            PrefixKey = prefix?.Key,
+            SuffixKey = suffix?.Key,
             IsEquipped = false,
             AcquiredAt = DateTimeOffset.UtcNow
         };
     }
 
+    /// <summary>
+    /// Hands over a specific item. Rolls nothing, affixes included: starting gear and quest
+    /// rewards are promises the catalog already made, and a die here would make the same
+    /// promise pay out differently for two people who did the same work.
+    /// </summary>
     public InventoryItem Grant(Guid userId, string itemKey, Rarity rarity)
     {
         var definition = ItemCatalog.Find(itemKey)

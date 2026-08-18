@@ -42,6 +42,10 @@ public static class RpgEndpoints
         group.MapPost("/inventory/{id:guid}/unequip", Unequip);
         group.MapDelete("/inventory/{id:guid}", Sell);
 
+        group.MapPost("/inventory/{id:guid}/salvage", Salvage);
+        group.MapPost("/inventory/{id:guid}/imbue", Imbue);
+        group.MapPost("/inventory/{id:guid}/reforge", Reforge);
+
         group.MapGet("/quests", GetQuests);
         group.MapPost("/quests/{key}/claim", ClaimQuest);
 
@@ -56,9 +60,9 @@ public static class RpgEndpoints
         CharacterSheetService sheets,
         CancellationToken cancellationToken)
     {
-        var (character, sheet) = await LoadAsync(currentUser, db, sheets, cancellationToken);
+        var loaded = await LoadAsync(currentUser, db, sheets, cancellationToken);
 
-        return Results.Ok(sheet.ToDto(character));
+        return Results.Ok(loaded.Sheet.ToDto(loaded.Character, loaded.Equipped));
     }
 
     private static IResult GetClasses() =>
@@ -79,9 +83,9 @@ public static class RpgEndpoints
             return Problem(result.Failure, result.Message);
         }
 
-        var sheet = await sheets.BuildAsync(result.Value!, cancellationToken);
+        var (sheet, equipped) = await sheets.BuildWithEquipmentAsync(result.Value!, cancellationToken);
 
-        return Results.Ok(sheet.ToDto(result.Value!));
+        return Results.Ok(sheet.ToDto(result.Value!, equipped));
     }
 
     // ----------------------------------------------------------------- combat
@@ -168,7 +172,7 @@ public static class RpgEndpoints
         }
 
         var outcome = result.Value!;
-        var (character, sheet) = await LoadAsync(currentUser, db, sheets, cancellationToken);
+        var loaded = await LoadAsync(currentUser, db, sheets, cancellationToken);
 
         return Results.Ok(new AttackResponse(
             outcome.Encounter.ToDto(),
@@ -179,7 +183,7 @@ public static class RpgEndpoints
             outcome.Loot?.ToDto(),
             outcome.QuestsAdvanced.Select(q => q.ToDto()).ToList(),
             // Remaining ability uses come from the encounter the round just ran on.
-            sheet.ToDto(character, outcome.Encounter)));
+            loaded.Sheet.ToDto(loaded.Character, loaded.Equipped, outcome.Encounter)));
     }
 
     private static async Task<IResult> GetChronicle(
@@ -217,6 +221,7 @@ public static class RpgEndpoints
     private static async Task<IResult> GetShop(
         ICurrentUser currentUser,
         TodoDbContext db,
+        ShopService shop,
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetAsync(cancellationToken);
@@ -226,10 +231,12 @@ public static class RpgEndpoints
             .Select(c => c.Gold)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var stock = ShopService.StockFor(user.Id, DateTimeOffset.UtcNow);
+        var now = DateTimeOffset.UtcNow;
+        var stock = ShopService.StockFor(user.Id, now);
+        var soldOut = await shop.SoldOutAsync(user.Id, now, cancellationToken);
 
         return Results.Ok(new ShopDto(
-            stock.Offers.Select(o => o.ToDto(gold)).ToList(),
+            stock.Offers.Select(o => o.ToDto(gold, soldOut)).ToList(),
             stock.RotatesAt,
             gold));
     }
@@ -329,6 +336,40 @@ public static class RpgEndpoints
             : Problem(result.Failure, result.Message);
     }
 
+    // ------------------------------------------------------------------ forge
+
+    private static async Task<IResult> Salvage(
+        Guid id,
+        ICurrentUser currentUser,
+        ForgeService forge,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await forge.SalvageAsync(user.Id, id, cancellationToken);
+
+        return result.Ok
+            ? Results.Ok(new SalvageResponse(result.Value!.EssenceGained, result.Value.Essence))
+            : Problem(result.Failure, result.Message);
+    }
+
+    private static Task<IResult> Imbue(
+        Guid id,
+        ICurrentUser currentUser,
+        ForgeService forge,
+        CancellationToken cancellationToken) =>
+        CraftAsync(
+            currentUser, cancellationToken,
+            userId => forge.ImbueAsync(userId, id, cancellationToken));
+
+    private static Task<IResult> Reforge(
+        Guid id,
+        ICurrentUser currentUser,
+        ForgeService forge,
+        CancellationToken cancellationToken) =>
+        CraftAsync(
+            currentUser, cancellationToken,
+            userId => forge.ReforgeAsync(userId, id, cancellationToken));
+
     // ----------------------------------------------------------------- quests
 
     private static async Task<IResult> GetQuests(
@@ -359,6 +400,21 @@ public static class RpgEndpoints
 
     // ----------------------------------------------------------------- shared
 
+    /// <summary>Imbue and reforge differ only in which service call they make.</summary>
+    private static async Task<IResult> CraftAsync(
+        ICurrentUser currentUser,
+        CancellationToken cancellationToken,
+        Func<Guid, Task<RpgResult<CraftResult>>> craft)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await craft(user.Id);
+
+        return result.Ok
+            ? Results.Ok(new CraftResponse(
+                result.Value!.Item.ToDto(), result.Value.EssenceSpent, result.Value.Essence))
+            : Problem(result.Failure, result.Message);
+    }
+
     private static async Task<IResult> ChangeEquipmentAsync(
         ICurrentUser currentUser,
         AdventurerService adventurer,
@@ -377,15 +433,19 @@ public static class RpgEndpoints
 
         // Both the sheet and the inventory come back, so one round trip refreshes
         // everything the equipment screen shows.
-        var (character, sheet) = await LoadAsync(currentUser, db, sheets, cancellationToken);
+        var loaded = await LoadAsync(currentUser, db, sheets, cancellationToken);
         var inventory = await adventurer.ListAsync(user.Id, cancellationToken);
 
         return Results.Ok(new EquipResponse(
-            sheet.ToDto(character),
+            loaded.Sheet.ToDto(loaded.Character, loaded.Equipped),
             inventory.Select(i => i.ToDto()).ToList()));
     }
 
-    private static async Task<(Models.Character Character, CharacterSheet Sheet)> LoadAsync(
+    /// <summary>
+    /// The equipped rows come back alongside the sheet because the sheet DTO reports set
+    /// progress, which is derived from exactly those rows rather than stored (DEC-002).
+    /// </summary>
+    private static async Task<Loaded> LoadAsync(
         ICurrentUser currentUser,
         TodoDbContext db,
         CharacterSheetService sheets,
@@ -393,7 +453,7 @@ public static class RpgEndpoints
     {
         var user = await currentUser.GetAsync(cancellationToken);
         var character = await db.Characters.SingleAsync(c => c.UserId == user.Id, cancellationToken);
-        var sheet = await sheets.BuildAsync(character, cancellationToken);
+        var (sheet, equipped) = await sheets.BuildWithEquipmentAsync(character, cancellationToken);
 
         // Regeneration is applied on read rather than by a background job.
         if (CharacterSheetService.NormaliseHitPoints(character, sheet, DateTimeOffset.UtcNow))
@@ -401,8 +461,13 @@ public static class RpgEndpoints
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        return (character, sheet);
+        return new Loaded(character, sheet, equipped);
     }
+
+    private readonly record struct Loaded(
+        Models.Character Character,
+        CharacterSheet Sheet,
+        IReadOnlyList<InventoryItem> Equipped);
 
     /// <summary>One place mapping domain failures to status codes.</summary>
     private static IResult Problem(RpgFailure failure, string? message) => failure switch
@@ -415,8 +480,10 @@ public static class RpgEndpoints
         RpgFailure.QuestNotComplete => Results.Problem(message, statusCode: 409),
         RpgFailure.AlreadyAtFullHealth => Results.Problem(message, statusCode: 409),
         RpgFailure.CannotUpgrade => Results.Problem(message, statusCode: 409),
+        RpgFailure.OfferSoldOut => Results.Problem(message, statusCode: 409),
         RpgFailure.NotEnoughStamina => Results.Problem(message, statusCode: 422),
         RpgFailure.NotEnoughGold => Results.Problem(message, statusCode: 422),
+        RpgFailure.NotEnoughEssence => Results.Problem(message, statusCode: 422),
         RpgFailure.AbilityExhausted => Results.Problem(message, statusCode: 422),
         RpgFailure.MonsterOutOfRange => Results.Problem(message, statusCode: 400),
         RpgFailure.UnknownClass => Results.Problem(message, statusCode: 400),

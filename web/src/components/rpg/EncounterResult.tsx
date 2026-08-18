@@ -82,6 +82,12 @@ export function EncounterResult({
                   {result.loot.rarity}
                 </p>
                 <p className="mt-0.5 text-[14px] font-medium">{result.loot.name}</p>
+                {/* The only place a set announces itself at the moment it is found. */}
+                {result.loot.setName && (
+                  <p className="mt-0.5 text-[10.5px] opacity-80" data-testid="reward-loot-set">
+                    {result.loot.setName} set
+                  </p>
+                )}
               </div>
             )}
           </div>
