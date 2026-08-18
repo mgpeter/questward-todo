@@ -1,4 +1,4 @@
-using TodoApp.Models;
+﻿using TodoApp.Models;
 using TodoApp.Models.Progression;
 using TodoApp.Models.Rpg;
 
@@ -67,6 +67,42 @@ public class CatalogIntegrityTests
             Assert.True(
                 Enum.TryParse<Difficulty>(x.o.Target, ignoreCase: true, out _),
                 $"{x.Key} asks for difficulty '{x.o.Target}', which is not a Difficulty"));
+    }
+
+    /// <summary>
+    /// A contract objective names a banner the win will actually be recorded under.
+    /// </summary>
+    /// <remarks>
+    /// ObjectiveKind.WinHunt was documented as taking a hunt archetype key and has never been
+    /// recorded with one: the single recording site passes the encounter's faction key, and the
+    /// two key spaces are deliberately disjoint. A quest written to the old wording would have sat
+    /// at 0/N forever with nothing anywhere to report it, because Matches is exact equality once
+    /// the target is non-empty and no integrity check covered this kind. The doc now names the
+    /// banner, and this is what holds the catalog to it.
+    /// <para>
+    /// The archetype is still countable: for a hunt the encounter's MonsterKey is the archetype
+    /// key, so DefeatMonster carries it. That path has its own gap and it is asserted below,
+    /// because the monster check next door rejects a target MonsterCatalog does not know.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Every_contract_objective_references_a_real_banner()
+    {
+        var hunts = QuestCatalog.All
+            .SelectMany(q => q.Objectives.Select(o => (q.Key, o)))
+            .Where(x => x.o.Kind == ObjectiveKind.WinHunt && x.o.Target.Length > 0);
+
+        Assert.All(hunts, x =>
+        {
+            Assert.False(
+                HuntArchetypeCatalog.Exists(x.o.Target),
+                $"{x.Key} asks for '{x.o.Target}', an archetype key. WinHunt is recorded under "
+                + "the banner, so an archetype target can never advance.");
+
+            Assert.True(
+                FactionCatalog.Find(x.o.Target) is not null,
+                $"{x.Key} asks for '{x.o.Target}', which is not a banner in FactionCatalog");
+        });
     }
 
     [Fact]

@@ -83,6 +83,17 @@ export interface CompleteResult {
   leveledUp: boolean
   previousLevel: number
   unlockedAchievements: Achievement[]
+  /**
+   * The contract this completion discharged, if one was standing on the task.
+   *
+   * Discharging pays nothing. It unlocks the fight, which still costs the one stamina every
+   * fight costs, so what arrives here is an invitation and not a purse.
+   *
+   * Optional on the wire and null the rest of the time. The server discharges it after the
+   * completion has committed, so a task always finishes even when the contract does not, and
+   * a client that predates the field still reads every other member.
+   */
+  hunt?: Rpg.HuntContract | null
 }
 
 export interface ReopenResult {
@@ -145,6 +156,8 @@ export interface SetStatusResult {
   leveledDown: boolean
   previousLevel: number
   unlockedAchievements: Achievement[]
+  /** The contract a drag into Done discharged, on the same terms as the checkbox. */
+  hunt?: Rpg.HuntContract | null
 }
 
 export class ApiError extends Error {
@@ -393,4 +406,35 @@ export const api = {
   getBestiary: () => request<Rpg.Bestiary>('/api/rpg/bestiary'),
 
   getLore: () => request<Rpg.Lore>('/api/rpg/lore'),
+
+  // ----------------------------------------------------------------- contracts
+
+  /** Derived on every read. Rolls nothing, writes nothing and costs no stamina. */
+  getHunts: () => request<Rpg.HuntBoard>('/api/rpg/hunts'),
+
+  /**
+   * Takes the contract on a task. Free: no stamina, no fight, nothing spent.
+   *
+   * Answers 201 at the contract, not at an encounter, because what it makes is a promise.
+   * The fight is a separate call and only opens once the task itself is finished, which is
+   * how the bounty stays attached to doing the work rather than to avoiding it.
+   */
+  acceptHunt: (taskId: string) =>
+    request<Rpg.HuntContract>('/api/rpg/hunts', { method: 'POST', ...body({ taskId }) }),
+
+  /** The contract fight in progress, or undefined on 204. */
+  getActiveHunt: () => request<Rpg.Hunt | undefined>('/api/rpg/hunts/active'),
+
+  /**
+   * Opens the fight a discharged contract earned. One stamina, like any other fight.
+   *
+   * Refused with 409 while the task is unfinished, and there is no way round that: a bounty
+   * is what finishing pays, never what avoiding pays.
+   */
+  fightHunt: (contractId: string) =>
+    request<Rpg.Hunt>(`/api/rpg/hunts/${contractId}/fight`, { method: 'POST' }),
+
+  /** Tears up a contract. Free, and it takes back nothing that was paid for. */
+  abandonHunt: (contractId: string) =>
+    request<Rpg.HuntContract>(`/api/rpg/hunts/${contractId}`, { method: 'DELETE' }),
 }

@@ -379,6 +379,41 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
     }
 
+    /// <summary>
+    /// One finished task advances a "complete five tasks" objective by exactly one.
+    /// </summary>
+    /// <remarks>
+    /// A completion used to be recorded twice, once with an empty target and once with the
+    /// difficulty, mirroring how it reads on the screen. But QuestService.Matches already treats
+    /// an empty objective target as a wildcard that matches any recorded target, so the wildcard
+    /// objective counted both calls: "Complete 5 tasks" finished in three, and the board said 2/5
+    /// after one chore. Nothing threw, nothing logged, and the quest looked like it was working.
+    /// <para>
+    /// The counter is clamped to Required, so the five-task test beside this one passes under
+    /// either behaviour. This is the assertion that does not.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task One_finished_task_advances_a_task_quest_exactly_once()
+    {
+        await ChooseClassAsync(_alice);
+
+        var task = await _alice.PostAsJsonAsync(
+            "/api/tasks", new { title = "One chore", difficulty = "easy" });
+
+        var created = await task.Content.ReadFromJsonAsync<TaskDto>();
+
+        await _alice.PostAsJsonAsync($"/api/tasks/{created!.Id}/complete", new { utcOffsetMinutes = 0 });
+
+        var quests = await _alice.GetFromJsonAsync<List<QuestListDto>>("/api/rpg/quests");
+        var honestWork = quests!.Single(q => q.Key == QuestCatalog.HonestWork);
+        var objective = Assert.Single(honestWork.Objectives);
+
+        Assert.Equal(1, objective.Current);
+        Assert.Equal(5, objective.Required);
+        Assert.False(honestWork.IsComplete);
+    }
+
     [Fact]
     public async Task An_unfinished_quest_cannot_be_claimed()
     {

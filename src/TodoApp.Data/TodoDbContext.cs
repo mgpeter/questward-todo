@@ -22,6 +22,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<DungeonRun> DungeonRuns => Set<DungeonRun>();
 
+    public DbSet<HuntContract> HuntContracts => Set<HuntContract>();
+
     public DbSet<QuestProgress> QuestProgress => Set<QuestProgress>();
 
     public DbSet<BestiaryEntry> BestiaryEntries => Set<BestiaryEntry>();

@@ -4,25 +4,21 @@ import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
 import { Chronicle } from '../components/rpg/Chronicle'
 import { ClassSelect } from '../components/rpg/ClassSelect'
 import { Dungeons } from '../components/rpg/Dungeons'
+import { Hunts } from '../components/rpg/Hunts'
 import { LoreCollection } from '../components/rpg/LoreCollection'
 import { QuestBoard } from '../components/rpg/QuestBoard'
 import { Shop } from '../components/rpg/Shop'
 import { Tavern } from '../components/rpg/Tavern'
+import { useNavigation, type AdventurePanel } from '../game/Navigation'
 import { useInventory, useSheet } from '../lib/rpgQueries'
 
-type Panel =
-  | 'sheet'
-  | 'tavern'
-  | 'dungeons'
-  | 'shop'
-  | 'quests'
-  | 'bestiary'
-  | 'lore'
-  | 'chronicle'
-
-const PANELS: { key: Panel; label: string }[] = [
+const PANELS: { key: AdventurePanel; label: string }[] = [
   { key: 'sheet', label: 'Character' },
   { key: 'tavern', label: 'Tavern' },
+
+  // Next to the tavern, because that is the choice being made: one stamina, spent on a
+  // stranger's monster or on one of your own.
+  { key: 'hunts', label: 'Contracts' },
   { key: 'dungeons', label: 'Dungeons' },
   { key: 'shop', label: 'Market' },
   { key: 'quests', label: 'Quests' },
@@ -34,7 +30,7 @@ const PANELS: { key: Panel; label: string }[] = [
 export function AdventureView() {
   const sheet = useSheet()
   const inventory = useInventory()
-  const [panel, setPanel] = useState<Panel>('sheet')
+  const { panel, setPanel } = useNavigation()
   const [classOpen, setClassOpen] = useState(false)
 
   // Prompt on first visit rather than assigning a class silently. Dismissible, and
@@ -91,6 +87,7 @@ export function AdventureView() {
       )}
 
       {panel === 'tavern' && <Tavern sheet={sheet.data} inventory={inventory.data ?? []} />}
+      {panel === 'hunts' && <Hunts sheet={sheet.data} inventory={inventory.data ?? []} />}
       {panel === 'dungeons' && (
         <Dungeons sheet={sheet.data} inventory={inventory.data ?? []} />
       )}

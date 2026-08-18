@@ -1,4 +1,4 @@
-using TodoApp.Models.Dice;
+﻿using TodoApp.Models.Dice;
 using TodoApp.Models.Rpg;
 
 namespace TodoApp.Api.Contracts;
@@ -264,6 +264,167 @@ public sealed record DungeonRunDto(
     DateTimeOffset? EndedAt);
 
 public sealed record StartDungeonRequest(string DungeonKey);
+
+/// <summary>
+/// One line of the contract board: a task, written up and priced, before it has been taken.
+/// </summary>
+/// <remarks>
+/// Everything here is derived on the read and stored nowhere, so opening the board twice quotes
+/// the same purse twice. The whole block is what the fight will be opened against, which is why
+/// it is quoted in full rather than summarised: the decision the player is making is which of
+/// their own chores to promise to finish, and what finishing it will be worth.
+/// </remarks>
+/// <param name="DaysOverdue">
+/// Measured from the recurrence gate for a recurring task rather than its due date, which is
+/// never advanced by completion. A daily task done faithfully every day is zero here, not the
+/// age of the due date it was first given.
+/// </param>
+/// <param name="BountyPercent">
+/// The gold multiplier this contract's age has earned, as a percentage. Never below 100 and
+/// never above 200 (DEC-013): an overdue task is a bounty, and nothing on this path subtracts.
+/// </param>
+/// <param name="PaysContractReward">
+/// Whether winning would also hand over a guaranteed item. False for a task that is not overdue
+/// and false for one flying no banner, which is what keeps a fresh contract strictly worse per
+/// stamina than a band-appropriate tavern fight.
+/// </param>
+/// <param name="StaminaCost">
+/// What the fight will cost, once the work has unlocked it. Accepting costs nothing at all, and
+/// this is quoted so the board can say so honestly rather than looking like a price of entry.
+/// </param>
+public sealed record HuntOfferDto(
+    Guid TaskId,
+    string Title,
+    string Difficulty,
+    DateTimeOffset? DueDate,
+    int DaysOverdue,
+    int Subtasks,
+    string ArchetypeKey,
+    string MonsterName,
+    string Blurb,
+    int Level,
+    int ArmourClass,
+    int MaxHitPoints,
+    string Damage,
+    int MinGold,
+    int MaxGold,
+    int DropChance,
+    int BountyPercent,
+    string? FactionKey,
+    string? FactionName,
+    string? FactionTitle,
+    string Standing,
+    string RewardFloor,
+    bool PaysContractReward,
+    int StaminaCost);
+
+/// <param name="WonHunts">
+/// Contracts won under this banner, counted from the encounters rather than stored (DEC-002).
+/// Wins, not contracts taken, so a hunt fled is worth no standing.
+/// </param>
+/// <param name="RewardFloor">
+/// The worst a contract reward from this banner can roll at this standing. It lifts a poor roll
+/// and never caps a good one, and it is the only mechanical thing standing buys.
+/// </param>
+public sealed record FactionStandingDto(
+    string Key,
+    string Name,
+    string Blurb,
+    string Standing,
+    string Title,
+    int WonHunts,
+    string RewardFloor);
+
+/// <param name="Offers">
+/// Every task that could be written up, worst first, and deliberately not trimmed. How many the
+/// board shows at once is a display decision and is made on the display: a task card reads its
+/// own contract out of this same list, and a list cut off at twenty tells the twenty-first task
+/// it has nothing to offer.
+/// </param>
+/// <param name="Contracts">The contracts already taken: what is promised, and what is owed.</param>
+public sealed record HuntBoardDto(
+    IReadOnlyList<HuntOfferDto> Offers,
+    IReadOnlyList<HuntContractDto> Contracts,
+    IReadOnlyList<FactionStandingDto> Factions,
+    int Stamina,
+    int StaminaPerHunt);
+
+public sealed record AcceptHuntRequest(Guid TaskId);
+
+/// <summary>
+/// A contract taken: the promise, and where it is in its three steps.
+/// </summary>
+/// <remarks>
+/// Every number here was frozen when the contract was accepted, which is why a contract whose
+/// task has since been re-dated, retagged, re-graded, split or deleted still reports exactly what
+/// it was written as.
+/// </remarks>
+/// <param name="Status">
+/// "accepted" while the work is outstanding, "discharged" once it is done. The fight is offered
+/// on the second and refused on the first: there is no route from an unfinished task to bounty
+/// gold, loot or standing (DEC-013).
+/// </param>
+/// <param name="TaskId">
+/// Null once the task has been deleted. A discharged contract survives that and stays fightable,
+/// because doing the work is what earned it.
+/// </param>
+/// <param name="StaminaCost">One fight's worth, and only once the fight is unlocked (DEC-012).</param>
+public sealed record HuntContractDto(
+    Guid Id,
+    string Status,
+    Guid? TaskId,
+    string TaskTitle,
+    string ArchetypeKey,
+    string MonsterName,
+    string Blurb,
+    int Level,
+    int ArmourClass,
+    int MaxHitPoints,
+    string Damage,
+    int MinGold,
+    int MaxGold,
+    int DropChance,
+    int DaysOverdue,
+    int Subtasks,
+    int BountyPercent,
+    string? FactionKey,
+    string? FactionName,
+    string? FactionTitle,
+    string Standing,
+    string RewardFloor,
+    bool PaysContractReward,
+    int StaminaCost,
+    DateTimeOffset AcceptedAt,
+    DateTimeOffset? DischargedAt);
+
+/// <summary>
+/// A contract's fight, live or finished.
+/// </summary>
+/// <remarks>
+/// Wrapped around <see cref="EncounterDto"/> rather than folded into it, because a hunt's fight is
+/// an ordinary encounter row and every existing screen that renders one should keep working
+/// without learning what a contract is. The fight is driven by the ordinary attack routes.
+/// </remarks>
+/// <param name="TaskId">
+/// Null once the task has been deleted. The fight survives that and stays fully renderable and
+/// fully fightable, because every number below was frozen onto the encounter when it was opened.
+/// </param>
+public sealed record HuntDto(
+    Guid EncounterId,
+    Guid? ContractId,
+    Guid? TaskId,
+    string? TaskTitle,
+    string ArchetypeKey,
+    string MonsterName,
+    int Level,
+    int DaysOverdue,
+    int Subtasks,
+    int BountyPercent,
+    string? FactionKey,
+    string? FactionName,
+    string? FactionTitle,
+    string Standing,
+    EncounterDto Encounter);
 
 public sealed record QuestAdvanceDto(string Key, string Name, string Progress, bool JustCompleted);
 

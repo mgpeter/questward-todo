@@ -101,7 +101,15 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
 {
     public void Configure(EntityTypeBuilder<Encounter> builder)
     {
-        builder.ToTable("encounters");
+        // The check constraint is the only one in the tree, and it is here because the four
+        // frozen hunt inputs are all-or-nothing. Encounter.Monster reads HuntLevel as the
+        // discriminator and coalesces the other two to zero, so a half-written row would not
+        // throw: it would quietly derive a stat block from defaulted zeros and look like a
+        // correctly tuned hunt. That failure has no symptom the application could notice, which
+        // is exactly the kind the database should be refusing.
+        builder.ToTable("encounters", t => t.HasCheckConstraint(
+            "CK_encounters_hunt_inputs_together",
+            "\"HuntLevel\" IS NULL OR (\"HuntDaysOverdue\" IS NOT NULL AND \"HuntSubtasks\" IS NOT NULL)"));
 
         builder.HasKey(e => e.Id);
 
@@ -127,8 +135,36 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
         // no default and no backfill: every fight that already exists was taken at the tavern.
         builder.Property(e => e.DungeonRunId).HasColumnType("uuid");
 
+        // The hunt block. Every one of them nullable, which is the same argument DungeonRunId
+        // made and is what lets the migration add all five to a populated encounters table with
+        // no default and no backfill: every fight that already exists was taken at the tavern or
+        // in a dungeon, and null says exactly that. A NOT NULL column here would have needed a
+        // sentinel task id pointing at nothing.
+        builder.Property(e => e.TaskId).HasColumnType("uuid");
+
+        // The four frozen inputs, and the complete set of them: DEC-002 says store the rolled or
+        // historical fact, so what is here is what a hunt was written against, never anything
+        // derived from it. Armour class, hit points, gold range, drop chance, loot table, phases
+        // and the monster's name are all recomputed by HuntRules.StatBlock on every read, which
+        // is what lets a retune reach a fight already in progress (DEC-004).
+        builder.Property(e => e.HuntLevel).HasColumnType("integer");
+        builder.Property(e => e.HuntDaysOverdue).HasColumnType("integer");
+        builder.Property(e => e.HuntSubtasks).HasColumnType("integer");
+
+        // The catalog key only, sized like every other catalog key column in the tree.
+        builder.Property(e => e.HuntFactionKey).HasColumnType("varchar(40)");
+
         builder.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
         builder.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
+
+        // Everything a hunt is, beyond the five columns above, is computed. Named here rather
+        // than left to convention for the reason DungeonRunConfiguration gives: EF ignores a
+        // get-only property today, but the day one of these grows a setter it maps silently and
+        // the model starts expecting a column no migration ever wrote. Monster is the one that
+        // would hurt, being a whole record.
+        builder.Ignore(e => e.Monster);
+        builder.Ignore(e => e.IsHunt);
+        builder.Ignore(e => e.IsOver);
 
         builder.HasOne<User>()
             .WithMany()
@@ -140,6 +176,18 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
             .HasForeignKey(e => e.DungeonRunId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // SET NULL, and this is the one place the hunt link deliberately differs from the
+        // dungeon link above. DeleteTask uses ExecuteDeleteAsync and bypasses the change tracker,
+        // so this referential action is the only thing standing between "the user tidied a task
+        // away" and "a fought battle, its gold and its log left the chronicle". Nulling the
+        // column leaves the four frozen scalars intact, so Encounter.Monster still resolves and
+        // the fight stays renderable and finishable. RESTRICT was rejected: it would turn
+        // deleting a task while a fight was open into a 500.
+        builder.HasOne<TodoTask>()
+            .WithMany()
+            .HasForeignKey(e => e.TaskId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(e => new { e.UserId, e.StartedAt });
 
         // How deep a run has got is a count of its won rooms rather than a stored number
@@ -148,9 +196,25 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
         // foreign key also means EF does not add a second index for the relationship above.
         builder.HasIndex(e => new { e.DungeonRunId, e.Status });
 
+        // Whether a task already had its hunt this period is a question about the fights on the
+        // table rather than a HuntedAt column on the task (DEC-002), so this is the index that
+        // question is read through. Leading on the foreign key also means EF adds no second index
+        // for the relationship above. StartedAt trails it because the question is always "this
+        // task, since when".
+        builder.HasIndex(e => new { e.TaskId, e.StartedAt });
+
+        // Standing with a faction is COUNT(won hunts under that banner) rather than a stored
+        // reputation number, which is the whole of the faction storage: a counter can disagree
+        // with the fights that actually happened, a count cannot, and there is correspondingly
+        // nothing to inflate, drift or migrate. This is the index it is counted through, in the
+        // order the count filters: one user, one banner, won only.
+        builder.HasIndex(e => new { e.UserId, e.HuntFactionKey, e.Status });
+
         // One fight at a time. Without this, two concurrent requests could each spend one
         // stamina and open a second encounter, turning one unit of real work into two sets
-        // of loot.
+        // of loot. Untouched by the hunt work above, and deliberately so: a hunt is an ordinary
+        // encounter row with Status = Active, so this governs it exactly as it governs a tavern
+        // fight, and an AddColumn does not rebuild an index.
         builder.HasIndex(e => e.UserId)
             .IsUnique()
             .HasFilter($"\"Status\" = {(int)EncounterStatus.Active}");
@@ -262,5 +326,90 @@ public class QuestProgressConfiguration : IEntityTypeConfiguration<QuestProgress
 
         // One row per user per quest, so progress cannot be double-counted into two rows.
         builder.HasIndex(q => new { q.UserId, q.QuestKey }).IsUnique();
+    }
+}
+
+public class HuntContractConfiguration : IEntityTypeConfiguration<HuntContract>
+{
+    public void Configure(EntityTypeBuilder<HuntContract> builder)
+    {
+        builder.ToTable("hunt_contracts");
+
+        builder.HasKey(c => c.Id);
+
+        builder.Property(c => c.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(c => c.UserId).HasColumnType("uuid").IsRequired();
+
+        // Nullable, because the foreign key below sets it null rather than taking the contract
+        // down with the task. A discharged contract outlives the row it was written on for the
+        // same reason a fought battle does: the work was done, and tidying the task away
+        // afterwards must not take back what doing it earned.
+        builder.Property(c => c.TaskId).HasColumnType("uuid");
+
+        // The task's own words, sized like the title column it is copied from.
+        builder.Property(c => c.TaskTitle).HasColumnType("varchar(200)").IsRequired();
+
+        // Catalog keys only (DEC-004), sized like every other catalog key column in the tree.
+        builder.Property(c => c.ArchetypeKey).HasColumnType("varchar(60)").IsRequired();
+        builder.Property(c => c.FactionKey).HasColumnType("varchar(40)");
+
+        // The three frozen numbers, and the complete set of them. Everything the stat block
+        // answers (hit points, armour class, the purse, the drop chance, the phases) is
+        // recomputed by HuntRules.StatBlock on every read, so a retune reaches a contract that
+        // was accepted before it (DEC-002, DEC-004).
+        builder.Property(c => c.Level).HasColumnType("integer").IsRequired();
+        builder.Property(c => c.DaysOverdue).HasColumnType("integer").IsRequired();
+        builder.Property(c => c.Subtasks).HasColumnType("integer").IsRequired();
+
+        builder.Property(c => c.Status).HasColumnType("integer").IsRequired();
+        builder.Property(c => c.AcceptedAt).HasColumnType("timestamp with time zone").IsRequired();
+        builder.Property(c => c.DischargedAt).HasColumnType("timestamp with time zone");
+        builder.Property(c => c.ClosedAt).HasColumnType("timestamp with time zone");
+        builder.Property(c => c.EncounterId).HasColumnType("uuid");
+
+        // Named rather than left to convention, for the reason DungeonRunConfiguration gives:
+        // EF ignores a get-only property today, but the day one grows a setter it maps silently
+        // and the model starts expecting a column no migration ever wrote. Monster is the one
+        // that would hurt, being a whole record.
+        builder.Ignore(c => c.Monster);
+        builder.Ignore(c => c.IsLive);
+        builder.Ignore(c => c.MayBeFought);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(c => c.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // SET NULL, the same choice the encounter's task link makes and for the same reason:
+        // DeleteTask uses ExecuteDeleteAsync and bypasses the change tracker, so this referential
+        // action is the only thing that runs. Cascade was rejected because it would take a
+        // discharged contract, which is work already done, away with the row.
+        builder.HasOne<TodoTask>()
+            .WithMany()
+            .HasForeignKey(c => c.TaskId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // No foreign key to the encounter on purpose. The link points contract to fight, and a
+        // constraint here would have to choose a referential action for a row the chronicle
+        // keeps forever; the encounter carries its own frozen copies of the same facts, so
+        // nothing downstream reads back through this.
+        builder.HasIndex(c => new { c.UserId, c.Status });
+
+        // Whether a task already carries a contract, and which one, is read through this. It
+        // leads on the foreign key, so EF adds no second index for the relationship above, and
+        // AcceptedAt trails it because the question is always "this task, since when".
+        builder.HasIndex(c => new { c.TaskId, c.AcceptedAt });
+
+        // One live contract per task. Without it two concurrent accepts each pass the service's
+        // check and write a row, and the loser leaves a second contract on the same task that
+        // one completion would discharge: two fights, two bounties, one piece of work.
+        //
+        // Filtered on the two open states rather than on a boolean column, so a fought or torn
+        // up contract stops blocking without anything having to remember to clear a flag.
+        builder.HasIndex(c => c.TaskId)
+            .IsUnique()
+            .HasFilter(
+                $"\"Status\" IN ({(int)HuntContractStatus.Accepted}, "
+                + $"{(int)HuntContractStatus.Discharged})");
     }
 }

@@ -31,6 +31,7 @@ export function EncounterResult({
   onDismiss,
   onFightAgain,
   againLabel = 'Find another fight',
+  clearRewardCaption = 'Dungeon reward',
 }: {
   result: AttackResult
   onDismiss: () => void
@@ -41,6 +42,15 @@ export function EncounterResult({
    * offering something the one-fight rule will refuse.
    */
   againLabel?: string
+  /**
+   * Who handed over the guaranteed item, when one was handed over.
+   *
+   * The wire carries a dungeon's clear reward and a contract's banner reward on one slot, and
+   * an encounter says nothing about which it was, so the caller names it: a contract won in
+   * the Contracts panel used to have the Ledger's own item captioned "Dungeon reward" on a
+   * fight with no dungeon anywhere near it.
+   */
+  clearRewardCaption?: string
 }) {
   const outcome = OUTCOME[result.encounter.status] ?? OUTCOME.fled
   const won = result.encounter.status === 'won'
@@ -86,7 +96,7 @@ export function EncounterResult({
               <Loot
                 item={result.clearReward}
                 testId="reward-clear"
-                caption="Dungeon reward"
+                caption={clearRewardCaption}
               />
             )}
           </div>

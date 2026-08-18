@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using TodoApp.Api.Auth;
 using TodoApp.Api.Contracts;
 using TodoApp.Api.Mapping;
@@ -38,6 +38,20 @@ public static class RpgEndpoints
         group.MapGet("/dungeons/active", GetActiveDungeon);
         group.MapPost("/dungeons/{id:guid}/enter", EnterRoom);
         group.MapPost("/dungeons/{id:guid}/abandon", AbandonDungeon);
+
+        // The three steps of a contract, plus the board and the fight in progress. No attack
+        // route among them: a contract's fight is an ordinary encounter row, so
+        // /encounters/{id}/attack drives it exactly as it drives a dungeon room, and
+        // /encounters/{id}/flee ends it the one way fights end.
+        //
+        // Note which verb costs what. Accepting is a POST that charges nothing at all, and the
+        // fight is a separate call: charging to accept would be a toll for having a backlog, and
+        // DEC-013 replaced every such toll with a bounty.
+        group.MapGet("/hunts", GetHunts);
+        group.MapPost("/hunts", AcceptHunt).ValidateBody<AcceptHuntRequest>();
+        group.MapGet("/hunts/active", GetActiveHunt);
+        group.MapPost("/hunts/{id:guid}/fight", FightHunt);
+        group.MapDelete("/hunts/{id:guid}", AbandonHunt);
 
         group.MapPost("/rest", Rest);
         group.MapGet("/shop", GetShop);
@@ -388,6 +402,100 @@ public static class RpgEndpoints
         return result.Ok ? Results.Ok(result.Value!.ToDto()) : Problem(result.Failure, result.Message);
     }
 
+    // ------------------------------------------------------------------ hunts
+
+    /// <summary>The contract board: which open tasks are huntable, and what each is worth.</summary>
+    /// <remarks>Derived on every read. Rolls nothing, writes nothing, costs no stamina.</remarks>
+    private static async Task<IResult> GetHunts(
+        ICurrentUser currentUser,
+        HuntService hunts,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var board = await hunts.BoardAsync(user.Id, cancellationToken);
+
+        return Results.Ok(board.ToDto());
+    }
+
+    /// <summary>
+    /// Takes a contract on a task. Free: no stamina, no fight, no die.
+    /// </summary>
+    /// <remarks>
+    /// Created rather than Ok, and it points at the contract rather than at an encounter, because
+    /// what this makes is a promise and not a fight. The fight is a second, separate call that
+    /// only opens once the work is done, which is the whole of how the bounty stays attached to
+    /// finishing the task rather than to avoiding it (DEC-013).
+    /// </remarks>
+    private static async Task<IResult> AcceptHunt(
+        AcceptHuntRequest request,
+        ICurrentUser currentUser,
+        HuntService hunts,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await hunts.AcceptAsync(user.Id, request.TaskId, cancellationToken);
+
+        return result.Ok
+            ? Results.Created($"/api/rpg/hunts/{result.Value!.Contract.Id}", result.Value.ToDto())
+            : Problem(result.Failure, result.Message);
+    }
+
+    private static async Task<IResult> GetActiveHunt(
+        ICurrentUser currentUser,
+        HuntService hunts,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var hunt = await hunts.ActiveAsync(user.Id, cancellationToken);
+
+        return hunt is null ? Results.NoContent() : Results.Ok(hunt.ToDto());
+    }
+
+    /// <summary>
+    /// Opens the fight a discharged contract earned. One stamina, like every other fight.
+    /// </summary>
+    /// <remarks>
+    /// Refused with 409 while the task is still outstanding, and there is deliberately no way
+    /// round that: paying bounty gold, loot or standing for an unfinished task is exactly what
+    /// DEC-013 forbids. Created rather than Ok, pointing at the encounter, because from here on
+    /// it is the ordinary combat surface.
+    /// </remarks>
+    private static async Task<IResult> FightHunt(
+        Guid id,
+        ICurrentUser currentUser,
+        HuntService hunts,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await hunts.FightAsync(user.Id, id, cancellationToken);
+
+        return result.Ok
+            ? Results.Created(
+                $"/api/rpg/encounters/{result.Value!.Encounter.Id}", result.Value.ToDto())
+            : Problem(result.Failure, result.Message);
+    }
+
+    /// <summary>
+    /// Tears up a contract. Free, and it takes nothing back that was paid for.
+    /// </summary>
+    /// <remarks>
+    /// The way out, and the only way to have a contract re-priced after the task under it has
+    /// genuinely changed shape: what was frozen at acceptance stays frozen. It cannot be turned
+    /// into a gain, because a fresh contract can only be discharged by a completion that postdates
+    /// it, so tearing up a discharged one forfeits the fight rather than banking it.
+    /// </remarks>
+    private static async Task<IResult> AbandonHunt(
+        Guid id,
+        ICurrentUser currentUser,
+        HuntService hunts,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await hunts.AbandonAsync(user.Id, id, cancellationToken);
+
+        return result.Ok ? Results.Ok(result.Value!.ToDto()) : Problem(result.Failure, result.Message);
+    }
+
     // -------------------------------------------------------------- inventory
 
     private static async Task<IResult> GetInventory(
@@ -609,6 +717,9 @@ public static class RpgEndpoints
         RpgFailure.NoneLeft => Results.Problem(message, statusCode: 409),
         RpgFailure.DungeonInProgress => Results.Problem(message, statusCode: 409),
         RpgFailure.DungeonOver => Results.Problem(message, statusCode: 409),
+        RpgFailure.HuntAlreadyTaken => Results.Problem(message, statusCode: 409),
+        RpgFailure.HuntNotDischarged => Results.Problem(message, statusCode: 409),
+        RpgFailure.HuntAlreadyFought => Results.Problem(message, statusCode: 409),
         // 404 beside NotFound rather than folded into it, so a run that is genuinely missing and
         // one that belongs to somebody else stay one answer while keeping their own message.
         // Carrying the sentence gives nothing away: both cases produce this same failure with
@@ -621,6 +732,7 @@ public static class RpgEndpoints
         RpgFailure.MonsterOutOfRange => Results.Problem(message, statusCode: 400),
         RpgFailure.UnknownClass => Results.Problem(message, statusCode: 400),
         RpgFailure.ItemNotUsable => Results.Problem(message, statusCode: 400),
+        RpgFailure.NotHuntable => Results.Problem(message, statusCode: 400),
         _ => Results.Problem(message, statusCode: 500)
     };
 }

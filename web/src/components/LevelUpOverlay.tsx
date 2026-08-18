@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useGameFeed } from '../game/GameFeed'
 import { play } from '../lib/sound'
 
@@ -11,26 +11,35 @@ export function LevelUpOverlay() {
   const { levelUp, dismissLevelUp } = useGameFeed()
   const rankChanged = levelUp ? levelUp.title !== levelUp.previousTitle : false
 
+  // Held in a ref and kept out of the effect's dependencies on purpose. The effect below plays
+  // a cue and arms a timer, and both must happen once per level: keyed on a callback identity
+  // instead, it re-ran whenever anything else in the game feed moved, replaying the fanfare and
+  // pushing the dismissal further out each time.
+  const dismiss = useRef(dismissLevelUp)
+  dismiss.current = dismissLevelUp
+
+  const level = levelUp?.level ?? null
+
   useEffect(() => {
-    if (!levelUp) return
+    if (level === null) return
 
     // The one cue allowed to sound pleased, and it belongs to finishing tasks: a level can
     // only ever come from there.
     play('levelUp')
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismissLevelUp()
+      if (event.key === 'Escape') dismiss.current()
     }
 
     // Long enough to register, short enough not to block the next completion.
-    const timer = window.setTimeout(dismissLevelUp, 6000)
+    const timer = window.setTimeout(() => dismiss.current(), 6000)
     window.addEventListener('keydown', onKey)
 
     return () => {
       window.clearTimeout(timer)
       window.removeEventListener('keydown', onKey)
     }
-  }, [levelUp, dismissLevelUp])
+  }, [level])
 
   return (
     <AnimatePresence>

@@ -168,7 +168,11 @@ public sealed class GamificationService(
 
         // Quest objectives that count real work, recorded inside the same transaction so
         // a task and its quest progress can never disagree.
-        await quests.RecordAsync(userId, ObjectiveKind.CompleteTask, string.Empty, 1, cancellationToken);
+        //
+        // Once, with the difficulty, and once is the whole of it. QuestService.Matches already
+        // treats an empty objective target as a wildcard that matches any recorded target, so the
+        // second call this used to make advanced "complete five tasks" twice for one task and
+        // finished it in three.
         await quests.RecordAsync(
             userId, ObjectiveKind.CompleteTask, task.Difficulty.ToString(), 1, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);

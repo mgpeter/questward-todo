@@ -1,12 +1,14 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using TodoApp.Api.Auth;
 using TodoApp.Api.Contracts;
 using TodoApp.Api.Mapping;
 using TodoApp.Api.Services;
+using TodoApp.Api.Services.Rpg;
 using TodoApp.Api.Validation;
 using TodoApp.Data;
 using TodoApp.Models;
 using TodoApp.Models.Progression;
+using TodoApp.Models.Rpg;
 
 namespace TodoApp.Api.Endpoints;
 
@@ -323,6 +325,8 @@ public static class TaskEndpoints
         SetStatusRequest request,
         TodoDbContext db,
         GamificationService gamification,
+        HuntService hunts,
+        ILoggerFactory loggerFactory,
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
@@ -358,16 +362,25 @@ public static class TaskEndpoints
             var completed = await gamification.CompleteAsync(
                 user.Id, id, request.UtcOffsetMinutes, cancellationToken);
 
-            return completed is null
-                ? Results.NotFound()
-                : Results.Ok(new SetStatusResponse(
-                    completed.Task,
-                    completed.XpGained,
-                    completed.Character,
-                    completed.LeveledUp,
-                    LeveledDown: false,
-                    completed.PreviousLevel,
-                    completed.UnlockedAchievements));
+            if (completed is null)
+            {
+                return Results.NotFound();
+            }
+
+            // After CompleteAsync has returned, which is to say after its transaction has
+            // committed. See DischargeHuntAsync for why that ordering is the whole feature.
+            var discharged = await DischargeHuntAsync(
+                hunts, loggerFactory, user.Id, id, cancellationToken);
+
+            return Results.Ok(new SetStatusResponse(
+                completed.Task,
+                completed.XpGained,
+                completed.Character,
+                completed.LeveledUp,
+                LeveledDown: false,
+                completed.PreviousLevel,
+                completed.UnlockedAchievements,
+                discharged));
         }
 
         if (task.IsCompletedAt(now))
@@ -378,6 +391,12 @@ public static class TaskEndpoints
             {
                 return Results.NotFound();
             }
+
+            // The same take-back the reopen route does, and it has to be here too: dragging a
+            // card out of Done is the same act as pressing Reopen, and a contract that stayed
+            // discharged through one of the two doors would pay a bounty on a task the player
+            // has just said is not finished.
+            await UndischargeHuntAsync(hunts, loggerFactory, user.Id, id, cancellationToken);
 
             // Reopening lands in Todo; honour a drag that went straight to In progress.
             if (request.Status == TaskProgress.InProgress)
@@ -420,6 +439,22 @@ public static class TaskEndpoints
             []));
     }
 
+    /// <summary>
+    /// Deletes a task, and tears up any contract that was still waiting on it.
+    /// </summary>
+    /// <remarks>
+    /// The sweep is explicit because the referential action cannot tell the two live states apart.
+    /// An accepted contract is a promise to finish this task, and deleting the task deletes the
+    /// only thing that could ever discharge it, so it is torn up: nothing was spent on it, so
+    /// nothing is taken. A discharged one is left alone and keeps its fight, with the foreign key
+    /// nulling the link: the work was done, and tidying the row away afterwards must not take back
+    /// what doing it earned.
+    /// <para>
+    /// One statement, ahead of the delete, and neither is inside a transaction because there is
+    /// nothing to lose if the delete then fails: a contract torn up on a task that survives can be
+    /// taken again for nothing.
+    /// </para>
+    /// </remarks>
     private static async Task<IResult> DeleteTask(
         Guid id,
         TodoDbContext db,
@@ -427,6 +462,16 @@ public static class TaskEndpoints
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetAsync(cancellationToken);
+
+        await db.HuntContracts
+            .Where(c => c.TaskId == id
+                && c.UserId == user.Id
+                && c.Status == HuntContractStatus.Accepted)
+            .ExecuteUpdateAsync(
+                update => update
+                    .SetProperty(c => c.Status, HuntContractStatus.Abandoned)
+                    .SetProperty(c => c.ClosedAt, DateTimeOffset.UtcNow),
+                cancellationToken);
 
         var deleted = await db.Tasks
             .Where(t => t.Id == id && t.UserId == user.Id)
@@ -438,6 +483,8 @@ public static class TaskEndpoints
     private static async Task<IResult> CompleteTask(
         Guid id,
         GamificationService gamification,
+        HuntService hunts,
+        ILoggerFactory loggerFactory,
         ICurrentUser currentUser,
         CancellationToken cancellationToken,
         CompleteTaskRequest? request = null)
@@ -450,19 +497,147 @@ public static class TaskEndpoints
             request?.UtcOffsetMinutes ?? 0,
             cancellationToken);
 
-        return result is null ? Results.NotFound() : Results.Ok(result);
+        if (result is null)
+        {
+            return Results.NotFound();
+        }
+
+        // After CompleteAsync has returned, which is to say after its transaction has committed.
+        // See DischargeHuntAsync for why that ordering is the whole feature.
+        //
+        // Reached on every completion, the already-complete no-op included: that branch opens no
+        // transaction at all, so pressing Done a second time is a free retry of a discharge that
+        // failed the first time. It cannot pay twice, or pay for the wrong window: discharging
+        // moves no gold at all, and it is refused unless the completion on the row postdates the
+        // contract.
+        var discharged = await DischargeHuntAsync(
+            hunts, loggerFactory, user.Id, id, cancellationToken);
+
+        return Results.Ok(discharged is null ? result : result with { Hunt = discharged });
     }
 
+    /// <summary>
+    /// Discharges the contract on a task that has just been completed, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// The ordering rule of the whole hunt feature, and the reason this lives here rather than
+    /// inside <see cref="GamificationService"/>.
+    /// <para>
+    /// CompleteAsync owns the only explicit transaction in the tree. It commits, and only then
+    /// returns. By the time this method is reached, the <c>await using var transaction</c> inside
+    /// it has already been disposed, so nothing below can roll a completion back: a contract that
+    /// fails to discharge can cost the player the contract, never the XP, stamina, badges or quest
+    /// progress they earned by doing the work.
+    /// </para>
+    /// <para>
+    /// The ordering is structural rather than disciplinary. HuntService is not injected into
+    /// GamificationService and never should be, so there is no field, no constructor parameter
+    /// and no using through which a later edit could pull hunt work up above the commit. That is
+    /// also what disarms the shared context trap: <c>db</c> is one scoped TodoDbContext and its
+    /// SaveChangesAsync flushes the whole change tracker, so a hunt entity tracked at any point
+    /// before the commit would land inside the XP transaction however innocent the call site
+    /// looked. Nothing hunt-shaped is ever tracked before this line, because this line is the
+    /// first mention of a hunt in the request.
+    /// </para>
+    /// <para>
+    /// The catch is the fallback and not the mechanism. The boundary above is what guarantees the
+    /// completion survives; this only stops a failed discharge turning a successful completion
+    /// into a 500. Nothing is lost by one: discharging pays nothing, and pressing Done again
+    /// retries it for free.
+    /// </para>
+    /// </remarks>
+    private static async Task<HuntContractDto?> DischargeHuntAsync(
+        HuntService hunts,
+        ILoggerFactory loggerFactory,
+        Guid userId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var discharged = await hunts.DischargeAsync(userId, taskId, cancellationToken);
+
+            return discharged?.ToDto();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            loggerFactory
+                .CreateLogger(typeof(TaskEndpoints))
+                .LogError(
+                    exception,
+                    "Discharging the contract on task {TaskId} for user {UserId} failed after the "
+                    + "completion had already committed. The completion stands. The contract is "
+                    + "still accepted and discharges on the next press of Done.",
+                    taskId,
+                    userId);
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reopens a task, and takes back the discharge on any contract it had earned.
+    /// </summary>
+    /// <remarks>
+    /// A discharged contract is the record of work that was done. Reopening says it was not, so
+    /// the contract goes back to accepted and waits to be earned again. Without this, the loop
+    /// "finish it, undo it, collect the bounty" would pay gold, loot and standing on a task that
+    /// ends the sequence unfinished, which is the shape DEC-013 exists to refuse.
+    /// <para>
+    /// A contract already fought is untouched, matching how a badge, a quest advance and spent
+    /// stamina all survive a reopen: the fight happened, and the chronicle does not un-happen.
+    /// </para>
+    /// <para>
+    /// Runs after ReopenAsync has returned, for the reason
+    /// <see cref="DischargeHuntAsync"/> spells out at length: the completion path owns the only
+    /// explicit transaction in the tree, and no hunt work may be tracked before it commits.
+    /// </para>
+    /// </remarks>
     private static async Task<IResult> ReopenTask(
         Guid id,
         GamificationService gamification,
+        HuntService hunts,
+        ILoggerFactory loggerFactory,
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
         var user = await currentUser.GetAsync(cancellationToken);
         var result = await gamification.ReopenAsync(user.Id, id, cancellationToken);
 
-        return result is null ? Results.NotFound() : Results.Ok(result);
+        if (result is null)
+        {
+            return Results.NotFound();
+        }
+
+        await UndischargeHuntAsync(hunts, loggerFactory, user.Id, id, cancellationToken);
+
+        return Results.Ok(result);
+    }
+
+    /// <inheritdoc cref="ReopenTask"/>
+    private static async Task UndischargeHuntAsync(
+        HuntService hunts,
+        ILoggerFactory loggerFactory,
+        Guid userId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await hunts.UndischargeAsync(userId, taskId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            loggerFactory
+                .CreateLogger(typeof(TaskEndpoints))
+                .LogError(
+                    exception,
+                    "Taking back the discharge on task {TaskId} for user {UserId} failed after the "
+                    + "reopen had already committed. The reopen stands. The contract is still "
+                    + "discharged and can be fought once.",
+                    taskId,
+                    userId);
+        }
     }
 
     private static async Task<IResult> ReorderTasks(

@@ -26,7 +26,30 @@ public enum ObjectiveKind
     /// sighting made below the quest's MinimumLevel was lost for good. Anything that adds a
     /// second discovery objective inherits that, and inherits the derivation with it.
     /// </remarks>
-    DiscoverMonster = 4
+    DiscoverMonster = 4,
+
+    /// <summary>
+    /// Target is a faction banner key, or empty for any hunt. Counts contracts won.
+    /// </summary>
+    /// <remarks>
+    /// A banner key and not an archetype key, which is what this used to say and what no site ever
+    /// recorded. The two key spaces are disjoint, so an objective written against the old wording
+    /// would have sat at zero forever with nothing anywhere to report it; the archetype is counted
+    /// through <see cref="DefeatMonster"/> instead, because for a hunt the encounter's MonsterKey
+    /// is the archetype key. CatalogIntegrityTests holds this contract to the catalog.
+    /// <para>
+    /// An ordinary counter recorded through RecordAsync, unlike <see cref="DiscoverMonster"/>
+    /// beside it: a win is repeatable, so nothing is lost by only counting from the moment the
+    /// quest unlocked and there is no reason to derive it.
+    /// </para>
+    /// <para>
+    /// It must be recorded at the single site that sets EncounterStatus.Won and nowhere else,
+    /// for the reason DiscoverMonster is recorded only inside StartAsync: the only way to reach
+    /// it is then to have spent stamina on a fight, so completing a task cannot pay a quest by
+    /// any route and DEC-014's gate stays the single answer to "may this pay out?".
+    /// </para>
+    /// </remarks>
+    WinHunt = 5
 }
 
 /// <param name="Id">Stable within the quest; it is the key in the persisted counter map.</param>

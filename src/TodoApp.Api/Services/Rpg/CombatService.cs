@@ -62,28 +62,54 @@ public sealed class CombatService(
         Guid userId,
         string monsterKey,
         CancellationToken cancellationToken) =>
-        StartAsync(userId, monsterKey, run: null, cancellationToken);
+        StartAsync(userId, monsterKey, run: null, hunt: null, cancellationToken);
+
+    /// <summary>Opens one room of a dungeon run. Kept so the dungeon reads as it always did.</summary>
+    public Task<RpgResult<Encounter>> StartAsync(
+        Guid userId,
+        string monsterKey,
+        DungeonRun? run,
+        CancellationToken cancellationToken) =>
+        StartAsync(userId, monsterKey, run, hunt: null, cancellationToken);
+
+    /// <summary>Opens the fight a discharged contract earned. The archetype key is the monster key.</summary>
+    /// <remarks>
+    /// Whether the contract may be fought at all is HuntService's question and is asked before
+    /// this is reached. What this owns is the price, which is the same one stamina a tavern fight
+    /// and a dungeon room cost, charged on the same line through the same check (DEC-012).
+    /// </remarks>
+    public Task<RpgResult<Encounter>> StartAsync(
+        Guid userId,
+        HuntContract hunt,
+        CancellationToken cancellationToken) =>
+        StartAsync(userId, hunt.ArchetypeKey, run: null, hunt, cancellationToken);
 
     /// <summary>
-    /// Opens a fight, either at the tavern or as one room of a dungeon run.
+    /// Opens a fight: at the tavern, as one room of a dungeon run, or as a contract on a task.
     /// </summary>
     /// <remarks>
-    /// One method rather than two, because DEC-012's gate is the thing that must not be
-    /// duplicated. A room charges its stamina here, on the same line, through the same check, as
-    /// a tavern fight; a second path that opened dungeon fights would be one edit away from
-    /// letting a five room run cost one unit of real work and pay five fights' loot.
+    /// One method rather than three, because DEC-012's gate is the thing that must not be
+    /// duplicated. A room and a hunt each charge their stamina here, on the same line, through
+    /// the same check, as a tavern fight; a second path that opened dungeon fights would be one
+    /// edit away from letting a five room run cost one unit of real work and pay five fights'
+    /// loot, and a third that opened hunts would let a backlog do the same.
     /// </remarks>
     /// <param name="run">
     /// The run this fight is a room of, or null for a fight taken at the tavern. Tracked by this
     /// context, so ending it commits with the fight.
     /// </param>
+    /// <param name="hunt">
+    /// The contract this fight settles, or null when it is not a hunt. Its four scalars are
+    /// frozen onto the encounter here and never read off the task again.
+    /// </param>
     public async Task<RpgResult<Encounter>> StartAsync(
         Guid userId,
         string monsterKey,
         DungeonRun? run,
+        HuntContract? hunt,
         CancellationToken cancellationToken)
     {
-        var monster = MonsterCatalog.Find(monsterKey);
+        var monster = ResolveMonster(monsterKey, hunt);
 
         if (monster is null)
         {
@@ -98,7 +124,11 @@ public sealed class CombatService(
         // opens at level two and ends on a level five Hedge Troll. Applying the band per room
         // would make the last room of every dungeon unreachable, and applying it to a run that
         // levelled up mid-way would strand the player inside one.
-        if (run is null && !monster.IsAvailableAt(sheet.Level))
+        //
+        // A hunt is exempt for the same shape of reason: HuntRules.LevelFor already wrote the
+        // contract at a rung inside the band, so asking again buys nothing, and asking again
+        // after the hunter levelled mid-contract would strand a fight that is already open.
+        if (run is null && hunt is null && !monster.IsAvailableAt(sheet.Level))
         {
             return RpgResult<Encounter>.Fail(
                 RpgFailure.MonsterOutOfRange,
@@ -160,9 +190,15 @@ public sealed class CombatService(
         // line is keyed off it, and a line has to be chosen before the encounter exists.
         var encounterId = Guid.CreateVersion7();
 
-        var opening = free
-            ? $"Arcane Recovery: {monster.Name} approaches at no cost."
-            : $"{monster.Name} approaches.";
+        // A contract announces itself with the task's own words, and this is the only line in the
+        // whole fight that carries them. Keeping the title out of MonsterDefinition.Name is what
+        // leaves the rest of the log, the chronicle and EncounterDto.MonsterName free of user
+        // text, and what keeps the stored key a catalog key inside its varchar(60).
+        var arrival = hunt is null
+            ? $"{monster.Name} approaches{(free ? " at no cost" : string.Empty)}."
+            : HuntRules.OpeningLine(monster.Name, hunt.TaskTitle);
+
+        var opening = free ? $"Arcane Recovery: {arrival}" : arrival;
 
         // Its own entry rather than appended to the line above, so the narration reads as a
         // sentence of its own. It is all flavour, which is what the second argument says.
@@ -177,8 +213,26 @@ public sealed class CombatService(
             Status = EncounterStatus.Active,
             Round = 0,
             // The encounter points at the run, never the reverse, which is what keeps a room's
-            // fight an ordinary row governed by the existing one-fight-at-a-time index.
+            // fight an ordinary row governed by the existing one-fight-at-a-time index. The task
+            // link below points the same way for the same reason.
             DungeonRunId = run?.Id,
+            TaskId = hunt?.TaskId,
+
+            // Copied off the contract rather than re-derived from the task, so the fight is
+            // opened against exactly what was written up: a task re-dated, retagged, re-graded
+            // or split between the acceptance and the fight cannot move the purse or the block.
+
+            // Written together or not at all: CK_encounters_hunt_inputs_together rejects a row
+            // that has the level without the other two, because Encounter.Monster reads the level
+            // as its discriminator and coalesces the rest to zero. A half-written row would derive
+            // a plausible looking block from defaulted zeros with no symptom to notice.
+            HuntLevel = hunt?.Level,
+            HuntDaysOverdue = hunt?.DaysOverdue,
+            HuntSubtasks = hunt?.Subtasks,
+
+            // Frozen, so retagging a task one keystroke before the killing blow cannot redirect
+            // the reward to whichever banner is holding the item the player wants.
+            HuntFactionKey = hunt?.FactionKey,
             Log = Serialise([
                 CombatRoll.Note(0, CombatRoll.Player, opening),
                 CombatRoll.Note(0, CombatRoll.Player, openingFlavour, openingFlavour)
@@ -187,10 +241,28 @@ public sealed class CombatService(
 
         db.Encounters.Add(encounter);
 
+        // The contract is closed here rather than by the caller, and the reason is atomicity: the
+        // save below flushes the whole change tracker, so the fight and the contract that bought
+        // it commit together. A contract left Discharged beside a live encounter would be one
+        // stamina away from buying a second fight, and therefore a second bounty, for one piece
+        // of work. Placed after every gate above, so a refused fight leaves the contract untouched
+        // and the retry is free.
+        if (hunt is not null)
+        {
+            hunt.Status = HuntContractStatus.Fought;
+            hunt.EncounterId = encounterId;
+            hunt.ClosedAt = DateTimeOffset.UtcNow;
+        }
+
         // The chronicle counts a fight begun, not a fight won, so this sits before the first
         // round rather than at any of the three endings. Every gate that can refuse the fight
         // has already returned above, so nothing recorded here is a monster never met.
-        var firstSighting = await bestiary.RecordSightingAsync(userId, monster.Key, cancellationToken);
+        //
+        // Hunts are deliberately absent from it. The codex is a record of the bestiary's kinds,
+        // and an archetype key written into it would be a row MonsterCatalog cannot resolve:
+        // invisible in the codex, counted in nothing, and impossible to delete once written.
+        var firstSighting = hunt is null
+            && await bestiary.RecordSightingAsync(userId, monster.Key, cancellationToken);
 
         if (firstSighting)
         {
@@ -208,6 +280,22 @@ public sealed class CombatService(
 
         return RpgResult<Encounter>.Success(encounter);
     }
+
+    /// <summary>
+    /// The block a fight is opened against, from the bestiary or derived from a contract.
+    /// </summary>
+    /// <remarks>
+    /// The same two branches <see cref="Encounter.Monster"/> takes on every read afterwards, and
+    /// they have to agree: this one seeds MonsterHitPoints and that one is the denominator every
+    /// later read of MaxHitPoints uses. They agree because both are pure functions of the four
+    /// scalars frozen on the row, and because neither spends a die.
+    /// </remarks>
+    private static MonsterDefinition? ResolveMonster(string monsterKey, HuntContract? hunt) =>
+        hunt is null
+            ? MonsterCatalog.Find(monsterKey)
+            : HuntArchetypeCatalog.Find(monsterKey) is { } archetype
+                ? HuntRules.StatBlock(archetype, hunt.Level, hunt.DaysOverdue, hunt.Subtasks)
+                : null;
 
     public Task<RpgResult<AttackOutcome>> AttackAsync(
         Guid userId,
@@ -750,9 +838,26 @@ public sealed class CombatService(
             Lost: rows.Count(r => r.Status == EncounterStatus.Lost),
             Fled: rows.Count(r => r.Status == EncounterStatus.Fled),
             GoldEarned: rows.Sum(r => r.GoldAwarded),
-            MostFoughtMonster: favourite is null ? null : MonsterCatalog.Find(favourite.Key)?.Name,
+            MostFoughtMonster: favourite is null ? null : NameOf(favourite.Key),
             MostFoughtCount: favourite?.Count() ?? 0);
     }
+
+    /// <summary>
+    /// What to call a key out of the MonsterKey column, whichever catalog it came from.
+    /// </summary>
+    /// <remarks>
+    /// The column carries two key spaces, deliberately disjoint: bestiary keys from a tavern or
+    /// dungeon fight, and HuntArchetypeCatalog keys from a contract. MonsterCatalog.Find is a
+    /// plain dictionary lookup and returns null for the second kind, so a summary that consulted
+    /// it alone reported no most-fought creature at all once contracts outnumbered any single
+    /// bestiary monster, which is the normal steady state: one archetype key covers every task of
+    /// that shape. Falling through to the archetype, and then to the raw key, matches what
+    /// RpgMapping already does for an encounter's own monster name.
+    /// </remarks>
+    private static string NameOf(string monsterKey) =>
+        MonsterCatalog.Find(monsterKey)?.Name
+        ?? HuntArchetypeCatalog.Find(monsterKey)?.Noun
+        ?? monsterKey;
 
     public Task<Encounter?> ActiveAsync(Guid userId, CancellationToken cancellationToken) =>
         db.Encounters.FirstOrDefaultAsync(
@@ -829,13 +934,25 @@ public sealed class CombatService(
         var (clearGold, reward) = await ResolveDungeonClearAsync(
             userId, character, sheet, encounter, run, rolls, cancellationToken);
 
+        // The contract's own reward, drawn here beside the dungeon's for one reason: this is
+        // where the clear already spends its dice, so no existing seeded script sees a roll move.
+        // A fight is a room or a contract and never both, so the slot is never contested.
+        reward ??= await ResolveContractRewardAsync(userId, sheet, encounter, rolls, cancellationToken);
+
         // The kill counters ride the same transaction as the fight, the gold and the drop, so
         // the chronicle can never claim a win the encounters table does not also show. This is
         // the only place EncounterStatus.Won is set, so it is the complete kill site.
         // Deliberately the monster's own gold, not the clear bonus: the bonus was paid by the
         // dungeon and crediting it to the boss would make one Barrow Knight look like four.
-        await bestiary.RecordKillAsync(
-            userId, monster.Key, encounter.Round, gold, cancellationToken);
+        //
+        // Hunts stay out of it, as they stayed out of the sighting: an archetype key is not a
+        // bestiary kind, and a codex row MonsterCatalog cannot resolve is one nothing can read
+        // back or remove.
+        if (!encounter.IsHunt)
+        {
+            await bestiary.RecordKillAsync(
+                userId, monster.Key, encounter.Round, gold, cancellationToken);
+        }
 
         // Quest progress rides the same transaction as the fight it came from.
         var advances = new List<QuestAdvance>();
@@ -843,6 +960,29 @@ public sealed class CombatService(
             userId, ObjectiveKind.DefeatMonster, monster.Key, 1, cancellationToken));
         advances.AddRange(await quests.RecordAsync(
             userId, ObjectiveKind.EarnGold, string.Empty, gold + clearGold, cancellationToken));
+
+        if (encounter.IsHunt)
+        {
+            // Recorded here and nowhere else, for the same reason DiscoverMonster is recorded
+            // only inside StartAsync: the only route to it is a contract whose stamina has
+            // already been spent. Completing a task cannot pay a hunt quest by any other door,
+            // which is what keeps DEC-014's gate the single answer to "may this pay out?".
+            //
+            // Once, with the banner key, and once is the whole of it. QuestService.Matches
+            // already treats an empty objective target as a wildcard that matches any recorded
+            // target, so a second call with an empty target would advance a "win any five
+            // contracts" objective twice for one win and finish it in three.
+            //
+            // The banner key rather than the archetype key, which is what ObjectiveKind.WinHunt
+            // is documented to take: standing is what the banners care about, and the archetype
+            // is already counted through DefeatMonster above.
+            advances.AddRange(await quests.RecordAsync(
+                userId,
+                ObjectiveKind.WinHunt,
+                encounter.HuntFactionKey ?? string.Empty,
+                1,
+                cancellationToken));
+        }
 
         // Counted together, because a clear round can hand over two items and an objective that
         // says "acquire three items" should see both of them.
@@ -938,6 +1078,72 @@ public sealed class CombatService(
         }
 
         return (dungeon.ClearGold, reward);
+    }
+
+    /// <summary>
+    /// Pays the contract's guaranteed reward, in the same transaction as the kill.
+    /// </summary>
+    /// <remarks>
+    /// Only for an overdue contract, and only under a banner. A task finished on time is not a
+    /// bounty: it pays a monster's ordinary gold and nothing else, which keeps a fresh contract
+    /// strictly worse per stamina than a band-appropriate tavern fight and puts the treasure in
+    /// the backlog where DEC-013 says it belongs. Nothing here can subtract, at any age.
+    /// <para>
+    /// The faction reaches <see cref="LootService"/> only through the two parameters
+    /// <c>RollRewardAsync</c> already had: its own table, and a floor from standing. Neither
+    /// costs a die, and neither reweights or extends a table a seeded test can already reach -
+    /// <c>PickWeighted</c> rolls once against a summed weight and walks in declaration order, so
+    /// an appended entry would hand an existing test a different item with no change in roll
+    /// count to make the break visible.
+    /// </para>
+    /// <para>
+    /// Standing is counted and never stored (DEC-002), through
+    /// IX_encounters_UserId_HuntFactionKey_Status. The count runs in the database and cannot see
+    /// this fight's Won, which is still only tracked, so a win can never promote its own floor.
+    /// Standing buys a table and a floor and nothing else: not XP (DEC-012), not stamina
+    /// (DEC-003), not the bounty, and not the stat block, which is frozen precisely so a tier
+    /// gained mid-fight cannot move MaxHitPoints under a phase threshold.
+    /// </para>
+    /// </remarks>
+    private async Task<InventoryItem?> ResolveContractRewardAsync(
+        Guid userId,
+        Models.Rpg.CharacterSheet sheet,
+        Encounter encounter,
+        List<CombatRoll> rolls,
+        CancellationToken cancellationToken)
+    {
+        if (!encounter.IsHunt || encounter.HuntDaysOverdue is null or <= 0)
+        {
+            return null;
+        }
+
+        if (FactionCatalog.Find(encounter.HuntFactionKey) is not { } faction)
+        {
+            return null;
+        }
+
+        var wonUnderBanner = await db.Encounters.CountAsync(
+            e => e.UserId == userId
+                && e.HuntFactionKey == faction.Key
+                && e.Status == EncounterStatus.Won,
+            cancellationToken);
+
+        var reward = await loot.RollRewardAsync(
+            userId,
+            faction.RewardTable,
+            FactionStandings.FloorFor(FactionStandings.TierFor(wonUnderBanner)),
+            sheet.Class?.Perk == ClassPerk.FavouredQuarry,
+            cancellationToken);
+
+        if (reward is not null)
+        {
+            rolls.Add(CombatRoll.Note(
+                encounter.Round, CombatRoll.Player,
+                $"{faction.Name} settles the contract with "
+                + $"{RarityRules.Describe(reward.Rarity)} {reward.DisplayName}."));
+        }
+
+        return reward;
     }
 
     /// <summary>

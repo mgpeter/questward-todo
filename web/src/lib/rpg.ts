@@ -1,5 +1,7 @@
 /** Client types and calls for the adventure layer. */
 
+import type { Difficulty } from './api'
+
 export type ItemSlotName = 'weapon' | 'armour' | 'trinket' | 'consumable'
 export type RarityName = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 export type EncounterStatusName = 'active' | 'won' | 'lost' | 'fled'
@@ -610,3 +612,231 @@ export function splitFlavour(
 
   return { line: text.slice(0, text.length - flavour.length).trimEnd(), flavour }
 }
+
+// ---------------------------------------------------------------------- hunts
+
+/**
+ * How well a banner knows the hunter. Counted from won contracts on the server and never
+ * stored, so it is a record of fights that happened rather than a balance to spend.
+ */
+export type FactionStandingName = 'unknown' | 'noticed' | 'trusted' | 'respected' | 'sworn'
+
+/**
+ * One line of the contract board: an open task, priced, before anybody has paid for it.
+ *
+ * The whole stat block is quoted rather than summarised because the decision being made is
+ * whether one stamina is better spent here or at the tavern, and that is a comparison of
+ * stat blocks. Every number is derived on the read from frozen inputs, so opening the board
+ * twice quotes the same purse twice.
+ */
+export interface HuntOffer {
+  taskId: string
+  title: string
+  difficulty: Difficulty
+  dueDate: string | null
+  /**
+   * Measured from the recurrence gate for a recurring task rather than its due date, which
+   * is never advanced by completion. A daily task done faithfully is zero here.
+   */
+  daysOverdue: number
+  subtasks: number
+  archetypeKey: string
+  monsterName: string
+  blurb: string
+  level: number
+  armourClass: number
+  maxHitPoints: number
+  damage: string
+  /** Already bounty-scaled. What the board quotes is the range the win will draw from. */
+  minGold: number
+  maxGold: number
+  dropChance: number
+  /** The age multiplier as a percentage. Never below 100 and never above 200 (DEC-013). */
+  bountyPercent: number
+  factionKey: string | null
+  factionName: string | null
+  /** What this banner calls a hunter of the current standing. Cosmetic. */
+  factionTitle: string | null
+  standing: FactionStandingName
+  rewardFloor: RarityName
+  /** Whether winning also hands over a guaranteed item. Only an overdue contract does. */
+  paysContractReward: boolean
+  staminaCost: number
+}
+
+export interface FactionStanding {
+  key: string
+  name: string
+  blurb: string
+  standing: FactionStandingName
+  title: string
+  /** Contracts won under this banner. Wins, not contracts taken: a hunt fled is nothing. */
+  wonHunts: number
+  rewardFloor: RarityName
+}
+
+export interface HuntBoard {
+  /**
+   * Every task that could be written up, worst first, and not trimmed by the server.
+   *
+   * How many the board shows at once is a display decision and is made here: a task card
+   * reads its own contract out of this same list, so a list cut off at twenty would tell the
+   * twenty-first task it has nothing to offer.
+   */
+  offers: HuntOffer[]
+  /** The contracts already taken: what has been promised, and what has been earned. */
+  contracts: HuntContract[]
+  factions: FactionStanding[]
+  stamina: number
+  staminaPerHunt: number
+}
+
+/**
+ * Where a contract is in its three steps.
+ *
+ * Accepting is free. Finishing the task discharges it, and only then can it be fought, for
+ * the one stamina every fight costs. There is no state in which an unfinished task can be
+ * cashed in: a bounty is what finishing pays, never what avoiding pays (DEC-013).
+ */
+export type HuntContractStatus = 'accepted' | 'discharged' | 'fought' | 'abandoned'
+
+/**
+ * A contract taken: the promise, and what discharging it will be worth.
+ *
+ * Every number was frozen when the contract was accepted, which is why one whose task has
+ * since been re-dated, retagged, re-graded, split or deleted still reports exactly what it
+ * was written as. Waiting after accepting therefore raises nothing, so there is no reason to
+ * sit on one.
+ */
+export interface HuntContract {
+  id: string
+  status: HuntContractStatus
+  /** Null once the task has been deleted. A discharged contract survives that and stays fightable. */
+  taskId: string | null
+  taskTitle: string
+  archetypeKey: string
+  monsterName: string
+  blurb: string
+  level: number
+  armourClass: number
+  maxHitPoints: number
+  damage: string
+  /** Already bounty-scaled. What is quoted is the range the win will draw from. */
+  minGold: number
+  maxGold: number
+  dropChance: number
+  daysOverdue: number
+  subtasks: number
+  /** The age multiplier as a percentage. Never below 100 and never above 200 (DEC-013). */
+  bountyPercent: number
+  factionKey: string | null
+  factionName: string | null
+  factionTitle: string | null
+  standing: FactionStandingName
+  rewardFloor: RarityName
+  paysContractReward: boolean
+  /** What the fight costs, once the work has unlocked it. Accepting costs nothing. */
+  staminaCost: number
+  acceptedAt: string
+  dischargedAt: string | null
+}
+
+/**
+ * A contract's fight, live or finished.
+ *
+ * Every number here was frozen onto the encounter when the fight opened, which is why a
+ * fight whose task has since been edited, retagged or deleted still reports exactly what it
+ * was opened against. The fight itself is an ordinary encounter driven by the ordinary
+ * attack routes, which is why the hunt screen reuses the encounter view rather than a second
+ * one.
+ */
+export interface Hunt {
+  encounterId: string
+  contractId: string | null
+  /** Null once the task has been deleted. The fight survives that and stays fightable. */
+  taskId: string | null
+  taskTitle: string | null
+  archetypeKey: string
+  monsterName: string
+  level: number
+  daysOverdue: number
+  subtasks: number
+  bountyPercent: number
+  factionKey: string | null
+  factionName: string | null
+  factionTitle: string | null
+  standing: FactionStandingName
+  encounter: Encounter
+}
+
+/** True once the work is done and the fight is the only thing left. */
+export const isReadyToFight = (contract: HuntContract): boolean =>
+  contract.status === 'discharged'
+
+/** The cap the server enforces, quoted here so the board can say when it has been reached. */
+export const BOUNTY_CAP_PERCENT = 200
+
+/** The day the cap binds, the archetype promotes, and waiting stops paying anything more. */
+export const BOUNTY_CAP_DAYS = 30
+
+/**
+ * The multiplier in the form a purse is read in: "1.4x".
+ *
+ * A multiplier rather than a bonus, because it is one: the bounty is baked into the gold
+ * range the win draws from, not added to the roll afterwards.
+ */
+export const bountyLabel = (bountyPercent: number): string =>
+  `${(bountyPercent / 100).toFixed(bountyPercent % 100 === 0 ? 0 : 2).replace(/0$/, '')}x`
+
+/**
+ * How loudly the board should sing about a contract.
+ *
+ * Four steps up, and no step down: there is no tone here for "you are behind", because
+ * DEC-013 says an overdue task is a bounty and never a debuff. The worst thing on the list
+ * is the best-paying thing on the list, and it is styled as such.
+ */
+export type BountyTier = 'none' | 'fresh' | 'rich' | 'legend'
+
+export const bountyTier = (daysOverdue: number): BountyTier =>
+  daysOverdue <= 0
+    ? 'none'
+    : daysOverdue < 7
+      ? 'fresh'
+      : daysOverdue < BOUNTY_CAP_DAYS
+        ? 'rich'
+        : 'legend'
+
+/** True once the multiplier has stopped moving. Waiting longer is worth nothing after this. */
+export const bountyIsCapped = (bountyPercent: number): boolean =>
+  bountyPercent >= BOUNTY_CAP_PERCENT
+
+/** "12 days overdue", said as an age rather than as an accusation. */
+export const describeAge = (daysOverdue: number): string =>
+  daysOverdue <= 0
+    ? 'On time'
+    : `${daysOverdue} ${pluralDays(daysOverdue)} old`
+
+/** "day" or "days", for prose that has to read the count out loud. */
+export const pluralDays = (days: number): string => (days === 1 ? 'day' : 'days')
+
+const STANDING_LABELS: Record<FactionStandingName, string> = {
+  unknown: 'Unknown',
+  noticed: 'Noticed',
+  trusted: 'Trusted',
+  respected: 'Respected',
+  sworn: 'Sworn',
+}
+
+export const standingLabel = (standing: FactionStandingName): string =>
+  STANDING_LABELS[standing] ?? standing
+
+/**
+ * Where a standing sits on its ladder, for a meter. Sworn is the top and stays full.
+ *
+ * Derived from the tier rather than from the win count, because the win count has no
+ * ceiling: a hunter with 200 wins is exactly as Sworn as one with 40.
+ */
+export const standingRung = (standing: FactionStandingName): number =>
+  ['unknown', 'noticed', 'trusted', 'respected', 'sworn'].indexOf(standing)
+
+export const STANDING_RUNGS = 4

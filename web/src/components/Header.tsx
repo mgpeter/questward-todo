@@ -1,13 +1,12 @@
 import { Zap } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
+import type { TabKey } from '../game/Navigation'
 import { useSheet } from '../lib/rpgQueries'
 import { AccountMenu } from './AccountMenu'
 import { SoundToggle } from './SoundToggle'
 import { ThemeToggle } from './ThemeToggle'
 import { XpRail } from './XpRail'
-
-export type TabKey = 'tasks' | 'adventure' | 'record' | 'badges'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'tasks', label: 'Tasks' },

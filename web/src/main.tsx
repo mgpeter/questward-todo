@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { AuthBootstrap } from './auth/AuthBootstrap'
 import { GameFeedProvider } from './game/GameFeed'
+import { NavigationProvider } from './game/Navigation'
 import { ThemeProvider } from './theme/ThemeProvider'
 import './index.css'
 
@@ -24,7 +25,9 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <AuthBootstrap>
           <GameFeedProvider>
-            <App />
+            <NavigationProvider>
+              <App />
+            </NavigationProvider>
           </GameFeedProvider>
         </AuthBootstrap>
       </ThemeProvider>

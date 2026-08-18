@@ -42,13 +42,13 @@
   - [x] 5.5 Dungeon runs - stop here if the budget is gone
   - [x] 5.6 Revisit every `SequenceDiceRoller` script; verify all tests pass
 
-- [ ] 6. Tasks as monsters
-  - [ ] 6.1 Write tests: hunt XP invariance, derived stats, bounty cap, isolation
-  - [ ] 6.2 Hunt as an `Encounter` with `TaskId`, reusing the existing index and route
-  - [ ] 6.3 Store frozen inputs, derive the stat block
-  - [ ] 6.4 Resolve the hunt after the XP transaction commits, in its own unit of work
-  - [ ] 6.5 Bounty gold capped at 200%; factions from tags, case-folded
-  - [ ] 6.6 Verify all tests pass
+- [x] 6. Tasks as monsters
+  - [x] 6.1 Write tests: hunt XP invariance, derived stats, bounty cap, isolation
+  - [x] 6.2 Hunt as an `Encounter` with `TaskId`, reusing the existing index and route
+  - [x] 6.3 Store frozen inputs, derive the stat block
+  - [x] 6.4 Resolve the hunt after the XP transaction commits, in its own unit of work
+  - [x] 6.5 Bounty gold capped at 200%; factions from tags, case-folded
+  - [x] 6.6 Verify all tests pass
 
 - [ ] 7. Streaks, decay and the daily reward
   - [ ] 7.1 Write tests for streaks, freezes, and the decay floor

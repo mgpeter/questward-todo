@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -48,6 +48,10 @@ builder.Services.AddScoped<CombatService>();
 // Scoped alongside CombatService on purpose: both resolve the same TodoDbContext, so the run a
 // room's fight ends is the very instance this service is holding, and the two commit together.
 builder.Services.AddScoped<DungeonService>();
+// Scoped for the same reason as DungeonService, and registered here rather than anywhere near
+// GamificationService on purpose: a contract is discharged from the task endpoint after the
+// completion has committed, never from inside the completion transaction.
+builder.Services.AddScoped<HuntService>();
 builder.Services.AddScoped<AdventurerService>();
 builder.Services.AddScoped<ShopService>();
 builder.Services.AddScoped<ForgeService>();

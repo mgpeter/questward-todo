@@ -18,10 +18,14 @@ import {
   useSetTaskStatus,
 } from '../lib/queries'
 import { useGameFeed } from '../game/GameFeed'
+import { TaskHuntSeal } from './rpg/TaskHuntSeal'
 import { TaskEditor } from './TaskEditor'
 
 const DUE_TONE_CLASS: Record<string, string> = {
-  overdue: 'text-rose border-rose/35 bg-rose/8',
+  // Gold, not rose. An overdue task is a bounty and never a debuff (DEC-013), and a card
+  // that turned red for having waited was the game telling the player off for the exact
+  // thing it is about to pay them double to finish.
+  overdue: 'text-gold border-gold/45 bg-gold/10',
   today: 'text-tier-hard border-tier-hard/35 bg-tier-hard/8',
   soon: 'text-ink-muted border-line',
   future: 'text-ink-faint border-line',
@@ -279,6 +283,14 @@ export function TaskCard({
       </div>
 
       </div>
+
+      {/*
+        Full card width rather than inside the title column, for the same reason the action
+        row below is: the text column is 180px in the narrowest board column and a creature
+        called "The Immemorial Bulwark" has nowhere to go in it. Out here it has 216px and a
+        line of its own. Draws nothing at all unless the task is overdue.
+      */}
+      {!task.isCompleted && <TaskHuntSeal task={task} />}
 
       {/*
         Its own row, not the title's row. Inline, this cluster took 113px of a 242px card

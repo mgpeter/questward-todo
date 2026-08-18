@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TodoApp.Data;
@@ -12,9 +13,11 @@ using TodoApp.Data;
 namespace TodoApp.Data.Migrations
 {
     [DbContext(typeof(TodoDbContext))]
-    partial class TodoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818075518_AddTaskHunts")]
+    partial class AddTaskHunts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -309,65 +312,6 @@ namespace TodoApp.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("TodoApp.Models.Rpg.HuntContract", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("AcceptedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ArchetypeKey")
-                        .IsRequired()
-                        .HasColumnType("varchar(60)");
-
-                    b.Property<DateTimeOffset?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DaysOverdue")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset?>("DischargedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("EncounterId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("FactionKey")
-                        .HasColumnType("varchar(40)");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Subtasks")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("TaskId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TaskTitle")
-                        .IsRequired()
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TaskId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" IN (0, 1)");
-
-                    b.HasIndex("TaskId", "AcceptedAt");
-
-                    b.HasIndex("UserId", "Status");
-
-                    b.ToTable("hunt_contracts", (string)null);
-                });
-
             modelBuilder.Entity("TodoApp.Models.Rpg.InventoryItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -621,20 +565,6 @@ namespace TodoApp.Data.Migrations
                         .HasForeignKey("DungeonRunId")
                         .OnDelete(DeleteBehavior.Cascade);
 
-                    b.HasOne("TodoApp.Models.TodoTask", null)
-                        .WithMany()
-                        .HasForeignKey("TaskId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("TodoApp.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("TodoApp.Models.Rpg.HuntContract", b =>
-                {
                     b.HasOne("TodoApp.Models.TodoTask", null)
                         .WithMany()
                         .HasForeignKey("TaskId")

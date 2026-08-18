@@ -1,4 +1,4 @@
-using TodoApp.Api.Contracts;
+﻿using TodoApp.Api.Contracts;
 using TodoApp.Api.Services.Rpg;
 using TodoApp.Models;
 using TodoApp.Models.Rpg;
@@ -165,6 +165,147 @@ public static class RpgMapping
         _ when index == depth && !runIsOver => "current",
         _ => "ahead"
     };
+
+    public static HuntBoardDto ToDto(this HuntBoard board) => new(
+        board.Offers.Select(ToDto).ToList(),
+        board.Contracts.Select(ToDto).ToList(),
+        board.Factions.Select(ToDto).ToList(),
+        board.Stamina,
+        CombatService.StaminaPerEncounter);
+
+    /// <summary>
+    /// One offer as the board renders it, block and all.
+    /// </summary>
+    /// <remarks>
+    /// The stat block is quoted from the same <see cref="HuntRules.StatBlock"/> the fight will be
+    /// opened against, not from a second summary written for the screen. A board that priced a
+    /// contract differently from the fight it sells would be lying in the one place the player is
+    /// making a decision.
+    /// </remarks>
+    private static HuntOfferDto ToDto(HuntOffer offer) => new(
+        offer.Task.Id,
+        offer.Task.Title,
+        offer.Task.Difficulty.ToString().ToLowerInvariant(),
+        offer.Task.DueDate,
+        offer.DaysOverdue,
+        offer.Subtasks,
+        offer.Monster.Key,
+        offer.Monster.Name,
+        offer.Monster.Blurb,
+        offer.Monster.Level,
+        offer.Monster.ArmourClass,
+        offer.Monster.MaxHitPoints,
+        offer.Monster.DamageNotation,
+
+        // Already bounty-scaled, because the multiplier is baked into the derived block's range
+        // rather than applied to the roll. What the board quotes is what RollGold will draw from.
+        offer.Monster.MinGold,
+        offer.Monster.MaxGold,
+        offer.Monster.DropChance,
+        BountyRules.BountyPercent(offer.DaysOverdue),
+        offer.Faction?.Key,
+        offer.Faction?.Name,
+        offer.Faction?.TitleAt(offer.Standing),
+        offer.Standing.ToString().ToLowerInvariant(),
+        RarityRules.Describe(FactionStandings.FloorFor(offer.Standing)),
+
+        // An on-time task is not a bounty and pays no item, and one flying no banner has no table
+        // to draw from. Said here so the card can show it rather than promising a reward the win
+        // will not hand over.
+        offer.DaysOverdue > 0 && offer.Faction is not null,
+        CombatService.StaminaPerEncounter);
+
+    private static FactionStandingDto ToDto(FactionRecord record) => new(
+        record.Faction.Key,
+        record.Faction.Name,
+        record.Faction.Blurb,
+        record.Standing.ToString().ToLowerInvariant(),
+        record.Faction.TitleAt(record.Standing),
+        record.WonHunts,
+        RarityRules.Describe(FactionStandings.FloorFor(record.Standing)));
+
+    /// <summary>
+    /// A contract as every screen renders it: what was promised, and how far along it is.
+    /// </summary>
+    /// <remarks>
+    /// Every number is read back off the contract row, never off the task, which is what lets a
+    /// contract whose task has been re-dated, retagged, re-graded, split or deleted still report
+    /// exactly what it was written as. The faction's name and title come from the catalog by the
+    /// frozen key (DEC-004), so a renamed banner renames itself in contracts already taken.
+    /// <para>
+    /// The status is the whole gate, spelled out for the client: "accepted" offers no fight and
+    /// "discharged" does. There is deliberately no field saying whether the task looks finished,
+    /// because that is the question whose two stale answers used to let a completion from another
+    /// window collect a bounty. What the screen reads is what the server recorded.
+    /// </para>
+    /// </remarks>
+    public static HuntContractDto ToDto(this HuntContractView view)
+    {
+        var contract = view.Contract;
+
+        // Coalesced rather than banged, matching EncounterDto: an archetype retired from the
+        // catalog leaves a contract that renders as its key instead of throwing over it (DEC-004).
+        var monster = view.Monster;
+
+        return new HuntContractDto(
+            contract.Id,
+            contract.Status.ToString().ToLowerInvariant(),
+            contract.TaskId,
+            contract.TaskTitle,
+            contract.ArchetypeKey,
+            monster?.Name ?? contract.ArchetypeKey,
+            monster?.Blurb ?? string.Empty,
+            monster?.Level ?? contract.Level,
+            monster?.ArmourClass ?? 0,
+            monster?.MaxHitPoints ?? 0,
+            monster?.DamageNotation ?? string.Empty,
+            monster?.MinGold ?? 0,
+            monster?.MaxGold ?? 0,
+            monster?.DropChance ?? 0,
+            contract.DaysOverdue,
+            contract.Subtasks,
+            BountyRules.BountyPercent(contract.DaysOverdue),
+            view.Faction?.Key,
+            view.Faction?.Name,
+            view.Faction?.TitleAt(view.Standing),
+            view.Standing.ToString().ToLowerInvariant(),
+            RarityRules.Describe(FactionStandings.FloorFor(view.Standing)),
+            contract.DaysOverdue > 0 && view.Faction is not null,
+            CombatService.StaminaPerEncounter,
+            contract.AcceptedAt,
+            contract.DischargedAt);
+    }
+
+    /// <summary>
+    /// A contract's fight as the adventure screen renders it.
+    /// </summary>
+    /// <remarks>
+    /// Every number here is read back off the encounter, never off the task, which is what lets a
+    /// fight whose task has been edited, retagged, completed or deleted still report exactly what
+    /// it was opened against.
+    /// </remarks>
+    public static HuntDto ToDto(this HuntView view)
+    {
+        var encounter = view.Encounter;
+        var daysOverdue = encounter.HuntDaysOverdue ?? 0;
+
+        return new HuntDto(
+            encounter.Id,
+            view.Contract?.Id,
+            encounter.TaskId,
+            view.Task?.Title ?? view.Contract?.TaskTitle,
+            encounter.MonsterKey,
+            encounter.Monster?.Name ?? encounter.MonsterKey,
+            encounter.HuntLevel ?? 0,
+            daysOverdue,
+            encounter.HuntSubtasks ?? 0,
+            BountyRules.BountyPercent(daysOverdue),
+            view.Faction?.Key,
+            view.Faction?.Name,
+            view.Faction?.TitleAt(view.Standing),
+            view.Standing.ToString().ToLowerInvariant(),
+            encounter.ToDto());
+    }
 
     public static EncounterDto ToDto(this Encounter encounter)
     {

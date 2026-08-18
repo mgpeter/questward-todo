@@ -1,9 +1,10 @@
-import { useState } from 'react'
 import { CharacterCard } from './components/CharacterCard'
-import { Header, type TabKey } from './components/Header'
+import { Header } from './components/Header'
 import { LevelUpOverlay } from './components/LevelUpOverlay'
+import { ContractSettled } from './components/rpg/ContractSettled'
 import { ToastStack } from './components/ToastStack'
 import { XpFloatLayer } from './components/XpFloatLayer'
+import { useNavigation } from './game/Navigation'
 import { useCharacter } from './lib/queries'
 import { AdventureView } from './views/AdventureView'
 import { BadgesView } from './views/BadgesView'
@@ -11,7 +12,7 @@ import { RecordView } from './views/RecordView'
 import { TasksView } from './views/TasksView'
 
 export default function App() {
-  const [tab, setTab] = useState<TabKey>('tasks')
+  const { tab, setTab } = useNavigation()
   const character = useCharacter()
 
   return (
@@ -55,6 +56,7 @@ export default function App() {
       <XpFloatLayer />
       <ToastStack />
       <LevelUpOverlay />
+      <ContractSettled />
     </div>
   )
 }

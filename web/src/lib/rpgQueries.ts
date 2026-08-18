@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { queryKeys } from './queries'
-import type { AttackResult, CharacterSheet, DungeonRun } from './rpg'
+import type {
+  AttackResult,
+  CharacterSheet,
+  DungeonRun,
+  HuntBoard,
+  HuntContract,
+  HuntOffer,
+} from './rpg'
 
 export const rpgKeys = {
   sheet: ['rpg', 'sheet'] as const,
@@ -16,6 +23,8 @@ export const rpgKeys = {
   lore: ['rpg', 'lore'] as const,
   dungeons: ['rpg', 'dungeons'] as const,
   dungeonRun: ['rpg', 'dungeon-run'] as const,
+  hunts: ['rpg', 'hunts'] as const,
+  activeHunt: ['rpg', 'hunt-active'] as const,
 }
 
 export const useSheet = () => useQuery({ queryKey: rpgKeys.sheet, queryFn: api.getSheet })
@@ -66,6 +75,11 @@ function settleRound(client: QueryClient, result: AttackResult) {
   void client.invalidateQueries({ queryKey: rpgKeys.bestiary })
   void client.invalidateQueries({ queryKey: rpgKeys.lore })
   void client.invalidateQueries({ queryKey: rpgKeys.dungeonRun })
+
+  // A won contract is what moves faction standing, and a finished fight is what frees the
+  // board to offer the next one. Neither is stated anywhere in this response.
+  void client.invalidateQueries({ queryKey: rpgKeys.hunts })
+  void client.invalidateQueries({ queryKey: rpgKeys.activeHunt })
 }
 
 export function useChooseClass() {
@@ -112,6 +126,8 @@ export function useDismissEncounter() {
     void client.invalidateQueries({ queryKey: rpgKeys.encounter })
     void client.invalidateQueries({ queryKey: rpgKeys.monsters })
     void client.invalidateQueries({ queryKey: rpgKeys.dungeonRun })
+    void client.invalidateQueries({ queryKey: rpgKeys.hunts })
+    void client.invalidateQueries({ queryKey: rpgKeys.activeHunt })
     void client.invalidateQueries({ queryKey: queryKeys.character })
   }
 }
@@ -317,4 +333,111 @@ export function useClaimQuest() {
     mutationFn: (key: string) => api.claimQuest(key),
     onSuccess: () => invalidateAdventure(client),
   })
+}
+
+// ---------------------------------------------------------------------- hunts
+
+/**
+ * The contract board: what could be written up, and what already has been.
+ *
+ * Derived on the server on every read, so it goes stale whenever a task moves, a contract is
+ * taken or discharged, or a fight ends. All of those already invalidate it.
+ */
+export const useHuntBoard = () => useQuery({ queryKey: rpgKeys.hunts, queryFn: api.getHunts })
+
+/**
+ * What one task is worth as a contract, or null if it cannot carry one.
+ *
+ * Selected out of the one board query rather than fetched per card. Every task card on the
+ * screen asks this and they all share a single request, and `select` keeps a card whose own
+ * offer has not moved from re-rendering when a different one has. The server sends the whole
+ * list for exactly this reason: a board trimmed to its first twenty rows would answer "no
+ * contract" for every task past the twentieth, which is the opposite of what a backlog is
+ * supposed to be worth.
+ */
+export const useHuntOffer = (taskId: string) =>
+  useQuery({
+    queryKey: rpgKeys.hunts,
+    queryFn: api.getHunts,
+    select: (board: HuntBoard): HuntOffer | null =>
+      board.offers.find((offer) => offer.taskId === taskId) ?? null,
+  })
+
+/** The live contract standing on one task, accepted or discharged, or null. */
+export const useTaskContract = (taskId: string) =>
+  useQuery({
+    queryKey: rpgKeys.hunts,
+    queryFn: api.getHunts,
+    select: (board: HuntBoard): HuntContract | null =>
+      board.contracts.find((contract) => contract.taskId === taskId) ?? null,
+  })
+
+/**
+ * The contract fight in progress, or null.
+ *
+ * This is the whole of resume for a hunt: the client holds nothing between requests, so a
+ * reload asks the server what it was fighting and gets back the frozen block, the banner and
+ * the open fight.
+ */
+export const useActiveHunt = () =>
+  useQuery({
+    queryKey: rpgKeys.activeHunt,
+    queryFn: async () => (await api.getActiveHunt()) ?? null,
+  })
+
+/**
+ * Takes a contract on a task. Free, so there is nothing to confirm and nothing to undo.
+ *
+ * Nothing is written into the encounter cache, because nothing was started: what comes back
+ * is a promise, and the board is what renders it.
+ */
+export function useAcceptHunt() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (taskId: string) => api.acceptHunt(taskId),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+/**
+ * Opens the fight a discharged contract earned.
+ *
+ * The fight goes into the encounter cache alongside the hunt, because both reads describe
+ * the same row: letting them disagree is what would show the tavern's monster list over a
+ * live contract for as long as the refetch took.
+ */
+export function useFightHunt() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (contractId: string) => api.fightHunt(contractId),
+    onSuccess: (hunt) => {
+      client.setQueryData(rpgKeys.activeHunt, hunt)
+      client.setQueryData(rpgKeys.encounter, hunt.encounter)
+      invalidateAdventure(client)
+    },
+  })
+}
+
+/** Tears up a contract. Free, and it takes back nothing that was paid for. */
+export function useAbandonHunt() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: (contractId: string) => api.abandonHunt(contractId),
+    onSuccess: () => invalidateAdventure(client),
+  })
+}
+
+/** Clears a finished contract fight once its outcome has been read. */
+export function useDismissHunt() {
+  const client = useQueryClient()
+
+  return () => {
+    client.setQueryData(rpgKeys.activeHunt, null)
+    client.setQueryData(rpgKeys.encounter, null)
+    void client.invalidateQueries({ queryKey: ['rpg'] })
+    void client.invalidateQueries({ queryKey: queryKeys.character })
+  }
 }

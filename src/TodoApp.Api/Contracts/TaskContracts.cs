@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using TodoApp.Models;
 
 namespace TodoApp.Api.Contracts;
@@ -69,7 +69,9 @@ public sealed record SetStatusResponse(
     bool LeveledUp,
     bool LeveledDown,
     int PreviousLevel,
-    IReadOnlyList<AchievementDto> UnlockedAchievements);
+    IReadOnlyList<AchievementDto> UnlockedAchievements,
+    /// <inheritdoc cref="CompleteTaskResponse.Hunt"/>
+    HuntContractDto? Hunt = null);
 
 /// <param name="UtcOffsetMinutes">
 /// The client's UTC offset, so time-of-day achievements (Night Owl, Early Bird) and the
@@ -82,13 +84,26 @@ public sealed record CompleteTaskRequest(
 public sealed record ReorderRequest(
     [property: Required][property: MinLength(1)] IReadOnlyList<Guid> OrderedIds);
 
+/// <param name="Hunt">
+/// The contract this completion discharged, or null when there was none. Discharging pays
+/// nothing: it unlocks the fight, which still costs its one stamina like every other fight.
+/// </param>
+/// <remarks>
+/// <paramref name="Hunt"/> is trailing and defaulted on purpose, following the way
+/// <c>MonsterDefinition.Phases</c> was added: every existing construction site keeps compiling
+/// untouched, and in this one case that matters more than tidiness. The only site that builds
+/// this response is <c>GamificationService.CompleteAsync</c>, which owns the single explicit
+/// transaction in the tree, and it must stay entirely free of hunt machinery. The endpoint fills
+/// this slot in afterwards with <c>with</c>, from outside the transaction, or leaves it null.
+/// </remarks>
 public sealed record CompleteTaskResponse(
     TaskDto Task,
     int XpGained,
     CharacterDto Character,
     bool LeveledUp,
     int PreviousLevel,
-    IReadOnlyList<AchievementDto> UnlockedAchievements);
+    IReadOnlyList<AchievementDto> UnlockedAchievements,
+    HuntContractDto? Hunt = null);
 
 public sealed record ReopenTaskResponse(
     TaskDto Task,

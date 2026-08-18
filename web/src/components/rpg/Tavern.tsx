@@ -5,6 +5,7 @@ import { nextRoom } from '../../lib/rpg'
 import {
   useActiveDungeonRun,
   useActiveEncounter,
+  useActiveHunt,
   useDismissEncounter,
   useMonsters,
   useStartEncounter,
@@ -12,6 +13,7 @@ import {
 import { RoomBanner } from './Dungeons'
 import { EncounterResult } from './EncounterResult'
 import { EncounterView } from './EncounterView'
+import { HuntBanner } from './HuntChrome'
 
 export function Tavern({
   sheet,
@@ -22,6 +24,7 @@ export function Tavern({
 }) {
   const encounter = useActiveEncounter()
   const run = useActiveDungeonRun()
+  const hunt = useActiveHunt()
   const dismiss = useDismissEncounter()
 
   // Held here rather than in the query cache: the outcome belongs to the player's
@@ -55,6 +58,11 @@ export function Tavern({
   // withdraw button that ends a whole run, is worth labelling.
   const room = run.data?.encounter?.id === active?.id ? (run.data ?? null) : null
 
+  // A contract is the one active encounter too, so it surfaces here on the same terms. The
+  // banner is what tells the player which of their own tasks is swinging at them; without
+  // it the tavern would present a creature named after a catalog they never chose.
+  const contract = hunt.data?.encounterId === active?.id ? (hunt.data ?? null) : null
+
   if (active) {
     return (
       <EncounterView
@@ -62,13 +70,21 @@ export function Tavern({
         sheet={sheet}
         inventory={inventory}
         onFinished={setOutcome}
-        fleeLabel={room ? 'Leave the dungeon' : 'Withdraw'}
+        fleeLabel={room ? 'Leave the dungeon' : contract ? 'Tear up the contract' : 'Withdraw'}
         fleeNote={
           room
             ? 'Walking out of a room walks you out of the run. Rooms already cleared stay cleared.'
-            : undefined
+            : contract
+              ? 'Walking away costs you the stamina and the purse. The task is untouched, and it can be written up again next time round.'
+              : undefined
         }
-        banner={room ? <RoomBanner run={room} room={nextRoom(room)} /> : undefined}
+        banner={
+          room ? (
+            <RoomBanner run={room} room={nextRoom(room)} />
+          ) : contract ? (
+            <HuntBanner hunt={contract} />
+          ) : undefined
+        }
       />
     )
   }

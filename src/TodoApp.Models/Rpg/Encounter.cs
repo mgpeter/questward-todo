@@ -92,11 +92,95 @@ public class Encounter
     /// </remarks>
     public Guid? DungeonRunId { get; set; }
 
+    /// <summary>The task this fight is a contract on, or null for a fight taken at the tavern.</summary>
+    /// <remarks>
+    /// The same direction as <see cref="DungeonRunId"/> and for the same reason: a hunt is an
+    /// ordinary encounter row, so IX_encounters_UserId governs it without being told about hunts.
+    /// <para>
+    /// The foreign key is ON DELETE SET NULL rather than cascade, which is the one place the two
+    /// links differ. DeleteTask runs ExecuteDeleteAsync and bypasses the change tracker, so the
+    /// referential action is the only thing between "the user tidied a task away" and "a fought
+    /// battle, its gold and its log left the chronicle". Setting null loses the attribution and
+    /// keeps the fight; the four frozen scalars below are untouched by it, so the stat block
+    /// still derives and a live fight stays finishable rather than becoming unwinnable.
+    /// </para>
+    /// </remarks>
+    public Guid? TaskId { get; set; }
+
+    /// <summary>The rung this contract was written at, or null when this is not a hunt.</summary>
+    /// <remarks>
+    /// This is the discriminator: <see cref="IsHunt"/> reads it and nothing else, so one column
+    /// answers "is this a hunt" without a second flag that could disagree with it.
+    /// <para>
+    /// Frozen at the start rather than re-derived, because it is computed from the hunter's level
+    /// and a level rises mid-fight. Re-derived on read, a hunt would grow a rung the moment its
+    /// owner levelled and MaxHitPoints would move underneath a fight in progress, which re-fires
+    /// or skips phases and desyncs the client's health bar. DEC-002 says to store the rolled or
+    /// historical fact, and which rung this contract was written at is exactly that.
+    /// </para>
+    /// </remarks>
+    public int? HuntLevel { get; set; }
+
+    /// <summary>How overdue the task was when the contract was taken.</summary>
+    /// <remarks>
+    /// Frozen for the same reason as the level, and this one is the sharper case: days overdue
+    /// increases on its own with no user action at all, so a re-derived bounty would rise while
+    /// the player was mid-fight and the gold range would widen between two reads of one
+    /// encounter. It also has to survive the task being completed or deleted, at which point
+    /// there is nothing left to derive it from.
+    /// </remarks>
+    public int? HuntDaysOverdue { get; set; }
+
+    /// <summary>How many subtasks the task carried when the contract was taken.</summary>
+    /// <remarks>
+    /// Frozen with the rest. A subtask ticked off mid-fight would otherwise shrink the monster
+    /// the player is currently hitting, which is a free heal in reverse and the same
+    /// MaxHitPoints drift the level guards against.
+    /// </remarks>
+    public int? HuntSubtasks { get; set; }
+
+    /// <summary>The banner this contract flies under, as a catalog key, or null for none.</summary>
+    /// <remarks>
+    /// The key only, per DEC-004; the faction's name, titles and reward table are read back from
+    /// FactionCatalog on every request. Frozen rather than re-read from the task's tags because
+    /// the tags are one keystroke from being changed: a faction derived on the read path would
+    /// let a player retag a task immediately before the killing blow and redirect the reward to
+    /// whichever banner is holding the item they want.
+    /// </remarks>
+    public string? HuntFactionKey { get; set; }
+
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? EndedAt { get; set; }
 
-    public MonsterDefinition? Monster => MonsterCatalog.Find(MonsterKey);
+    /// <summary>
+    /// The stat block this fight is against, derived for a hunt and read from the bestiary
+    /// otherwise.
+    /// </summary>
+    /// <remarks>
+    /// One property rather than two, because every reader downstream (ResolveRoundAsync,
+    /// EncounterDto, the chronicle, the bestiary) goes through this one and a second accessor
+    /// would be a second thing to remember to check.
+    /// <para>
+    /// Both branches resolve a key against a code-held catalog, so a hunt row still reads
+    /// correctly long after its task is gone: the archetype is in HuntArchetypeCatalog and the
+    /// four frozen scalars are on the row. HuntRules.StatBlock spends no die, which is what keeps
+    /// a read off the blast radius of every seeded dice script in the suite.
+    /// </para>
+    /// </remarks>
+    public MonsterDefinition? Monster =>
+        HuntArchetypeCatalog.Find(MonsterKey) is { } archetype && HuntLevel is { } level
+            ? HuntRules.StatBlock(archetype, level, HuntDaysOverdue ?? 0, HuntSubtasks ?? 0)
+            : MonsterCatalog.Find(MonsterKey);
+
+    /// <summary>Whether this fight is a contract on a task.</summary>
+    /// <remarks>
+    /// Reads <see cref="HuntLevel"/> rather than <see cref="TaskId"/> on purpose. The task link
+    /// is nulled when the task is deleted, and a finished hunt whose task has been tidied away is
+    /// still a hunt: it still derives its block from the archetype, still shows the name it was
+    /// fought under, and still counts toward the faction it was taken for.
+    /// </remarks>
+    public bool IsHunt => HuntLevel is not null;
 
     public bool IsOver => Status != EncounterStatus.Active;
 }

@@ -1,4 +1,5 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using TodoApp.Models;
 using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
 
@@ -394,6 +395,260 @@ public class RpgSchemaTests(PostgresFixture postgres)
         });
 
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    /// <summary>
+    /// One live contract per task, enforced by the database rather than by a service check.
+    /// </summary>
+    /// <remarks>
+    /// The service asks whether a task already carries a contract before it writes one, and two
+    /// concurrent accepts both pass that question. The loser leaves a second contract on the same
+    /// task that one completion would discharge: two fights, two bounties, one piece of work.
+    /// <para>
+    /// The index is filtered on the two open states, so a contract that has been fought or torn up
+    /// stops blocking with no flag anywhere to remember to clear.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task Only_one_live_contract_can_stand_on_a_task()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var task = new TodoTask { UserId = alice.Id, Title = "File the tax return" };
+
+        db.Tasks.Add(task);
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Accepted));
+        await db.SaveChangesAsync();
+
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Accepted));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+
+        db.ChangeTracker.Clear();
+
+        // Discharged is the other live state, and it is refused for the same reason.
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Discharged));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    /// <summary>A contract that is over stops blocking, which is what makes the next one possible.</summary>
+    [Fact]
+    public async Task A_closed_contract_does_not_block_the_next_one()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var task = new TodoTask { UserId = alice.Id, Title = "Water the plants" };
+
+        db.Tasks.Add(task);
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Fought));
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Abandoned));
+        db.HuntContracts.Add(Contract(alice.Id, task.Id, HuntContractStatus.Accepted));
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(3, await db.HuntContracts.CountAsync(c => c.TaskId == task.Id));
+    }
+
+    /// <summary>
+    /// A task tidied away nulls the link and leaves the contract standing.
+    /// </summary>
+    /// <remarks>
+    /// SET NULL rather than cascade, and the difference is the whole point: a discharged contract
+    /// is work that was already done, and DeleteTask runs ExecuteDeleteAsync, so this referential
+    /// action is the only thing between "the user tidied a task away" and an earned fight
+    /// vanishing with it. The endpoint sweeps the merely accepted ones to Abandoned itself,
+    /// because a referential action cannot tell the two apart.
+    /// </remarks>
+    [Fact]
+    public async Task Deleting_a_task_keeps_its_contracts_and_only_nulls_the_link()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var task = new TodoTask { UserId = alice.Id, Title = "Finished first" };
+        var contract = Contract(alice.Id, task.Id, HuntContractStatus.Discharged);
+
+        db.Tasks.Add(task);
+        db.HuntContracts.Add(contract);
+        await db.SaveChangesAsync();
+
+        await db.Tasks.Where(t => t.Id == task.Id).ExecuteDeleteAsync();
+
+        await using var fresh = postgres.CreateContext();
+
+        var survivor = await fresh.HuntContracts.SingleAsync(c => c.Id == contract.Id);
+
+        Assert.Null(survivor.TaskId);
+        Assert.Equal(HuntContractStatus.Discharged, survivor.Status);
+
+        // Every number it was written for is still on the row, so it still derives its block.
+        Assert.Equal(12, survivor.DaysOverdue);
+        Assert.Equal(FactionCatalog.TheLedger, survivor.FactionKey);
+        Assert.Equal("Finished first", survivor.TaskTitle);
+        Assert.NotNull(survivor.Monster);
+    }
+
+    private static HuntContract Contract(Guid userId, Guid taskId, HuntContractStatus status) =>
+        new()
+        {
+            UserId = userId,
+            TaskId = taskId,
+            TaskTitle = "Finished first",
+            ArchetypeKey = HuntArchetypeCatalog.Bulwark,
+            Level = 3,
+            DaysOverdue = 12,
+            Subtasks = 0,
+            FactionKey = FactionCatalog.TheLedger,
+            Status = status,
+            ClosedAt = status is HuntContractStatus.Fought or HuntContractStatus.Abandoned
+                ? DateTimeOffset.UtcNow
+                : null
+        };
+
+    /// <summary>
+    /// A contract's fight is an ordinary encounter row, which is the ruling the whole feature
+    /// rests on: IX_encounters_UserId still governs it, and it was never rebuilt to learn about
+    /// hunts.
+    /// </summary>
+    [Fact]
+    public async Task A_hunt_is_still_governed_by_the_one_fight_index()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var task = new TodoTask { UserId = alice.Id, Title = "File the tax return" };
+
+        db.Tasks.Add(task);
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id,
+            MonsterKey = HuntArchetypeCatalog.Bulwark,
+            MonsterHitPoints = 33,
+            Status = EncounterStatus.Active,
+            TaskId = task.Id,
+            HuntLevel = 3,
+            HuntDaysOverdue = 12,
+            HuntSubtasks = 0,
+            HuntFactionKey = FactionCatalog.TheLedger
+        });
+        await db.SaveChangesAsync();
+
+        // A tavern fight beside the contract, which the service refuses and the index refuses
+        // under it. A hunt that had been made a second kind of fight would slip past this.
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin,
+            MonsterHitPoints = 10, Status = EncounterStatus.Active
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    /// <summary>
+    /// The frozen inputs are all or nothing, enforced by a check constraint.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Encounter.Monster"/> uses HuntLevel as its discriminator and coalesces the other
+    /// two, so a half written row would not throw: it would quietly derive a stat block from
+    /// defaulted zeros and look correctly tuned. There is no symptom to notice, which is why the
+    /// database refuses the row rather than the code remembering to.
+    /// </remarks>
+    [Fact]
+    public async Task A_half_written_contract_is_refused_by_the_database()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id,
+            MonsterKey = HuntArchetypeCatalog.Drudge,
+            MonsterHitPoints = 5,
+            Status = EncounterStatus.Active,
+            HuntLevel = 2
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+
+        db.ChangeTracker.Clear();
+
+        // A fight that is not a contract carries none of them, which is what lets all five
+        // columns be nullable and the migration need no backfill.
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin,
+            MonsterHitPoints = 10, Status = EncounterStatus.Active
+        });
+
+        await db.SaveChangesAsync();
+
+        Assert.False((await db.Encounters.AsNoTracking().SingleAsync()).IsHunt);
+    }
+
+    /// <summary>
+    /// Tidying a task away must never delete a fought battle, its gold or its log.
+    /// </summary>
+    /// <remarks>
+    /// DeleteTask runs ExecuteDeleteAsync and bypasses the change tracker, so the referential
+    /// action is the whole answer. SET NULL loses the attribution and keeps the fight; the four
+    /// frozen scalars are untouched by it, so the stat block still derives and the row stays
+    /// renderable and finishable. CASCADE would have taken the battle with the task, and RESTRICT
+    /// would have turned tidying a list into a 500.
+    /// </remarks>
+    [Fact]
+    public async Task Deleting_a_hunted_task_keeps_the_fight_and_only_nulls_the_link()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var task = new TodoTask { UserId = alice.Id, Title = "File the tax return" };
+
+        db.Tasks.Add(task);
+        db.Encounters.Add(new Encounter
+        {
+            UserId = alice.Id,
+            MonsterKey = HuntArchetypeCatalog.Dread,
+            MonsterHitPoints = 0,
+            Status = EncounterStatus.Won,
+            GoldAwarded = 240,
+            TaskId = task.Id,
+            HuntLevel = 6,
+            HuntDaysOverdue = 90,
+            HuntSubtasks = 4,
+            HuntFactionKey = FactionCatalog.TheLedger
+        });
+        await db.SaveChangesAsync();
+
+        await db.Tasks.Where(t => t.Id == task.Id).ExecuteDeleteAsync();
+
+        db.ChangeTracker.Clear();
+
+        var survivor = await db.Encounters.AsNoTracking().SingleAsync();
+
+        Assert.Null(survivor.TaskId);
+        Assert.True(survivor.IsHunt);
+        Assert.Equal(EncounterStatus.Won, survivor.Status);
+        Assert.Equal(240, survivor.GoldAwarded);
+        Assert.Equal(90, survivor.HuntDaysOverdue);
+        Assert.Equal(FactionCatalog.TheLedger, survivor.HuntFactionKey);
+
+        // Still derives, so the chronicle renders it and standing still counts it.
+        Assert.Equal("Immemorial Dread", survivor.Monster!.Name);
     }
 
     [Fact]
