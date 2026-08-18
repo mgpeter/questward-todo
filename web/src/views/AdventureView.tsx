@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AdventurerStrip } from '../components/AdventurerStrip'
 import { Bestiary } from '../components/rpg/Bestiary'
 import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
 import { Chronicle } from '../components/rpg/Chronicle'
@@ -55,6 +56,14 @@ export function AdventureView() {
 
   return (
     <div className="space-y-5" data-testid="adventure">
+      {/*
+        The same strip the task board carries. Health, stamina and gold are what every panel
+        below spends, and they were previously readable only on the Character tab, so buying
+        in the Market or picking a fight in the Tavern meant navigating away to find out
+        whether you could afford it.
+      */}
+      <AdventurerStrip />
+
       <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface-sunk p-0.5">
         {PANELS.map((entry) => {
           const active = panel === entry.key
