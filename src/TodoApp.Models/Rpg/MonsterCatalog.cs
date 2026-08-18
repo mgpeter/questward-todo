@@ -124,6 +124,21 @@ public static class MonsterCatalog
     public const string Wyvern = "wyvern";
     public const string ElderDragon = "elder-dragon";
 
+    // Filling the thin levels. Nine of the fourteen rungs carried a single opponent, so the
+    // band was doing all the work and two characters a level apart met the same three things.
+    // Nothing here is above level 14: adding one would move TopLevel and re-plan the whole
+    // band, which the integrity tests would then make you check level by level.
+    public const string TollBeetle = "toll-beetle";
+    public const string CisternEel = "cistern-eel";
+    public const string RustedSentry = "rusted-sentry";
+    public const string GraveMoth = "grave-moth";
+    public const string SaltWidow = "salt-widow";
+    public const string PitForeman = "pit-foreman";
+    public const string CairnWight = "cairn-wight";
+    public const string LanternWraith = "lantern-wraith";
+    public const string ScreeGiant = "scree-giant";
+    public const string HollowAbbot = "hollow-abbot";
+
     public static IReadOnlyList<MonsterDefinition> All { get; } =
     [
         new(GiantRat, "Giant Rat",
@@ -531,7 +546,129 @@ public static class MonsterCatalog
                             EffectKind.Empowered, EffectTarget.Monster, StatusEffects.Lasting, 3,
                             ElderDragon)
                     ])
-            ])
+            ]),
+
+        // --- Filling out the middle -------------------------------------------------
+
+        new(TollBeetle, "Toll Beetle",
+            "Sits in the road. Will not be walked around, only over.",
+            Level: 4, ArmourClass: 15, MaxHitPoints: 32, AttackBonus: 4, DamageNotation: "1d10",
+            MinGold: 12, MaxGold: 34, DropChance: 40,
+            [
+                new LootEntry(ItemCatalog.StuddedLeather, 3),
+                new LootEntry(ItemCatalog.IronBand, 3),
+                new LootEntry(ItemCatalog.WorkmansGloves, 2),
+                new LootEntry(ItemCatalog.OxhideBelt, 2),
+                new LootEntry(ItemCatalog.BoarSpear, 1)
+            ]),
+
+        new(CisternEel, "Cistern Eel",
+            "Lives in water nobody has looked at in years. It has been growing.",
+            Level: 4, ArmourClass: 13, MaxHitPoints: 28, AttackBonus: 5, DamageNotation: "2d4",
+            MinGold: 10, MaxGold: 30, DropChance: 40,
+            [
+                new LootEntry(ItemCatalog.LeatherArmour, 3),
+                new LootEntry(ItemCatalog.PlainIronBand, 2),
+                new LootEntry(ItemCatalog.LuckyCoin, 2),
+                new LootEntry(ItemCatalog.HideHarness, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 1)
+            ]),
+
+        new(RustedSentry, "Rusted Sentry",
+            "Still guarding. Nobody has told it what, or for how much longer.",
+            Level: 6, ArmourClass: 17, MaxHitPoints: 46, AttackBonus: 5, DamageNotation: "2d6",
+            MinGold: 22, MaxGold: 52, DropChance: 45,
+            [
+                new LootEntry(ItemCatalog.ChainShirt, 3),
+                new LootEntry(ItemCatalog.QuartermastersTally, 2),
+                new LootEntry(ItemCatalog.IronFlail, 2),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 2),
+                new LootEntry(ItemCatalog.GreatAxe, 1)
+            ]),
+
+        new(GraveMoth, "Grave Moth",
+            "Eats the cloth first. Waits, politely, for the rest.",
+            Level: 6, ArmourClass: 14, MaxHitPoints: 38, AttackBonus: 6, DamageNotation: "1d12",
+            MinGold: 20, MaxGold: 48, DropChance: 45,
+            [
+                new LootEntry(ItemCatalog.TravellersCloak, 3),
+                new LootEntry(ItemCatalog.ClerksSpectacles, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 2),
+                new LootEntry(ItemCatalog.LuckyCoin, 2),
+                new LootEntry(ItemCatalog.RingOfFocus, 1)
+            ]),
+
+        new(SaltWidow, "Salt Widow",
+            "Waits at the tideline for a boat that has been recorded lost for sixty years.",
+            Level: 8, ArmourClass: 16, MaxHitPoints: 54, AttackBonus: 7, DamageNotation: "2d8",
+            MinGold: 30, MaxGold: 70, DropChance: 50,
+            [
+                new LootEntry(ItemCatalog.PlainIronBand, 3),
+                new LootEntry(ItemCatalog.ChainShirt, 2),
+                new LootEntry(ItemCatalog.RingOfVigour, 2),
+                new LootEntry(ItemCatalog.QuartermastersTally, 2),
+                new LootEntry(ItemCatalog.EnvoysTorc, 1)
+            ]),
+
+        new(PitForeman, "Pit Foreman",
+            "Keeps a tally of who is owed what. Includes itself in the reckoning.",
+            Level: 9, ArmourClass: 17, MaxHitPoints: 60, AttackBonus: 7, DamageNotation: "2d8",
+            MinGold: 34, MaxGold: 80, DropChance: 50,
+            [
+                new LootEntry(ItemCatalog.LedgerOfDebts, 2),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 3),
+                new LootEntry(ItemCatalog.GreatAxe, 2),
+                new LootEntry(ItemCatalog.ChainShirt, 2),
+                new LootEntry(ItemCatalog.RingOfTheDiligent, 1)
+            ]),
+
+        new(CairnWight, "Cairn Wight",
+            "The stones were put there to keep it in. They were stacked from the inside.",
+            Level: 10, ArmourClass: 18, MaxHitPoints: 66, AttackBonus: 8, DamageNotation: "2d10",
+            MinGold: 40, MaxGold: 92, DropChance: 52,
+            [
+                new LootEntry(ItemCatalog.RingOfTheDiligent, 2),
+                new LootEntry(ItemCatalog.PlainIronBand, 3),
+                new LootEntry(ItemCatalog.EnvoysTorc, 2),
+                new LootEntry(ItemCatalog.ChainShirt, 2),
+                new LootEntry(ItemCatalog.LedgerOfDebts, 1)
+            ]),
+
+        new(LanternWraith, "Lantern Wraith",
+            "Carries a light out to the marsh every night. Comes back without it.",
+            Level: 11, ArmourClass: 17, MaxHitPoints: 70, AttackBonus: 9, DamageNotation: "3d6",
+            MinGold: 44, MaxGold: 100, DropChance: 52,
+            [
+                new LootEntry(ItemCatalog.ClerksSpectacles, 3),
+                new LootEntry(ItemCatalog.LedgerOfDebts, 2),
+                new LootEntry(ItemCatalog.RingOfFocus, 2),
+                new LootEntry(ItemCatalog.AmuletOfInsight, 2),
+                new LootEntry(ItemCatalog.BannerbearersTorc, 1)
+            ]),
+
+        new(ScreeGiant, "Scree Giant",
+            "Comes down with the loose stone every spring, and goes back up with less of it.",
+            Level: 12, ArmourClass: 19, MaxHitPoints: 84, AttackBonus: 9, DamageNotation: "3d8",
+            MinGold: 52, MaxGold: 120, DropChance: 55,
+            [
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 3),
+                new LootEntry(ItemCatalog.GreatAxe, 2),
+                new LootEntry(ItemCatalog.RingOfTheDiligent, 2),
+                new LootEntry(ItemCatalog.TravellersCloak, 2),
+                new LootEntry(ItemCatalog.BannerbearersTorc, 1)
+            ]),
+
+        new(HollowAbbot, "Hollow Abbot",
+            "Still keeps the hours. The bell is the only part of it with anything inside.",
+            Level: 13, ArmourClass: 19, MaxHitPoints: 90, AttackBonus: 10, DamageNotation: "3d8",
+            MinGold: 60, MaxGold: 135, DropChance: 55,
+            [
+                new LootEntry(ItemCatalog.LedgerOfDebts, 2),
+                new LootEntry(ItemCatalog.BannerbearersTorc, 2),
+                new LootEntry(ItemCatalog.ClerksSpectacles, 2),
+                new LootEntry(ItemCatalog.AmuletOfInsight, 2),
+                new LootEntry(ItemCatalog.RingOfTheDiligent, 2)
+            ]),
     ];
 
     /// <summary>The deepest level the bestiary actually reaches.</summary>

@@ -259,6 +259,17 @@ public static class ItemCatalog
     public const string ElixirOfStone = "elixir-of-stone";
     public const string SmokePellet = "smoke-pellet";
 
+    // Quest rewards for the task-facing quests. Named for the work rather than the fight,
+    // because that is what earns them.
+    public const string TravellersCloak = "travellers-cloak";
+    public const string RingOfTheDiligent = "ring-of-the-diligent";
+    public const string LedgerOfDebts = "ledger-of-debts";
+    public const string BannerbearersTorc = "bannerbearers-torc";
+    public const string QuartermastersTally = "quartermasters-tally";
+    public const string PlainIronBand = "plain-iron-band";
+    public const string ClerksSpectacles = "clerks-spectacles";
+    public const string WorkmansGloves = "workmans-gloves";
+
     public static IReadOnlyList<ItemDefinition> All { get; } =
     [
         // --- Weapons ---------------------------------------------------------
@@ -615,7 +626,45 @@ public static class ItemCatalog
             "Throw it down and be somewhere else by the time it clears.",
             BaseValue: 35,
             Use: new ConsumableUse(
-                Heal: 0, EffectKind.Weakened, EffectTarget.Monster, Rounds: 2, Magnitude: 0))
+                Heal: 0, EffectKind.Weakened, EffectTarget.Monster, Rounds: 2, Magnitude: 0)),
+
+        // --- Earned by working rather than by winning -------------------------------
+        //
+        // Every one of these is a quest reward on the task-facing quests, so the only way to
+        // hold one is to have finished things. They sit deliberately mid-table: the point is
+        // that they exist, not that they beat what a dragon drops.
+
+        new(TravellersCloak, "Traveller's Cloak", ItemSlot.Armour,
+            "Worn thin at the shoulders from being put on early.",
+            ArmourBonus: 2, BonusAbility: Ability.Constitution, BaseValue: 34),
+
+        new(WorkmansGloves, "Workman's Gloves", ItemSlot.Armour,
+            "Shaped to one pair of hands, and not yours, but they will do.",
+            ArmourBonus: 1, BonusAbility: Ability.Strength, BaseValue: 26),
+
+        new(RingOfTheDiligent, "Ring of the Diligent", ItemSlot.Trinket,
+            "Plain, and heavier than it looks.",
+            BonusAbility: Ability.Constitution, BaseValue: 48),
+
+        new(PlainIronBand, "Plain Iron Band", ItemSlot.Trinket,
+            "No maker's mark. Somebody wore it every day for a very long time.",
+            BonusAbility: Ability.Wisdom, BaseValue: 28),
+
+        new(LedgerOfDebts, "Ledger of Debts", ItemSlot.Trinket,
+            "Every entry crossed through. The crossing out took longer than the writing.",
+            BonusAbility: Ability.Intelligence, BaseValue: 62),
+
+        new(BannerbearersTorc, "Bannerbearer's Torc", ItemSlot.Trinket,
+            "Five marks around the band, none of them decorative.",
+            BonusAbility: Ability.Charisma, BaseValue: 70),
+
+        new(QuartermastersTally, "Quartermaster's Tally", ItemSlot.Trinket,
+            "Counts what is left rather than what was promised.",
+            BonusAbility: Ability.Wisdom, BaseValue: 44),
+
+        new(ClerksSpectacles, "Clerk's Spectacles", ItemSlot.Trinket,
+            "The small print stops being an argument.",
+            BonusAbility: Ability.Intelligence, BaseValue: 36),
     ];
 
     private static readonly Dictionary<string, ItemDefinition> ByKey =

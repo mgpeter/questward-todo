@@ -127,6 +127,26 @@ public static class QuestCatalog
     public const string Grown = "grown";
     public const string LongService = "long-service";
 
+    // Quests that answer back to the task list rather than to the tavern. Before these, 24 of
+    // 33 quests were gated on combat, none targeted Medium, and WinHunt was declared and used
+    // by nothing at all.
+    public const string PlainWork = "plain-work";
+    public const string MiddlingLabour = "middling-labour";
+    public const string TheLongMiddle = "the-long-middle";
+    public const string HouseInOrder = "house-in-order";
+    public const string OnTheBooks = "on-the-books";
+    public const string BodyOfWork = "body-of-work";
+    public const string ReadingRoom = "reading-room";
+    public const string BooksBalanced = "books-balanced";
+    public const string FiveBanners = "five-banners";
+    public const string DebtCollector = "debt-collector";
+    public const string ArrearsAndErrands = "arrears-and-errands";
+    public const string TwoKindsOfWork = "two-kinds-of-work";
+    public const string SteadyIncome = "steady-income";
+    public const string DoubleShift = "double-shift";
+    public const string NothingLeftUndone = "nothing-left-undone";
+    public const string TheReckoning = "the-reckoning";
+
     public static IReadOnlyList<QuestDefinition> All { get; } =
     [
         new(FirstBlood, "First Hunt",
@@ -337,7 +357,141 @@ public static class QuestCatalog
                 new QuestObjective("seen", ObjectiveKind.DiscoverMonster, "", 18, "Discover 18 kinds of monster"),
                 new QuestObjective("gold", ObjectiveKind.EarnGold, "", 5_000, "Earn 5000 gold")
             ],
-            RewardGold: 1_200, RewardItemKey: ItemCatalog.OathkeepersMaul)
+            RewardGold: 1_200, RewardItemKey: ItemCatalog.OathkeepersMaul),
+
+        // ------------------------------------------------------------------ task work
+        //
+        // The board used to be almost entirely combat: finishing an actual task advanced six
+        // quests out of thirty-three, and the difficulty most people use most often, Medium,
+        // advanced none of them. These pay for the work the app is actually for.
+
+        new(PlainWork, "Plain Work",
+            "Not every job is a saga. Most of them are Tuesday.",
+            MinimumLevel: 1,
+            [new QuestObjective("medium", ObjectiveKind.CompleteTask, "medium", 5, "Complete 5 Medium tasks")],
+            RewardGold: 30),
+
+        new(MiddlingLabour, "Middling Labour",
+            "Neither trivial nor terrible. The bulk of a life, really.",
+            MinimumLevel: 3,
+            [new QuestObjective("medium", ObjectiveKind.CompleteTask, "medium", 15, "Complete 15 Medium tasks")],
+            RewardGold: 90,
+            RewardItemKey: ItemCatalog.TravellersCloak),
+
+        new(TheLongMiddle, "The Long Middle",
+            "Nobody writes songs about the middle. It still has to be crossed.",
+            MinimumLevel: 7,
+            [new QuestObjective("medium", ObjectiveKind.CompleteTask, "medium", 40, "Complete 40 Medium tasks")],
+            RewardGold: 260),
+
+        new(TwoKindsOfWork, "Two Kinds of Work",
+            "One sort you can put off. The other sort puts up a fight.",
+            MinimumLevel: 4,
+            [
+                new QuestObjective("tasks", ObjectiveKind.CompleteTask, "", 10, "Complete 10 tasks"),
+                new QuestObjective("kills", ObjectiveKind.DefeatMonster, "", 5, "Win 5 fights")
+            ],
+            RewardGold: 120),
+
+        new(DoubleShift, "Double Shift",
+            "The hard ones and the long ones are not the same ones.",
+            MinimumLevel: 6,
+            [
+                new QuestObjective("medium", ObjectiveKind.CompleteTask, "medium", 12, "Complete 12 Medium tasks"),
+                new QuestObjective("hard", ObjectiveKind.CompleteTask, "hard", 4, "Complete 4 Hard tasks")
+            ],
+            RewardGold: 200),
+
+        new(NothingLeftUndone, "Nothing Left Undone",
+            "Every size of job, one after another, until the list is quiet.",
+            MinimumLevel: 8,
+            [
+                new QuestObjective("easy", ObjectiveKind.CompleteTask, "easy", 10, "Complete 10 Easy tasks"),
+                new QuestObjective("medium", ObjectiveKind.CompleteTask, "medium", 10, "Complete 10 Medium tasks"),
+                new QuestObjective("hard", ObjectiveKind.CompleteTask, "hard", 5, "Complete 5 Hard tasks")
+            ],
+            RewardGold: 320,
+            RewardItemKey: ItemCatalog.RingOfTheDiligent),
+
+        // ------------------------------------------------------------------- contracts
+        //
+        // WinHunt, which was declared for exactly this and then used by nothing. It is the
+        // strongest link there is between a quest and real work: a contract exists only
+        // because a task of yours went overdue, and its banner is chosen from your own tags.
+
+        new(DebtCollector, "Debt Collector",
+            "Something on your list has been waiting long enough to have grown a name.",
+            MinimumLevel: 2,
+            [new QuestObjective("hunts", ObjectiveKind.WinHunt, "", 1, "Collect on 1 contract")],
+            RewardGold: 60),
+
+        new(ArrearsAndErrands, "Arrears and Errands",
+            "They do not get smaller while you look at them.",
+            MinimumLevel: 5,
+            [new QuestObjective("hunts", ObjectiveKind.WinHunt, "", 5, "Collect on 5 contracts")],
+            RewardGold: 180),
+
+        new(TheReckoning, "The Reckoning",
+            "A backlog, met one piece at a time, is only ever a list.",
+            MinimumLevel: 10,
+            [new QuestObjective("hunts", ObjectiveKind.WinHunt, "", 15, "Collect on 15 contracts")],
+            RewardGold: 450,
+            RewardItemKey: ItemCatalog.LedgerOfDebts),
+
+        // One per banner. The banner comes from the task's own tags, so which of these a
+        // player can even start is decided by how they label their own work.
+
+        new(HouseInOrder, "House in Order",
+            "The Hearth keeps the kind of accounts nobody writes down.",
+            MinimumLevel: 3,
+            [new QuestObjective("hearth", ObjectiveKind.WinHunt, FactionCatalog.TheHearth, 3, "Collect on 3 contracts for the Hearth")],
+            RewardGold: 110),
+
+        new(OnTheBooks, "On the Books",
+            "The Ledger notices what was promised and what arrived.",
+            MinimumLevel: 3,
+            [new QuestObjective("ledger", ObjectiveKind.WinHunt, FactionCatalog.TheLedger, 3, "Collect on 3 contracts for the Ledger")],
+            RewardGold: 110),
+
+        new(BodyOfWork, "Body of Work",
+            "The Vigil is unimpressed by intentions.",
+            MinimumLevel: 3,
+            [new QuestObjective("vigil", ObjectiveKind.WinHunt, FactionCatalog.TheVigil, 3, "Collect on 3 contracts for the Vigil")],
+            RewardGold: 110),
+
+        new(ReadingRoom, "Reading Room",
+            "The Athenaeum has a great deal of shelf and very little patience.",
+            MinimumLevel: 3,
+            [new QuestObjective("athenaeum", ObjectiveKind.WinHunt, FactionCatalog.TheAthenaeum, 3, "Collect on 3 contracts for the Athenaeum")],
+            RewardGold: 110),
+
+        new(BooksBalanced, "Books Balanced",
+            "The Exchequer can wait. It would rather not.",
+            MinimumLevel: 3,
+            [new QuestObjective("exchequer", ObjectiveKind.WinHunt, FactionCatalog.TheExchequer, 3, "Collect on 3 contracts for the Exchequer")],
+            RewardGold: 110),
+
+        new(FiveBanners, "Five Banners",
+            "Every part of a life has somebody keeping score of it.",
+            MinimumLevel: 9,
+            [
+                new QuestObjective("hearth", ObjectiveKind.WinHunt, FactionCatalog.TheHearth, 2, "Collect on 2 for the Hearth"),
+                new QuestObjective("ledger", ObjectiveKind.WinHunt, FactionCatalog.TheLedger, 2, "Collect on 2 for the Ledger"),
+                new QuestObjective("vigil", ObjectiveKind.WinHunt, FactionCatalog.TheVigil, 2, "Collect on 2 for the Vigil"),
+                new QuestObjective("athenaeum", ObjectiveKind.WinHunt, FactionCatalog.TheAthenaeum, 2, "Collect on 2 for the Athenaeum"),
+                new QuestObjective("exchequer", ObjectiveKind.WinHunt, FactionCatalog.TheExchequer, 2, "Collect on 2 for the Exchequer")
+            ],
+            RewardGold: 500,
+            RewardItemKey: ItemCatalog.BannerbearersTorc),
+
+        new(SteadyIncome, "Steady Income",
+            "Gold from work, gold from teeth. It spends the same.",
+            MinimumLevel: 6,
+            [
+                new QuestObjective("hunts", ObjectiveKind.WinHunt, "", 3, "Collect on 3 contracts"),
+                new QuestObjective("gold", ObjectiveKind.EarnGold, "", 400, "Earn 400 gold")
+            ],
+            RewardGold: 220),
     ];
 
     private static readonly Dictionary<string, QuestDefinition> ByKey =

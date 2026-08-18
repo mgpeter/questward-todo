@@ -382,7 +382,122 @@ public static class LoreCatalog
             TheForge, LoreTrigger.QuestClaimed, QuestCatalog.WellEquipped, 0),
         new("forge-reground", "Reground Steel",
             "Blades come back off the road with the edge put on the wrong side, and the smith knows that grind on sight. He charges to set it right and does not ask where the blade has been.",
-            TheForge, LoreTrigger.QuestClaimed, QuestCatalog.GoblinCull, 0)
+            TheForge, LoreTrigger.QuestClaimed, QuestCatalog.GoblinCull, 0),
+
+        // --- The ten that filled out the middle -------------------------------------
+        //
+        // The same ladder as everything else: the sighting is what an outsider notices, three
+        // kills is the habit, ten is the thing nobody who met it once could know.
+
+        // Toll Beetle, on the old road.
+        new("toll-beetle-sighted", "Not Around",
+            "Carters will tell you the road is clear and mean that the beetle is on the far side of it. The distinction matters to them and to nobody else.",
+            TheOldRoad, LoreTrigger.MonsterSeen, MonsterCatalog.TollBeetle, 1),
+        new("toll-beetle-known", "The Wheel Ruts",
+            "Two grooves run over the crown of the road, deeper than any cart makes, and they do not deviate. Whatever went over went over in a straight line and was in no hurry.",
+            TheOldRoad, LoreTrigger.MonsterSlain, MonsterCatalog.TollBeetle, 3),
+        new("toll-beetle-studied", "The Surveyor's Note",
+            "A surveyor once proposed rerouting the road by forty yards. The estimate survives; the reroute does not. In the margin, in the same hand: it moved too.",
+            TheOldRoad, LoreTrigger.MonsterSlain, MonsterCatalog.TollBeetle, 10),
+
+        // Cistern Eel, in the fen.
+        new("cistern-eel-sighted", "Water Nobody Draws",
+            "The cistern is marked on the plans and struck through on the copies. Nobody who works the fen can say when it was struck through, only that it was correct to do it.",
+            TheFen, LoreTrigger.MonsterSeen, MonsterCatalog.CisternEel, 1),
+        new("cistern-eel-known", "By Length",
+            "It is measured in hands, and the number has gone up every time somebody has been brave enough to measure it. There have been four measurements.",
+            TheFen, LoreTrigger.MonsterSlain, MonsterCatalog.CisternEel, 3),
+        new("cistern-eel-studied", "The Fourth Measurement",
+            "The fourth was taken from the rim with a weighted line rather than from the water. This was recorded as a refinement of method.",
+            TheFen, LoreTrigger.MonsterSlain, MonsterCatalog.CisternEel, 10),
+
+        // Rusted Sentry, at the forge.
+        new("rusted-sentry-sighted", "Still At It",
+            "It stands where a gate used to be. The gate was taken for its iron a long time ago, and the standing has not been affected.",
+            TheForge, LoreTrigger.MonsterSeen, MonsterCatalog.RustedSentry, 1),
+        new("rusted-sentry-known", "The Watch Order",
+            "There is an order pinned inside the breastplate, rusted illegible except for the hours. The hours are still being kept.",
+            TheForge, LoreTrigger.MonsterSlain, MonsterCatalog.RustedSentry, 3),
+        new("rusted-sentry-studied", "Relieved",
+            "Nobody came to relieve it. The relief was posted, and rode out, and there is a second sentry somewhere on that road doing the same thing.",
+            TheForge, LoreTrigger.MonsterSlain, MonsterCatalog.RustedSentry, 10),
+
+        // Grave Moth, in the crypt.
+        new("grave-moth-sighted", "Cloth First",
+            "Undertakers in the district budget for replacement shrouds twice a year. It is a line item, and it is never questioned.",
+            TheCrypt, LoreTrigger.MonsterSeen, MonsterCatalog.GraveMoth, 1),
+        new("grave-moth-known", "In Order",
+            "It works from the outside in and never skips. Whether this is method or manners is the sort of question that gets asked once in a crypt and not again.",
+            TheCrypt, LoreTrigger.MonsterSlain, MonsterCatalog.GraveMoth, 3),
+        new("grave-moth-studied", "The Patient Kind",
+            "One was kept in a case for study. It ate the label, then the card the label was pinned to, and then waited eleven months without apparent inconvenience.",
+            TheCrypt, LoreTrigger.MonsterSlain, MonsterCatalog.GraveMoth, 10),
+
+        // Salt Widow, on the drowned coast.
+        new("salt-widow-sighted", "At the Tideline",
+            "She is only ever seen facing the water. Coastal folk consider walking behind her rude rather than dangerous, which is its own kind of statement.",
+            TheDrownedCoast, LoreTrigger.MonsterSeen, MonsterCatalog.SaltWidow, 1),
+        new("salt-widow-known", "The Register",
+            "The harbour register lists the boat as lost with all hands, sixty years back, in a hand that pressed hard enough to go through the page.",
+            TheDrownedCoast, LoreTrigger.MonsterSlain, MonsterCatalog.SaltWidow, 3),
+        new("salt-widow-studied", "All Hands",
+            "The crew list has one name fewer than the muster. The missing name is hers, and she was never aboard.",
+            TheDrownedCoast, LoreTrigger.MonsterSlain, MonsterCatalog.SaltWidow, 10),
+
+        // Pit Foreman, at the quarry.
+        new("pit-foreman-sighted", "The Tally",
+            "It carries a slate and adds to it. Quarrymen who have seen the slate say the columns are wages, and that the arithmetic is correct.",
+            TheQuarry, LoreTrigger.MonsterSeen, MonsterCatalog.PitForeman, 1),
+        new("pit-foreman-known", "Owed",
+            "The pay chest went into the flooded lower gallery with the roof. Every name on the slate is a name from that shift.",
+            TheQuarry, LoreTrigger.MonsterSlain, MonsterCatalog.PitForeman, 3),
+        new("pit-foreman-studied", "The Last Column",
+            "There is a column at the bottom for the foreman's own wage, and it is the only one crossed through. It was crossed through first.",
+            TheQuarry, LoreTrigger.MonsterSlain, MonsterCatalog.PitForeman, 10),
+
+        // Cairn Wight, in the high passes.
+        new("cairn-wight-sighted", "Stones Enough",
+            "The cairn is larger than a burial needs and has been added to by every party that has passed it. Nobody adds a stone twice.",
+            TheHighPasses, LoreTrigger.MonsterSeen, MonsterCatalog.CairnWight, 1),
+        new("cairn-wight-known", "Stacked From Within",
+            "The stones nearest the ground are laid with their flat faces inward. Anybody who has built a wall will tell you what that means about which side the builder stood on.",
+            TheHighPasses, LoreTrigger.MonsterSlain, MonsterCatalog.CairnWight, 3),
+        new("cairn-wight-studied", "The Custom",
+            "The custom of adding a stone is older than the cairn. It was practised on the pass before there was anything there to add to.",
+            TheHighPasses, LoreTrigger.MonsterSlain, MonsterCatalog.CairnWight, 10),
+
+        // Lantern Wraith, in the fen.
+        new("lantern-wraith-sighted", "Out and Back",
+            "The light goes out across the marsh at dusk at a walking pace. What comes back comes back faster and without it.",
+            TheFen, LoreTrigger.MonsterSeen, MonsterCatalog.LanternWraith, 1),
+        new("lantern-wraith-known", "The Lantern Count",
+            "The chandler on the fen road sells more lanterns than the village has households, and has done for as long as the accounts run.",
+            TheFen, LoreTrigger.MonsterSlain, MonsterCatalog.LanternWraith, 3),
+        new("lantern-wraith-studied", "Where They Go",
+            "Dredging turned up forty of them in a line, all facing the same way, all still shut. The line points at nothing anybody has been able to find.",
+            TheFen, LoreTrigger.MonsterSlain, MonsterCatalog.LanternWraith, 10),
+
+        // Scree Giant, in the high passes.
+        new("scree-giant-sighted", "Spring Thaw",
+            "It comes down with the loose stone and goes back up carrying less than it brought. Where the difference goes is a matter of local opinion.",
+            TheHighPasses, LoreTrigger.MonsterSeen, MonsterCatalog.ScreeGiant, 1),
+        new("scree-giant-known", "The Shorter Pass",
+            "The pass is measurably shorter than it was a century ago. Surveyors have blamed the survey four times and the mountain none.",
+            TheHighPasses, LoreTrigger.MonsterSlain, MonsterCatalog.ScreeGiant, 3),
+        new("scree-giant-studied", "What It Takes Up",
+            "It is building something at the top. Nobody has been high enough to say what, and everybody who has been high enough to guess has guessed the same thing.",
+            TheHighPasses, LoreTrigger.MonsterSlain, MonsterCatalog.ScreeGiant, 10),
+
+        // Hollow Abbot, in the crypt.
+        new("hollow-abbot-sighted", "The Hours",
+            "The bell is rung at matins and at vespers and has not been late. The house has stood empty for ninety years.",
+            TheCrypt, LoreTrigger.MonsterSeen, MonsterCatalog.HollowAbbot, 1),
+        new("hollow-abbot-known", "The Rule",
+            "The rule of the house required the abbot to keep the hours whatever befell. It did not say for how long, an omission the order considered too obvious to correct.",
+            TheCrypt, LoreTrigger.MonsterSlain, MonsterCatalog.HollowAbbot, 3),
+        new("hollow-abbot-studied", "Nothing Inside",
+            "The habit is empty. The bell is not, and what is in the bell is the only part of the abbot that answered when the plague took the house.",
+            TheCrypt, LoreTrigger.MonsterSlain, MonsterCatalog.HollowAbbot, 10),
     ];
 
     private static readonly Dictionary<string, LoreFragment> ByKey =
