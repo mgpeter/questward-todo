@@ -121,6 +121,43 @@ public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
     }
 }
 
+public class BestiaryEntryConfiguration : IEntityTypeConfiguration<BestiaryEntry>
+{
+    public void Configure(EntityTypeBuilder<BestiaryEntry> builder)
+    {
+        builder.ToTable("bestiary_entries");
+
+        builder.HasKey(b => b.Id);
+
+        builder.Property(b => b.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(b => b.UserId).HasColumnType("uuid").IsRequired();
+        builder.Property(b => b.MonsterKey).HasColumnType("varchar(60)").IsRequired();
+        builder.Property(b => b.Encounters).HasColumnType("integer").IsRequired();
+        builder.Property(b => b.Kills).HasColumnType("integer").IsRequired();
+        builder.Property(b => b.GoldTaken).HasColumnType("integer").IsRequired();
+        builder.Property(b => b.BestRound).HasColumnType("integer").IsRequired();
+        builder.Property(b => b.FirstSeenAt).HasColumnType("timestamp with time zone").IsRequired();
+        builder.Property(b => b.LastSeenAt).HasColumnType("timestamp with time zone").IsRequired();
+
+        // Read through MonsterCatalog on every request (DEC-004), so a retuned monster is
+        // retuned everywhere at once. Named here for the same reason InventoryItem names its
+        // derived members: EF ignores a get-only property today, but the day one grows a
+        // setter it would map silently and expect a column no migration ever wrote.
+        builder.Ignore(b => b.Definition);
+        builder.Ignore(b => b.IsSlain);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(b => b.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // One row per user per monster, the same reasoning as the QuestProgress index: two
+        // concurrent starts on the same monster would otherwise each insert a row and split
+        // one sighting count across both, with neither telling the truth afterwards.
+        builder.HasIndex(b => new { b.UserId, b.MonsterKey }).IsUnique();
+    }
+}
+
 public class QuestProgressConfiguration : IEntityTypeConfiguration<QuestProgress>
 {
     public void Configure(EntityTypeBuilder<QuestProgress> builder)

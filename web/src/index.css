@@ -246,6 +246,31 @@
   }
 }
 
+/* The rising XP number, in CSS so the block below actually governs it. Lifetime is 1200ms
+   in GameFeed, so the fade finishes just before the element is removed and nothing snaps. */
+@keyframes xp-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.8);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -16px) scale(1);
+  }
+  68% {
+    opacity: 1;
+    transform: translate(-50%, -46px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -72px) scale(0.9);
+  }
+}
+
+.xp-float {
+  animation: xp-float 1.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -253,5 +278,14 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+
+  /* Collapsing the float's duration would leave it on its final frame, which is invisible.
+     The number is information rather than decoration, so it holds still and legible and is
+     cleared on the same timer as before. */
+  .xp-float {
+    animation: none !important;
+    opacity: 1;
+    transform: translate(-50%, -18px);
   }
 }

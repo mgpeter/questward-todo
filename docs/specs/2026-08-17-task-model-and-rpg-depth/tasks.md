@@ -27,12 +27,12 @@
   - [x] 3.4 42 new items as a separate catalog-only commit
   - [x] 3.5 Verify all tests pass
 
-- [ ] 4. Content, bestiary and feel
-  - [ ] 4.1 Write tests for bestiary recording, isolation and level coverage
-  - [ ] 4.2 `bestiary_entries`, two GETs, the deliberate DEC-002 exception comment
-  - [ ] 4.3 Monsters for levels 1-14; fix the `IsAvailableAt` doc comment, keep the band
-  - [ ] 4.4 Lore fragments, flavour text, combat sound - budget this as writing
-  - [ ] 4.5 Verify all tests pass
+- [x] 4. Content, bestiary and feel
+  - [x] 4.1 Write tests for bestiary recording, isolation and level coverage
+  - [x] 4.2 `bestiary_entries`, two GETs, the deliberate DEC-002 exception comment
+  - [x] 4.3 Monsters for levels 1-14; fix the `IsAvailableAt` doc comment, keep the band
+  - [x] 4.4 Lore fragments, flavour text, combat sound - budget this as writing
+  - [x] 4.5 Verify all tests pass
 
 - [ ] 5. Encounter depth
   - [ ] 5.1 Write tests for effect ticks, phases, consumable stacking

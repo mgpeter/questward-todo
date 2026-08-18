@@ -23,11 +23,25 @@ public sealed record MonsterDefinition(
     public DiceExpression Damage => DiceExpression.Parse(DamageNotation);
 
     /// <summary>
-    /// Monsters within one level either way of the character, so the tavern always has
-    /// something to fight without offering a certain death.
+    /// Monsters from two levels below the character to one level above, so the tavern always
+    /// has something to fight without offering a certain death. The band is deliberately
+    /// asymmetric: an easy fight is a valid choice, an unwinnable one is not.
     /// </summary>
-    public bool IsAvailableAt(int characterLevel) =>
-        Level <= characterLevel + 1 && Level >= characterLevel - 2;
+    /// <remarks>
+    /// A monster of level N is therefore offered to characters N-1 through N+2, which is the
+    /// arithmetic the level coverage test relies on. Other phases depend on the band as
+    /// written; widening or narrowing it re-plans the whole bestiary.
+    /// <para>
+    /// The character level is clamped to the deepest level the bestiary actually goes to
+    /// before the band is applied. Unclamped, the band walks off the end of the catalog: a
+    /// character at level 17 or above has no opponent at all, so the tavern list is empty,
+    /// every start is refused as out of range, and stamina, gold, loot, the codex and every
+    /// combat quest go inert. Levels only ever rise, so there is no way back out of that.
+    /// </para>
+    /// </remarks>
+    public bool IsAvailableAt(int characterLevel) => IsInBand(MonsterCatalog.BandLevel(characterLevel));
+
+    private bool IsInBand(int level) => Level <= level + 1 && Level >= level - 2;
 }
 
 /// <summary>Code-held, following DEC-004. Only the key is ever persisted.</summary>
@@ -41,6 +55,17 @@ public static class MonsterCatalog
     public const string Ogre = "ogre";
     public const string Wraith = "wraith";
     public const string YoungDragon = "young-dragon";
+    public const string CarrionCrows = "carrion-crows";
+    public const string MireToad = "mire-toad";
+    public const string Deserter = "deserter";
+    public const string HedgeTroll = "hedge-troll";
+    public const string StoneSentinel = "stone-sentinel";
+    public const string FenHag = "fen-hag";
+    public const string BarrowKnight = "barrow-knight";
+    public const string DrownedCrew = "drowned-crew";
+    public const string Basilisk = "basilisk";
+    public const string Wyvern = "wyvern";
+    public const string ElderDragon = "elder-dragon";
 
     public static IReadOnlyList<MonsterDefinition> All { get; } =
     [
@@ -93,6 +118,28 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.CartographersLens, 1)
             ]),
 
+        // Phase 4 monsters carry their own loot tables rather than joining an existing one.
+        // LootService.PickWeighted rolls once against a table's summed weight and walks it in
+        // declaration order, so reweighting or extending a table an existing seeded test can
+        // reach would change which item that test is handed, with no change to the roll count
+        // to make the break visible.
+        new(CarrionCrows, "Carrion Flock",
+            "It arrives before there is anything to arrive for.",
+            Level: 2, ArmourClass: 13, MaxHitPoints: 14, AttackBonus: 4, DamageNotation: "1d6+1",
+            MinGold: 4, MaxGold: 16, DropChance: 35,
+            [
+                new LootEntry(ItemCatalog.ThrowingKnives, 3),
+                new LootEntry(ItemCatalog.OilskinCloak, 3),
+                new LootEntry(ItemCatalog.LuckyCoin, 2),
+                new LootEntry(ItemCatalog.PaddedJerkin, 2),
+                new LootEntry(ItemCatalog.HeraldsBaton, 2),
+                new LootEntry(ItemCatalog.CartographersLens, 2),
+                new LootEntry(ItemCatalog.GuildSignet, 2),
+                new LootEntry(ItemCatalog.PoachersShortbow, 2),
+                new LootEntry(ItemCatalog.RingmailVest, 1),
+                new LootEntry(ItemCatalog.AugursBeads, 1)
+            ]),
+
         new(Bandit, "Bandit",
             "Wants your gold. Has clearly done this before.",
             Level: 3, ArmourClass: 13, MaxHitPoints: 22, AttackBonus: 4, DamageNotation: "1d8",
@@ -109,6 +156,24 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.CharmOfPresence, 2),
                 new LootEntry(ItemCatalog.TumblersSash, 2),
                 new LootEntry(ItemCatalog.EnvoysTorc, 1)
+            ]),
+
+        new(MireToad, "Mire Toad",
+            "Still water, then a tongue. It never appears to have moved.",
+            Level: 3, ArmourClass: 13, MaxHitPoints: 23, AttackBonus: 4, DamageNotation: "1d8",
+            MinGold: 10, MaxGold: 30, DropChance: 40,
+            [
+                new LootEntry(ItemCatalog.BoarSpear, 3),
+                new LootEntry(ItemCatalog.HideHarness, 3),
+                new LootEntry(ItemCatalog.MilitiaSpear, 3),
+                new LootEntry(ItemCatalog.OilskinCloak, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 2),
+                new LootEntry(ItemCatalog.HuntingBow, 2),
+                new LootEntry(ItemCatalog.HeartwoodToken, 2),
+                new LootEntry(ItemCatalog.PoachersShortbow, 2),
+                new LootEntry(ItemCatalog.IronMace, 2),
+                new LootEntry(ItemCatalog.LuckyCoin, 1),
+                new LootEntry(ItemCatalog.QuickstringBracer, 1)
             ]),
 
         new(DireWolf, "Dire Wolf",
@@ -128,6 +193,43 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.QuickstringBracer, 1)
             ]),
 
+        new(Deserter, "Deserter",
+            "Still turns out shaved and in step. Nobody is left to inspect him.",
+            Level: 5, ArmourClass: 15, MaxHitPoints: 38, AttackBonus: 6, DamageNotation: "1d12",
+            MinGold: 20, MaxGold: 50, DropChance: 45,
+            [
+                new LootEntry(ItemCatalog.CavalrySabre, 3),
+                new LootEntry(ItemCatalog.Brigandine, 3),
+                new LootEntry(ItemCatalog.MilitiaSpear, 3),
+                new LootEntry(ItemCatalog.RingmailVest, 2),
+                new LootEntry(ItemCatalog.IronMace, 2),
+                new LootEntry(ItemCatalog.BannerSpear, 2),
+                new LootEntry(ItemCatalog.ChainHauberk, 2),
+                new LootEntry(ItemCatalog.OxhideBelt, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 2),
+                new LootEntry(ItemCatalog.IronBand, 2),
+                new LootEntry(ItemCatalog.DuellingRapier, 1),
+                new LootEntry(ItemCatalog.GuildSignet, 1)
+            ]),
+
+        new(HedgeTroll, "Hedge Troll",
+            "Collects a toll on a bridge nobody maintains. The toll has gone up.",
+            Level: 5, ArmourClass: 14, MaxHitPoints: 40, AttackBonus: 5, DamageNotation: "2d6",
+            MinGold: 18, MaxGold: 45, DropChance: 45,
+            [
+                new LootEntry(ItemCatalog.BeardedAxe, 3),
+                new LootEntry(ItemCatalog.IronFlail, 3),
+                new LootEntry(ItemCatalog.HideHarness, 3),
+                new LootEntry(ItemCatalog.StuddedLeather, 2),
+                new LootEntry(ItemCatalog.OxhideBelt, 2),
+                new LootEntry(ItemCatalog.LuckyCoin, 2),
+                new LootEntry(ItemCatalog.BoarSpear, 2),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 2),
+                new LootEntry(ItemCatalog.IronBand, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 1),
+                new LootEntry(ItemCatalog.GreatAxe, 1)
+            ]),
+
         new(Ogre, "Ogre",
             "Slow to anger, slower to stop. Smells of wet rope.",
             Level: 6, ArmourClass: 15, MaxHitPoints: 48, AttackBonus: 6, DamageNotation: "2d6+2",
@@ -145,6 +247,43 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.IronBand, 2),
                 new LootEntry(ItemCatalog.DuellistsHalfPlate, 1),
                 new LootEntry(ItemCatalog.SiegeMaul, 1)
+            ]),
+
+        new(StoneSentinel, "Stone Sentinel",
+            "The same stone as the wall it stands in. It is the part that moves.",
+            Level: 7, ArmourClass: 16, MaxHitPoints: 54, AttackBonus: 7, DamageNotation: "2d6+3",
+            MinGold: 35, MaxGold: 90, DropChance: 52,
+            [
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 3),
+                new LootEntry(ItemCatalog.IronBand, 3),
+                new LootEntry(ItemCatalog.ChainHauberk, 3),
+                new LootEntry(ItemCatalog.CartographersLens, 3),
+                new LootEntry(ItemCatalog.SiegeMaul, 2),
+                new LootEntry(ItemCatalog.TowerShield, 2),
+                new LootEntry(ItemCatalog.BulwarkHalberd, 2),
+                new LootEntry(ItemCatalog.Brigandine, 2),
+                new LootEntry(ItemCatalog.IronFlail, 2),
+                new LootEntry(ItemCatalog.TemplarsCuirass, 1),
+                new LootEntry(ItemCatalog.GravewatchPlate, 1)
+            ]),
+
+        new(FenHag, "Fen Hag",
+            "Standing waist deep in the fen, and perfectly dry.",
+            Level: 7, ArmourClass: 16, MaxHitPoints: 52, AttackBonus: 7, DamageNotation: "2d6+3",
+            MinGold: 40, MaxGold: 95, DropChance: 52,
+            [
+                new LootEntry(ItemCatalog.ArcanistsWeave, 3),
+                new LootEntry(ItemCatalog.RunedWand, 3),
+                new LootEntry(ItemCatalog.AugursBeads, 3),
+                new LootEntry(ItemCatalog.OrreryStaff, 2),
+                new LootEntry(ItemCatalog.HermitsBell, 2),
+                new LootEntry(ItemCatalog.CharmOfPresence, 2),
+                new LootEntry(ItemCatalog.RingOfFocus, 2),
+                new LootEntry(ItemCatalog.ShadowweaveCloak, 2),
+                new LootEntry(ItemCatalog.AmuletOfInsight, 2),
+                new LootEntry(ItemCatalog.EnvoysTorc, 2),
+                new LootEntry(ItemCatalog.CircletOfClarity, 1),
+                new LootEntry(ItemCatalog.PhilosophersInkstone, 1)
             ]),
 
         new(Wraith, "Wraith",
@@ -167,6 +306,44 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.PhilosophersInkstone, 1)
             ]),
 
+        new(BarrowKnight, "Barrow Knight",
+            "Old plate, better kept than the man inside it.",
+            Level: 9, ArmourClass: 17, MaxHitPoints: 70, AttackBonus: 8, DamageNotation: "2d8+2",
+            MinGold: 60, MaxGold: 150, DropChance: 60,
+            [
+                new LootEntry(ItemCatalog.GravewatchPlate, 3),
+                new LootEntry(ItemCatalog.TemplarsCuirass, 3),
+                new LootEntry(ItemCatalog.BannerSpear, 3),
+                new LootEntry(ItemCatalog.OathkeepersMaul, 2),
+                new LootEntry(ItemCatalog.DuellistsHalfPlate, 2),
+                new LootEntry(ItemCatalog.TowerShield, 2),
+                new LootEntry(ItemCatalog.ReliquaryHammer, 2),
+                new LootEntry(ItemCatalog.CavalrySabre, 2),
+                new LootEntry(ItemCatalog.IronBand, 2),
+                new LootEntry(ItemCatalog.PendantOfTheBear, 2),
+                new LootEntry(ItemCatalog.EnvoysTorc, 1),
+                new LootEntry(ItemCatalog.BreastplateOfDawn, 1)
+            ]),
+
+        new(DrownedCrew, "Drowned Crew",
+            "Wet through, and none of it recent.",
+            Level: 10, ArmourClass: 18, MaxHitPoints: 82, AttackBonus: 8, DamageNotation: "3d6",
+            MinGold: 90, MaxGold: 210, DropChance: 65,
+            [
+                new LootEntry(ItemCatalog.ShadowweaveCloak, 3),
+                new LootEntry(ItemCatalog.OilskinCloak, 3),
+                new LootEntry(ItemCatalog.SilveredBlade, 3),
+                new LootEntry(ItemCatalog.CartographersLens, 3),
+                new LootEntry(ItemCatalog.LongbowOfTheVale, 2),
+                new LootEntry(ItemCatalog.BoarSpear, 2),
+                new LootEntry(ItemCatalog.QuickstringBracer, 2),
+                new LootEntry(ItemCatalog.TumblersSash, 2),
+                new LootEntry(ItemCatalog.WayfarersCoat, 2),
+                new LootEntry(ItemCatalog.LodestoneSceptre, 2),
+                new LootEntry(ItemCatalog.ChainHauberk, 2),
+                new LootEntry(ItemCatalog.HermitsBell, 1)
+            ]),
+
         new(YoungDragon, "Young Dragon",
             "Barely more than a hatchling. Still a dragon.",
             Level: 11, ArmourClass: 18, MaxHitPoints: 95, AttackBonus: 9, DamageNotation: "2d10+3",
@@ -185,8 +362,76 @@ public static class MonsterCatalog
                 new LootEntry(ItemCatalog.TowerShield, 2),
                 new LootEntry(ItemCatalog.GravewatchPlate, 2),
                 new LootEntry(ItemCatalog.QuarrymansGauntlets, 1)
+            ]),
+
+        new(Basilisk, "Basilisk",
+            "Slow, incurious, and used to being given room.",
+            Level: 12, ArmourClass: 19, MaxHitPoints: 105, AttackBonus: 10, DamageNotation: "2d10+4",
+            MinGold: 150, MaxGold: 340, DropChance: 78,
+            [
+                new LootEntry(ItemCatalog.LodestoneSceptre, 3),
+                new LootEntry(ItemCatalog.TowerShield, 3),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 3),
+                new LootEntry(ItemCatalog.GravewatchPlate, 2),
+                new LootEntry(ItemCatalog.SiegeMaul, 2),
+                new LootEntry(ItemCatalog.BulwarkHalberd, 2),
+                new LootEntry(ItemCatalog.ScaleMail, 2),
+                new LootEntry(ItemCatalog.WardingShield, 2),
+                new LootEntry(ItemCatalog.PhilosophersInkstone, 2),
+                new LootEntry(ItemCatalog.OathkeepersMaul, 2),
+                new LootEntry(ItemCatalog.BreastplateOfDawn, 2),
+                new LootEntry(ItemCatalog.IronBand, 1)
+            ]),
+
+        new(Wyvern, "Wyvern",
+            "A dragon's poorer relation. It knows.",
+            Level: 13, ArmourClass: 19, MaxHitPoints: 118, AttackBonus: 10, DamageNotation: "3d8+2",
+            MinGold: 180, MaxGold: 400, DropChance: 80,
+            [
+                new LootEntry(ItemCatalog.DragonfangSpear, 3),
+                new LootEntry(ItemCatalog.LongbowOfTheVale, 3),
+                new LootEntry(ItemCatalog.BulwarkHalberd, 3),
+                new LootEntry(ItemCatalog.BoarSpear, 2),
+                new LootEntry(ItemCatalog.ShadowweaveCloak, 2),
+                new LootEntry(ItemCatalog.ScaleMail, 2),
+                new LootEntry(ItemCatalog.QuickstringBracer, 2),
+                new LootEntry(ItemCatalog.PendantOfTheBear, 2),
+                new LootEntry(ItemCatalog.DuellistsHalfPlate, 2),
+                new LootEntry(ItemCatalog.HeartwoodToken, 2),
+                new LootEntry(ItemCatalog.SiegeMaul, 2),
+                new LootEntry(ItemCatalog.GreatAxe, 1)
+            ]),
+
+        new(ElderDragon, "Elder Dragon",
+            "The hatchling grew up. Nobody was watching at the time.",
+            Level: 14, ArmourClass: 20, MaxHitPoints: 132, AttackBonus: 11, DamageNotation: "2d12+4",
+            MinGold: 220, MaxGold: 480, DropChance: 85,
+            [
+                new LootEntry(ItemCatalog.DragonfangSpear, 3),
+                new LootEntry(ItemCatalog.OathkeepersMaul, 3),
+                new LootEntry(ItemCatalog.BreastplateOfDawn, 3),
+                new LootEntry(ItemCatalog.TowerShield, 2),
+                new LootEntry(ItemCatalog.GravewatchPlate, 2),
+                new LootEntry(ItemCatalog.LodestoneSceptre, 2),
+                new LootEntry(ItemCatalog.ReliquaryHammer, 2),
+                new LootEntry(ItemCatalog.SiegeMaul, 2),
+                new LootEntry(ItemCatalog.BulwarkHalberd, 2),
+                new LootEntry(ItemCatalog.WardingShield, 2),
+                new LootEntry(ItemCatalog.PhilosophersInkstone, 2),
+                new LootEntry(ItemCatalog.HermitsBell, 1),
+                new LootEntry(ItemCatalog.QuarrymansGauntlets, 1)
             ])
     ];
+
+    /// <summary>The deepest level the bestiary actually reaches.</summary>
+    public static int TopLevel { get; } = All.Max(m => m.Level);
+
+    /// <summary>
+    /// The level <see cref="MonsterDefinition.IsAvailableAt"/> evaluates its band at. Capped
+    /// at the top of the catalog so the last few opponents stay offered forever rather than
+    /// the band sliding off the end and leaving a high level character nothing to fight.
+    /// </summary>
+    public static int BandLevel(int characterLevel) => Math.Min(characterLevel, TopLevel);
 
     private static readonly Dictionary<string, MonsterDefinition> ByKey =
         All.ToDictionary(m => m.Key, StringComparer.Ordinal);

@@ -360,4 +360,9 @@ export const api = {
 
   reforgeItem: (id: string) =>
     request<Rpg.CraftResult>(`/api/rpg/inventory/${id}/reforge`, { method: 'POST' }),
+
+  /** The whole catalog every time, met or not: the unmet rows are what there is to aim at. */
+  getBestiary: () => request<Rpg.Bestiary>('/api/rpg/bestiary'),
+
+  getLore: () => request<Rpg.Lore>('/api/rpg/lore'),
 }

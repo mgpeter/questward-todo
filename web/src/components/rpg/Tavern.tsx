@@ -2,6 +2,7 @@ import { Swords, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
 import type { AttackResult, CharacterSheet, Encounter } from '../../lib/rpg'
+import { play } from '../../lib/sound'
 import {
   useAbility,
   useActiveEncounter,
@@ -127,6 +128,29 @@ function MonsterList({ sheet }: { sheet: CharacterSheet }) {
   )
 }
 
+/**
+ * A round's cues, in the order the log reads.
+ *
+ * Loot subsumes gold rather than sounding beside it: the drop cue already contains the coin
+ * cue, so playing both would only make the coins twice as loud. The synth drops a repeat of
+ * the same cue inside 40 ms, which is what keeps a round with two hits in it to one click.
+ */
+function announce(result: AttackResult) {
+  for (const roll of result.rolls) {
+    if (roll.kind !== 'attack') continue
+
+    if (roll.outcome === 'critical') play('critical')
+    else if (roll.outcome === 'hit') play('hit')
+    else if (roll.outcome === 'miss' || roll.outcome === 'fumble') play('miss')
+  }
+
+  if (result.encounter.status === 'won') play('kill', 0.12)
+  if (result.encounter.status === 'lost') play('defeat', 0.12)
+
+  if (result.loot) play('drop', 0.35)
+  else if (result.goldAwarded > 0) play('coin', 0.35)
+}
+
 function EncounterView({
   encounter,
   sheet,
@@ -150,10 +174,22 @@ function EncounterView({
     }
   }
 
-  const swing = () => attack.mutate(encounter.id, { onSuccess: finish })
+  // The swing sounds on the click rather than on the reply, so the button feels connected
+  // to the arm even when the round trip is slow.
+  const resolve = (result: AttackResult) => {
+    announce(result)
+    finish(result)
+  }
 
-  const invoke = (abilityKey: string) =>
-    ability.mutate({ encounterId: encounter.id, abilityKey }, { onSuccess: finish })
+  const swing = () => {
+    play('attack')
+    attack.mutate(encounter.id, { onSuccess: resolve })
+  }
+
+  const invoke = (abilityKey: string) => {
+    play('attack')
+    ability.mutate({ encounterId: encounter.id, abilityKey }, { onSuccess: resolve })
+  }
 
   const monsterPercent = Math.max(
     0,
@@ -232,7 +268,10 @@ function EncounterView({
 
           <button
             type="button"
-            onClick={() => flee.mutate(encounter.id)}
+            onClick={() => {
+              play('flee')
+              flee.mutate(encounter.id)
+            }}
             disabled={flee.isPending || encounter.status !== 'active'}
             data-testid="flee"
             className="rounded-lg border border-line px-4 py-2.5 text-sm text-ink-muted transition hover:border-line-strong disabled:opacity-30"

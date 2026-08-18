@@ -22,6 +22,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<QuestProgress> QuestProgress => Set<QuestProgress>();
 
+    public DbSet<BestiaryEntry> BestiaryEntries => Set<BestiaryEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

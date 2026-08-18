@@ -1,6 +1,6 @@
 import { Coins, Scroll, Swords } from 'lucide-react'
 import { motion } from 'motion/react'
-import type { AttackResult } from '../../lib/rpg'
+import { splitFlavour, type AttackResult } from '../../lib/rpg'
 
 const OUTCOME: Record<string, { title: string; tone: string; blurb: string }> = {
   won: {
@@ -146,7 +146,13 @@ export function EncounterResult({
 
         <div className="divide-y divide-line">
           {result.rolls.map((roll, index) => (
-            <FinalRoll key={index} text={roll.text} total={roll.total} kind={roll.kind} />
+            <FinalRoll
+              key={index}
+              text={roll.text}
+              flavour={roll.flavour}
+              total={roll.total}
+              kind={roll.kind}
+            />
           ))}
         </div>
       </section>
@@ -178,10 +184,30 @@ function Reward({
   )
 }
 
-function FinalRoll({ text, total, kind }: { text: string; total: number; kind: string }) {
+function FinalRoll({
+  text,
+  flavour: appended,
+  total,
+  kind,
+}: {
+  text: string
+  flavour: string | null
+  total: number
+  kind: string
+}) {
+  const { line, flavour } = splitFlavour(text, appended)
+
   return (
     <p className="flex items-baseline justify-between gap-3 py-1.5 text-[12px]">
-      <span className={kind === 'note' ? 'italic text-ink-muted' : 'text-ink'}>{text}</span>
+      <span className={kind === 'note' ? 'italic text-ink-muted' : 'text-ink'}>
+        {line}
+        {flavour && (
+          <span className="italic text-ink-faint" data-testid="flavour">
+            {line && ' '}
+            {flavour}
+          </span>
+        )}
+      </span>
       {kind !== 'note' && <span className="tabular shrink-0 text-[11px] text-ink-faint">{total}</span>}
     </p>
   )

@@ -100,7 +100,9 @@ public sealed record CombatRollDto(
     int? Target,
     string Outcome,
     bool Critical,
-    string Text)
+    string Text,
+    /// <summary>The narrative tail of <see cref="Text"/>, null when the line is purely mechanical.</summary>
+    string? Flavour)
 {
     public static CombatRollDto From(CombatRoll roll) => new(
         roll.Round,
@@ -112,7 +114,8 @@ public sealed record CombatRollDto(
         roll.Target,
         roll.Outcome,
         roll.Critical,
-        roll.Text);
+        roll.Text,
+        roll.Flavour);
 }
 
 public sealed record EncounterDto(
@@ -201,6 +204,53 @@ public sealed record ChronicleSummaryDto(
     int MostFoughtCount);
 
 public sealed record ChronicleDto(ChronicleSummaryDto Summary, IReadOnlyList<EncounterDto> Encounters);
+
+/// <param name="Blurb">
+/// Null until the monster has been met. The description is the reward for the first sighting,
+/// so sending it for an undiscovered row would give away what the codex is there to earn.
+/// </param>
+/// <param name="BestRound">Fewest rounds to a kill. Zero means never killed.</param>
+public sealed record BestiaryEntryDto(
+    string Key,
+    string Name,
+    string? Blurb,
+    int Level,
+    bool IsDiscovered,
+    bool IsSlain,
+    int Encounters,
+    int Kills,
+    int GoldTaken,
+    int BestRound,
+    DateTimeOffset? FirstSeenAt,
+    DateTimeOffset? LastSeenAt);
+
+public sealed record BestiaryDto(
+    IReadOnlyList<BestiaryEntryDto> Entries,
+    int Discovered,
+    int Slain,
+    int Total);
+
+/// <param name="Body">Null until unlocked. The body is the whole of the reward.</param>
+/// <param name="Requirement">
+/// What would unlock it, in words. Derived from the trigger rather than stored, so a fragment
+/// that changes its ladder cannot start describing itself wrongly.
+/// </param>
+public sealed record LoreFragmentDto(
+    string Key,
+    string Title,
+    string? Body,
+    bool IsUnlocked,
+    string Requirement);
+
+public sealed record LorePlaceDto(
+    string Key,
+    string Name,
+    string Blurb,
+    IReadOnlyList<LoreFragmentDto> Fragments,
+    int Unlocked,
+    int Total);
+
+public sealed record LoreDto(IReadOnlyList<LorePlaceDto> Places, int Unlocked, int Total);
 
 /// <param name="SoldOut">
 /// Already bought today. Each offer sells once, so without this the card would invite a click

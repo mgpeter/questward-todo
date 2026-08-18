@@ -49,6 +49,9 @@ public static class RpgEndpoints
         group.MapGet("/quests", GetQuests);
         group.MapPost("/quests/{key}/claim", ClaimQuest);
 
+        group.MapGet("/bestiary", GetBestiary);
+        group.MapGet("/lore", GetLore);
+
         return app;
     }
 
@@ -396,6 +399,30 @@ public static class RpgEndpoints
             ? Results.Ok(new QuestClaimResponse(
                 result.Value.GoldGained, result.Value.Gold, result.Value.Item?.ToDto()))
             : Problem(result.Failure, result.Message);
+    }
+
+    // -------------------------------------------------------- bestiary and lore
+
+    private static async Task<IResult> GetBestiary(
+        ICurrentUser currentUser,
+        BestiaryService bestiary,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var codex = await bestiary.CodexAsync(user.Id, cancellationToken);
+
+        return Results.Ok(codex.ToDto());
+    }
+
+    private static async Task<IResult> GetLore(
+        ICurrentUser currentUser,
+        BestiaryService bestiary,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var collection = await bestiary.LoreAsync(user.Id, cancellationToken);
+
+        return Results.Ok(collection.ToDto());
     }
 
     // ----------------------------------------------------------------- shared

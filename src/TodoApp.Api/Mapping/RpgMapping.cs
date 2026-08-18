@@ -198,6 +198,72 @@ public static class RpgMapping
         summary.MostFoughtMonster,
         summary.MostFoughtCount);
 
+    public static BestiaryDto ToDto(this BestiaryCodex codex) => new(
+        codex.Rows.Select(ToDto).ToList(),
+        codex.Discovered,
+        codex.Slain,
+        codex.Total);
+
+    private static BestiaryEntryDto ToDto(BestiaryRow row)
+    {
+        var entry = row.Entry;
+
+        return new BestiaryEntryDto(
+            row.Monster.Key,
+            row.Monster.Name,
+            entry is null ? null : row.Monster.Blurb,
+            row.Monster.Level,
+            IsDiscovered: entry is not null,
+            IsSlain: entry?.IsSlain ?? false,
+            entry?.Encounters ?? 0,
+            entry?.Kills ?? 0,
+            entry?.GoldTaken ?? 0,
+            entry?.BestRound ?? 0,
+            entry?.FirstSeenAt,
+            entry?.LastSeenAt);
+    }
+
+    public static LoreDto ToDto(this LoreCollection collection) => new(
+        collection.Places.Select(ToDto).ToList(),
+        collection.Unlocked,
+        collection.Total);
+
+    private static LorePlaceDto ToDto(LorePlaceView place) => new(
+        place.Place.Key,
+        place.Place.Name,
+        place.Place.Blurb,
+        place.Fragments.Select(ToDto).ToList(),
+        place.Fragments.Count(f => f.IsUnlocked),
+        place.Fragments.Count);
+
+    private static LoreFragmentDto ToDto(LoreFragmentView view) => new(
+        view.Fragment.Key,
+        view.Fragment.Title,
+        view.IsUnlocked ? view.Fragment.Body : null,
+        view.IsUnlocked,
+        Requirement(view.Fragment));
+
+    /// <summary>
+    /// Says what a locked fragment wants, so the collection reads as a set of things to do
+    /// rather than a wall of blanks.
+    /// </summary>
+    private static string Requirement(LoreFragment fragment)
+    {
+        var monster = MonsterCatalog.Find(fragment.Subject)?.Name ?? fragment.Subject;
+
+        return fragment.Trigger switch
+        {
+            LoreTrigger.MonsterSeen when fragment.Threshold <= 1 => $"Meet the {monster}",
+            LoreTrigger.MonsterSeen => $"Meet the {monster} {fragment.Threshold} times",
+            LoreTrigger.MonsterSlain when fragment.Threshold <= 1 => $"Defeat the {monster}",
+            LoreTrigger.MonsterSlain => $"Defeat the {monster} {fragment.Threshold} times",
+            LoreTrigger.Level => $"Reach level {fragment.Threshold}",
+            LoreTrigger.QuestClaimed =>
+                $"Claim {QuestCatalog.Find(fragment.Subject)?.Name ?? fragment.Subject}",
+            _ => "Not yet"
+        };
+    }
+
     public static ShopOfferDto ToDto(this ShopOffer offer, int gold, IReadOnlyCollection<string> soldOut) => new(
         offer.OfferId,
         offer.Item.Key,

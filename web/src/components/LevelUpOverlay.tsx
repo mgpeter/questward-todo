@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect } from 'react'
 import { useGameFeed } from '../game/GameFeed'
+import { play } from '../lib/sound'
 
 const RAY_COUNT = 14
 const SPARK_COUNT = 18
@@ -12,6 +13,10 @@ export function LevelUpOverlay() {
 
   useEffect(() => {
     if (!levelUp) return
+
+    // The one cue allowed to sound pleased, and it belongs to finishing tasks: a level can
+    // only ever come from there.
+    play('levelUp')
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') dismissLevelUp()

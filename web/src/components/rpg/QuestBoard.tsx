@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { useState } from 'react'
 import type { Quest } from '../../lib/rpg'
 import { useClaimQuest, useQuests } from '../../lib/rpgQueries'
+import { play } from '../../lib/sound'
 
 type Filter = 'all' | 'ready' | 'active' | 'claimed' | 'locked'
 
@@ -160,7 +161,13 @@ export function QuestBoard() {
               {!quest.isClaimed && !quest.isLocked && (
                 <button
                   type="button"
-                  onClick={() => claim.mutate(quest.key)}
+                  onClick={() =>
+                    // A reward that includes an item gets the drop cue, which already
+                    // contains the coin cue, so the gold is never announced twice.
+                    claim.mutate(quest.key, {
+                      onSuccess: (result) => play(result.item ? 'drop' : 'coin'),
+                    })
+                  }
                   disabled={!quest.isComplete || claim.isPending}
                   data-testid={`claim-${quest.key}`}
                   className="rounded-lg bg-ink px-3 py-1.5 text-[11.5px] font-medium text-canvas transition hover:opacity-90 disabled:opacity-25"

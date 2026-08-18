@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import type { CombatRoll } from '../../lib/rpg'
+import { splitFlavour, type CombatRoll } from '../../lib/rpg'
 
 const OUTCOME_LABEL: Record<string, string> = {
   hit: 'Hit',
@@ -18,6 +18,8 @@ export function DiceRoll({ roll, index }: { roll: CombatRoll; index: number }) {
   const isPlayer = roll.actor === 'player'
 
   if (roll.kind === 'note') {
+    const { line, flavour } = splitFlavour(roll.text, roll.flavour)
+
     return (
       <motion.p
         initial={{ opacity: 0, x: isPlayer ? -6 : 6 }}
@@ -25,7 +27,13 @@ export function DiceRoll({ roll, index }: { roll: CombatRoll; index: number }) {
         transition={{ delay: index * 0.12 }}
         className="py-1 text-[12px] italic text-ink-muted"
       >
-        {roll.text}
+        {line}
+        {flavour && (
+          <span className="text-ink-faint" data-testid="flavour">
+            {line && ' '}
+            {flavour}
+          </span>
+        )}
       </motion.p>
     )
   }
@@ -73,8 +81,31 @@ export function DiceRoll({ roll, index }: { roll: CombatRoll; index: number }) {
         </span>
       )}
 
-      <span className="w-full text-[11.5px] text-ink-muted">{roll.text}</span>
+      <Line text={roll.text} flavour={roll.flavour} />
     </motion.div>
+  )
+}
+
+/**
+ * The mechanical sentence, then the flavour the API appended to it in a lighter italic.
+ *
+ * The API marks the flavour, so the faint style lands on narration and only on narration. A
+ * mechanical second sentence, "Goblin has 4 hit points left.", stays in the ordinary style
+ * where the player can read it.
+ */
+function Line({ text, flavour: appended }: { text: string; flavour: string | null }) {
+  const { line, flavour } = splitFlavour(text, appended)
+
+  return (
+    <span className="w-full text-[11.5px] text-ink-muted">
+      {line}
+      {flavour && (
+        <span className="italic text-ink-faint" data-testid="flavour">
+          {line && ' '}
+          {flavour}
+        </span>
+      )}
+    </span>
   )
 }
 

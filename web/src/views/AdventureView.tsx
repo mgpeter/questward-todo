@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react'
+import { Bestiary } from '../components/rpg/Bestiary'
 import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
 import { Chronicle } from '../components/rpg/Chronicle'
 import { ClassSelect } from '../components/rpg/ClassSelect'
+import { LoreCollection } from '../components/rpg/LoreCollection'
 import { QuestBoard } from '../components/rpg/QuestBoard'
 import { Shop } from '../components/rpg/Shop'
 import { Tavern } from '../components/rpg/Tavern'
 import { useInventory, useSheet } from '../lib/rpgQueries'
 
-type Panel = 'sheet' | 'tavern' | 'shop' | 'quests' | 'chronicle'
+type Panel = 'sheet' | 'tavern' | 'shop' | 'quests' | 'bestiary' | 'lore' | 'chronicle'
 
 const PANELS: { key: Panel; label: string }[] = [
   { key: 'sheet', label: 'Character' },
   { key: 'tavern', label: 'Tavern' },
   { key: 'shop', label: 'Market' },
   { key: 'quests', label: 'Quests' },
+  { key: 'bestiary', label: 'Bestiary' },
+  { key: 'lore', label: 'Lore' },
   { key: 'chronicle', label: 'Chronicle' },
 ]
 
@@ -45,7 +49,7 @@ export function AdventureView() {
 
   return (
     <div className="space-y-5" data-testid="adventure">
-      <div className="flex items-center gap-0.5 rounded-lg border border-line bg-surface-sunk p-0.5">
+      <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface-sunk p-0.5">
         {PANELS.map((entry) => {
           const active = panel === entry.key
 
@@ -56,7 +60,7 @@ export function AdventureView() {
               aria-pressed={active}
               onClick={() => setPanel(entry.key)}
               data-testid={`adventure-${entry.key}`}
-              className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-medium transition ${
+              className={`flex-1 rounded-md px-2.5 py-1.5 text-[11.5px] font-medium whitespace-nowrap transition ${
                 active
                   ? 'bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]'
                   : 'text-ink-faint hover:text-ink-muted'
@@ -79,6 +83,8 @@ export function AdventureView() {
       {panel === 'tavern' && <Tavern sheet={sheet.data} />}
       {panel === 'shop' && <Shop />}
       {panel === 'quests' && <QuestBoard />}
+      {panel === 'bestiary' && <Bestiary />}
+      {panel === 'lore' && <LoreCollection />}
       {panel === 'chronicle' && <Chronicle />}
 
       <ClassSelect

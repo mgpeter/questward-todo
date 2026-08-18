@@ -65,6 +65,18 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
             return [];
         }
 
+        var discovered = await DiscoveredKindsAsync(userId, cancellationToken);
+
+        // The caller writes the bestiary row before it calls in, so the kind being reported is
+        // already in the derived set. It has to come back out for the "was this already
+        // finished?" snapshot, or the discovery that completes a quest would report itself as
+        // no advance at all and the player would never be told.
+        var before = kind == ObjectiveKind.DiscoverMonster
+            ? discovered
+                .Where(k => !string.Equals(k, target, StringComparison.OrdinalIgnoreCase))
+                .ToHashSet(StringComparer.Ordinal)
+            : discovered;
+
         var keys = relevant.Select(q => q.Key).ToList();
 
         var existing = await db.QuestProgress
@@ -98,11 +110,21 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
             }
 
             var counters = ReadCounters(progress);
-            var wasComplete = IsComplete(quest, counters);
-            var changed = false;
+            var wasComplete = IsComplete(quest, counters, before);
+            var written = false;
+            var advanced = false;
 
             foreach (var objective in quest.Objectives.Where(o => Matches(o, kind, target)))
             {
+                if (IsDerived(objective))
+                {
+                    // Nothing to store: the bestiary row the caller has just added is the
+                    // whole of this objective's progress. The advance is still reported, or a
+                    // discovery would move the board without ever saying so.
+                    advanced = true;
+                    continue;
+                }
+
                 var current = counters.GetValueOrDefault(objective.Id);
 
                 if (current >= objective.Required)
@@ -113,22 +135,26 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
                 // Clamped so an overshoot cannot make a later objective look further along
                 // than it is.
                 counters[objective.Id] = Math.Min(objective.Required, current + amount);
-                changed = true;
+                written = true;
+                advanced = true;
             }
 
-            if (!changed)
+            if (!advanced)
             {
                 continue;
             }
 
-            WriteCounters(progress, counters);
+            if (written)
+            {
+                WriteCounters(progress, counters);
+            }
 
-            var nowComplete = IsComplete(quest, counters);
+            var nowComplete = IsComplete(quest, counters, discovered);
 
             advances.Add(new QuestAdvance(
                 quest.Key,
                 quest.Name,
-                Summarise(quest, counters),
+                Summarise(quest, counters, discovered),
                 JustCompleted: nowComplete && !wasComplete));
         }
 
@@ -143,6 +169,8 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
             .AsNoTracking()
             .Where(p => p.UserId == userId)
             .ToDictionaryAsync(p => p.QuestKey, cancellationToken);
+
+        var discovered = await DiscoveredKindsAsync(userId, cancellationToken);
 
         // The whole catalog, not just what is unlocked. A quest you cannot take yet is
         // still a reason to keep going; hiding it leaves the board looking finished.
@@ -159,9 +187,9 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
                     quest.Description,
                     quest.Objectives
                         .Select(o => new QuestObjectiveView(
-                            o.Id, o.Description, counters.GetValueOrDefault(o.Id), o.Required))
+                            o.Id, o.Description, Current(o, counters, discovered), o.Required))
                         .ToList(),
-                    IsComplete(quest, counters),
+                    IsComplete(quest, counters, discovered),
                     row?.ClaimedAt,
                     quest.RewardGold,
                     quest.RewardItemKey,
@@ -191,16 +219,37 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
         var progress = await db.QuestProgress
             .FirstOrDefaultAsync(p => p.UserId == userId && p.QuestKey == questKey, cancellationToken);
 
-        if (progress is null || !IsComplete(quest, ReadCounters(progress)))
+        if (progress?.ClaimedAt is not null)
+        {
+            return RpgResult<QuestClaim>.Fail(
+                RpgFailure.QuestAlreadyClaimed, "That reward has already been claimed.");
+        }
+
+        var discovered = await DiscoveredKindsAsync(userId, cancellationToken);
+        Dictionary<string, int> counters = progress is null ? [] : ReadCounters(progress);
+
+        if (!IsComplete(quest, counters, discovered))
         {
             return RpgResult<QuestClaim>.Fail(
                 RpgFailure.QuestNotComplete, "That quest is not finished yet.");
         }
 
-        if (progress.ClaimedAt is not null)
+        // Derived progress does not wait for the quest to unlock, so a low level character can
+        // now satisfy a high level quest's objectives. The reward still waits for the level:
+        // the board draws that quest as locked, and claiming has to mean what the board says.
+        if (await CharacterLevelAsync(userId, cancellationToken) < quest.MinimumLevel)
         {
             return RpgResult<QuestClaim>.Fail(
-                RpgFailure.QuestAlreadyClaimed, "That reward has already been claimed.");
+                RpgFailure.QuestNotComplete,
+                $"That reward is not open to you until level {quest.MinimumLevel}.");
+        }
+
+        if (progress is null)
+        {
+            // A quest whose objectives are all derived has no counter row until it is claimed,
+            // because there was never anything to store. Claiming is what needs one.
+            progress = new QuestProgress { UserId = userId, QuestKey = questKey };
+            db.QuestProgress.Add(progress);
         }
 
         var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
@@ -239,17 +288,78 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
         return LevelCurve.LevelForXp(totalXp);
     }
 
+    /// <summary>Every kind of monster this user has ever met, read back from the chronicle.</summary>
+    /// <remarks>
+    /// Discovery progress is derived rather than counted up (DEC-002), and this is why. A
+    /// stored counter only ever moved while the quest was already unlocked, and a kind is met
+    /// for the first time exactly once, so every sighting made below a quest's MinimumLevel
+    /// was dropped and could never be replayed. That put a hard ceiling on the high level
+    /// discovery quests: the availability band offers a character at level 8 nothing below
+    /// monster level 6, so a counter starting from zero on the day the quest unlocked could
+    /// not reach the total the quest asked for and the quest sat on the board forever. The
+    /// same arithmetic stranded anyone whose bestiary was seeded by the AddBestiary backfill,
+    /// because a backfilled row turns every later sighting into a repeat. Reading the rows
+    /// instead makes the count whatever actually happened, whenever it happened.
+    /// </remarks>
+    private async Task<HashSet<string>> DiscoveredKindsAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var keys = await db.BestiaryEntries
+            .Where(b => b.UserId == userId)
+            .Select(b => b.MonsterKey)
+            .ToListAsync(cancellationToken);
+
+        var discovered = keys.ToHashSet(StringComparer.Ordinal);
+
+        // A sighting added by the fight that is calling in has not been committed yet, so the
+        // query above cannot see it. Without the overlay the discovery that opens a fight
+        // would not count until some later fight happened to record something else.
+        foreach (var pending in db.BestiaryEntries.Local.Where(b => b.UserId == userId))
+        {
+            discovered.Add(pending.MonsterKey);
+        }
+
+        return discovered;
+    }
+
     private static bool Matches(QuestObjective objective, ObjectiveKind kind, string target) =>
         objective.Kind == kind &&
         (objective.Target.Length == 0 ||
          string.Equals(objective.Target, target, StringComparison.OrdinalIgnoreCase));
 
-    private static bool IsComplete(QuestDefinition quest, Dictionary<string, int> counters) =>
-        quest.Objectives.All(o => counters.GetValueOrDefault(o.Id) >= o.Required);
+    /// <summary>Read from the bestiary rather than the counter map, so nothing is stored for it.</summary>
+    private static bool IsDerived(QuestObjective objective) =>
+        objective.Kind == ObjectiveKind.DiscoverMonster;
 
-    private static string Summarise(QuestDefinition quest, Dictionary<string, int> counters)
+    private static int Current(
+        QuestObjective objective,
+        Dictionary<string, int> counters,
+        HashSet<string> discovered)
     {
-        var done = quest.Objectives.Sum(o => Math.Min(o.Required, counters.GetValueOrDefault(o.Id)));
+        if (!IsDerived(objective))
+        {
+            return counters.GetValueOrDefault(objective.Id);
+        }
+
+        // An empty target counts kinds; a named one asks whether that one kind has been met.
+        return objective.Target.Length == 0
+            ? discovered.Count
+            : discovered.Contains(objective.Target) ? 1 : 0;
+    }
+
+    private static bool IsComplete(
+        QuestDefinition quest,
+        Dictionary<string, int> counters,
+        HashSet<string> discovered) =>
+        quest.Objectives.All(o => Current(o, counters, discovered) >= o.Required);
+
+    private static string Summarise(
+        QuestDefinition quest,
+        Dictionary<string, int> counters,
+        HashSet<string> discovered)
+    {
+        var done = quest.Objectives.Sum(o => Math.Min(o.Required, Current(o, counters, discovered)));
         var required = quest.Objectives.Sum(o => o.Required);
 
         return $"{done}/{required}";

@@ -45,6 +45,11 @@ public sealed class CombatService(
     /// <summary>Chance in 20 that the Wizard's Arcane Recovery refunds the stamina.</summary>
     private const int ArcaneRecoveryThreshold = 16;
 
+    // Built from this service's own context rather than injected, because a bestiary row has
+    // to be tracked by the very context that commits the fight. Tracked anywhere else, the
+    // sighting and the encounter it belongs to could land in two different transactions.
+    private readonly BestiaryService bestiary = new(db);
+
     public async Task<RpgResult<Encounter>> StartAsync(
         Guid userId,
         string monsterKey,
@@ -91,23 +96,52 @@ public sealed class CombatService(
             character.Stamina -= StaminaPerEncounter;
         }
 
+        // The id is settled here rather than left to the initialiser because the opening
+        // line is keyed off it, and a line has to be chosen before the encounter exists.
+        var encounterId = Guid.CreateVersion7();
+
+        var opening = free
+            ? $"Arcane Recovery: {monster.Name} approaches at no cost."
+            : $"{monster.Name} approaches.";
+
+        // Its own entry rather than appended to the line above, so the narration reads as a
+        // sentence of its own. It is all flavour, which is what the second argument says.
+        var openingFlavour = Flavour(FlavourMoment.Opening, encounterId, 0, monster);
+
         var encounter = new Encounter
         {
+            Id = encounterId,
             UserId = userId,
             MonsterKey = monster.Key,
             MonsterHitPoints = monster.MaxHitPoints,
             Status = EncounterStatus.Active,
             Round = 0,
-            Log = Serialise(free
-                ? [CombatRoll.Note(0, CombatRoll.Player, $"Arcane Recovery: {monster.Name} approaches at no cost.")]
-                : [CombatRoll.Note(0, CombatRoll.Player, $"{monster.Name} approaches.")])
+            Log = Serialise([
+                CombatRoll.Note(0, CombatRoll.Player, opening),
+                CombatRoll.Note(0, CombatRoll.Player, openingFlavour, openingFlavour)
+            ])
         };
 
         db.Encounters.Add(encounter);
 
+        // The chronicle counts a fight begun, not a fight won, so this sits before the first
+        // round rather than at any of the three endings. Every gate that can refuse the fight
+        // has already returned above, so nothing recorded here is a monster never met.
+        var firstSighting = await bestiary.RecordSightingAsync(userId, monster.Key, cancellationToken);
+
+        if (firstSighting)
+        {
+            // Discovery counts a kind met for the first time. It is recorded here and nowhere
+            // else, so the only way to reach it is to spend stamina on a fight. Task
+            // completion cannot pay a discovery quest by any route, which is what keeps the
+            // DEC-014 progression gate the single answer to "may this pay out?".
+            await quests.RecordAsync(
+                userId, ObjectiveKind.DiscoverMonster, monster.Key, 1, cancellationToken);
+        }
+
         // Spending the stamina and opening the fight commit together, so a failure can
         // never take the cost without producing the encounter.
-        await db.SaveChangesAsync(cancellationToken);
+        await SaveLettingBookkeepingGoAsync(cancellationToken);
 
         return RpgResult<Encounter>.Success(encounter);
     }
@@ -219,13 +253,24 @@ public sealed class CombatService(
                 sheet.ArmourClass,
                 mocked ? RollMode.Disadvantage : RollMode.Normal);
 
+            var replyLine = reply.Outcome == RollOutcome.Hit
+                ? $"{monster.Name} connects."
+                : mocked
+                    ? $"{monster.Name} misses, still stung by the remark."
+                    : $"{monster.Name} misses.";
+
+            var replyMoment = reply.Outcome switch
+            {
+                RollOutcome.Hit when reply.Critical => FlavourMoment.MonsterCritical,
+                RollOutcome.Hit => FlavourMoment.MonsterHit,
+                _ => FlavourMoment.MonsterMiss
+            };
+
+            var replyFlavour = Flavour(replyMoment, encounter.Id, encounter.Round, monster);
+
             rolls.Add(CombatRoll.From(
                 encounter.Round, CombatRoll.Monster, reply,
-                reply.Outcome == RollOutcome.Hit
-                    ? $"{monster.Name} connects."
-                    : mocked
-                        ? $"{monster.Name} misses, still stung by the remark."
-                        : $"{monster.Name} misses."));
+                CombatRoll.Compose(replyLine, replyFlavour), replyFlavour));
 
             if (reply.Outcome == RollOutcome.Hit)
             {
@@ -246,9 +291,14 @@ public sealed class CombatService(
                     character.CurrentHitPoints = 1;
                     character.HitPointsUpdatedAt = DateTimeOffset.UtcNow;
 
+                    var defeatFlavour = Flavour(
+                        FlavourMoment.Defeat, encounter.Id, encounter.Round, monster);
+
                     rolls.Add(CombatRoll.Note(
                         encounter.Round, CombatRoll.Player,
-                        "You are driven off, battered but breathing."));
+                        CombatRoll.Compose(
+                            "You are driven off, battered but breathing.", defeatFlavour),
+                        defeatFlavour));
                 }
             }
         }
@@ -257,7 +307,7 @@ public sealed class CombatService(
         encounter.Log = Serialise(log);
         character.HitPointsUpdatedAt = DateTimeOffset.UtcNow;
 
-        await db.SaveChangesAsync(cancellationToken);
+        await SaveLettingBookkeepingGoAsync(cancellationToken);
 
         return RpgResult<AttackOutcome>.Success(new AttackOutcome(
             encounter, rolls, character.CurrentHitPoints, sheet.MaxHitPoints, goldAwarded, drop, advances));
@@ -282,7 +332,14 @@ public sealed class CombatService(
         }
 
         var log = Deserialise(encounter.Log);
-        log.Add(CombatRoll.Note(encounter.Round, CombatRoll.Player, "You withdraw. The stamina is spent."));
+
+        var fleeFlavour = Flavour(
+            FlavourMoment.Flee, encounter.Id, encounter.Round, encounter.Monster);
+
+        log.Add(CombatRoll.Note(
+            encounter.Round, CombatRoll.Player,
+            CombatRoll.Compose("You withdraw. The stamina is spent.", fleeFlavour),
+            fleeFlavour));
 
         encounter.Status = EncounterStatus.Fled;
         encounter.EndedAt = DateTimeOffset.UtcNow;
@@ -361,7 +418,12 @@ public sealed class CombatService(
         encounter.Status = EncounterStatus.Won;
         encounter.EndedAt = DateTimeOffset.UtcNow;
 
-        rolls.Add(CombatRoll.Note(encounter.Round, CombatRoll.Player, $"{monster.Name} falls."));
+        var killFlavour = Flavour(FlavourMoment.Kill, encounter.Id, encounter.Round, monster);
+
+        rolls.Add(CombatRoll.Note(
+            encounter.Round, CombatRoll.Player,
+            CombatRoll.Compose($"{monster.Name} falls.", killFlavour),
+            killFlavour));
 
         var perk = sheet.Class?.Perk;
 
@@ -393,6 +455,12 @@ public sealed class CombatService(
                 encounter.Round, CombatRoll.Player,
                 $"{monster.Name} drops {RarityRules.Describe(drop.Rarity)} {drop.DisplayName}."));
         }
+
+        // The kill counters ride the same transaction as the fight, the gold and the drop, so
+        // the chronicle can never claim a win the encounters table does not also show. This is
+        // the only place EncounterStatus.Won is set, so it is the complete kill site.
+        await bestiary.RecordKillAsync(
+            userId, monster.Key, encounter.Round, gold, cancellationToken);
 
         // Quest progress rides the same transaction as the fight it came from.
         var advances = new List<QuestAdvance>();
@@ -485,7 +553,12 @@ public sealed class CombatService(
         }
 
         var attack = RollAttackWithBlessing(encounter, modifiers, monster.ArmourClass, criticalOn, mode);
-        rolls.Add(CombatRoll.From(round, CombatRoll.Player, attack, DescribeAttack(attack, monster.Name)));
+        var attackFlavour = Flavour(MomentFor(attack), encounter.Id, round, monster);
+
+        rolls.Add(CombatRoll.From(
+            round, CombatRoll.Player, attack,
+            CombatRoll.Compose(DescribeAttack(attack, monster.Name), attackFlavour),
+            attackFlavour));
 
         if (attack.Outcome != RollOutcome.Hit)
         {
@@ -584,6 +657,66 @@ public sealed class CombatService(
         _ when attack.CriticalFailure => "You fumble the swing.",
         _ => $"You miss {monsterName}."
     };
+
+    private static FlavourMoment MomentFor(RollResult attack) => attack.Outcome switch
+    {
+        RollOutcome.Hit when attack.Critical => FlavourMoment.PlayerCritical,
+        RollOutcome.Hit => FlavourMoment.PlayerHit,
+        _ when attack.CriticalFailure => FlavourMoment.PlayerFumble,
+        _ => FlavourMoment.PlayerMiss
+    };
+
+    /// <summary>
+    /// The narrative half of a log line, chosen from the encounter id, the round and the
+    /// moment.
+    /// </summary>
+    /// <remarks>
+    /// This consumes no <see cref="IDiceRoller"/> roll, and must never be changed so that it
+    /// does. Every SequenceDiceRoller script in the test suite hard-codes how many rolls a
+    /// round takes and in what order they arrive; a flavour line drawn from the roller would
+    /// shift every later value in the script and silently change what dozens of existing
+    /// tests are asserting. Keying off the id and the round instead also makes the choice
+    /// stable, so a reloaded fight narrates itself exactly as it did the first time.
+    /// </remarks>
+    private static string Flavour(
+        FlavourMoment moment,
+        Guid encounterId,
+        int round,
+        MonsterDefinition? monster) =>
+        FlavourCatalog.Pick(moment, encounterId, round, monster?.Name ?? "creature");
+
+    /// <summary>
+    /// Commits the fight, dropping the chronicle write rather than the fight when the
+    /// chronicle is what the database refused.
+    /// </summary>
+    /// <remarks>
+    /// A bestiary row is bookkeeping, not the point of the transaction. Two starts racing to
+    /// insert the same user and monster pair would otherwise lose to
+    /// IX_bestiary_entries_UserId_MonsterKey and return a 500 that had already taken the
+    /// stamina without opening the fight. Concurrency failures are left alone so the existing
+    /// handler still sees them.
+    /// </remarks>
+    private async Task SaveLettingBookkeepingGoAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+            when (exception is not DbUpdateConcurrencyException && HasPendingChronicleWrite())
+        {
+            foreach (var entry in db.ChangeTracker.Entries<BestiaryEntry>())
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private bool HasPendingChronicleWrite() =>
+        db.ChangeTracker.Entries<BestiaryEntry>()
+            .Any(e => e.State is EntityState.Added or EntityState.Modified);
 
     private static IReadOnlyList<QuestAdvance> Deduplicate(IEnumerable<QuestAdvance> advances) =>
         advances

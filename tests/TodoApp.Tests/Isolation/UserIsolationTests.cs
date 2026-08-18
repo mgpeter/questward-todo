@@ -319,9 +319,123 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(2, (await _bob.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory"))!.Count);
     }
 
+    [Fact]
+    public async Task One_adventurers_bestiary_is_invisible_to_another()
+    {
+        // The codex is a per-user chronicle. An unscoped read would hand Bob a page saying he
+        // had met a monster he has never fought, and an unscoped write would credit Alice's
+        // kills to him.
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+        await GrantStaminaAsync(_alice);
+
+        var start = await _alice.PostAsJsonAsync(
+            "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+        start.EnsureSuccessStatusCode();
+        var encounter = await start.Content.ReadFromJsonAsync<EncounterDto>();
+
+        for (var round = 0; round < 30; round++)
+        {
+            var attack = await _alice.PostAsync($"/api/rpg/encounters/{encounter!.Id}/attack", null);
+            if (!attack.IsSuccessStatusCode) break;
+
+            var result = await attack.Content.ReadFromJsonAsync<AttackDto>();
+            if (result!.Encounter.Status != "active") break;
+        }
+
+        var alices = await _alice.GetFromJsonAsync<BestiaryDto>("/api/rpg/bestiary");
+        var bobs = await _bob.GetFromJsonAsync<BestiaryDto>("/api/rpg/bestiary");
+
+        Assert.Equal(1, alices!.Discovered);
+        Assert.Equal(1, alices.Slain);
+
+        // Bob sees the same catalog and none of the history.
+        Assert.Equal(alices.Total, bobs!.Total);
+        Assert.Equal(0, bobs.Discovered);
+        Assert.Equal(0, bobs.Slain);
+        Assert.All(bobs.Entries, e =>
+        {
+            Assert.False(e.IsDiscovered);
+            Assert.Null(e.Blurb);
+            Assert.Equal(0, e.Encounters);
+            Assert.Equal(0, e.Kills);
+            Assert.Equal(0, e.GoldTaken);
+        });
+    }
+
+    [Fact]
+    public async Task One_adventurers_lore_is_invisible_to_another()
+    {
+        // Lore is derived from the bestiary rather than stored, so a leak here would be a
+        // leak in the derivation rather than in a table, and no foreign key would catch it.
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+        await GrantStaminaAsync(_alice);
+
+        var start = await _alice.PostAsJsonAsync(
+            "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+        start.EnsureSuccessStatusCode();
+        var encounter = await start.Content.ReadFromJsonAsync<EncounterDto>();
+        (await _alice.PostAsync($"/api/rpg/encounters/{encounter!.Id}/flee", null))
+            .EnsureSuccessStatusCode();
+
+        var alices = await _alice.GetFromJsonAsync<LoreDto>("/api/rpg/lore");
+        var bobs = await _bob.GetFromJsonAsync<LoreDto>("/api/rpg/lore");
+
+        var alicesFragment = alices!.Places
+            .SelectMany(p => p.Fragments)
+            .Single(f => f.Key == "giant-rat-sighted");
+        var bobsFragment = bobs!.Places
+            .SelectMany(p => p.Fragments)
+            .Single(f => f.Key == "giant-rat-sighted");
+
+        Assert.True(alicesFragment.IsUnlocked);
+        Assert.NotNull(alicesFragment.Body);
+
+        Assert.False(bobsFragment.IsUnlocked);
+        Assert.Null(bobsFragment.Body);
+        Assert.Equal(alices.Total, bobs.Total);
+        Assert.True(bobs.Unlocked < alices.Unlocked);
+    }
+
+    [Fact]
+    public async Task Discovering_a_monster_advances_only_the_discoverers_quest()
+    {
+        await ChooseClassAsync(_alice);
+        await ChooseClassAsync(_bob);
+        await GrantStaminaAsync(_alice);
+
+        var start = await _alice.PostAsJsonAsync(
+            "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+        start.EnsureSuccessStatusCode();
+        var encounter = await start.Content.ReadFromJsonAsync<EncounterDto>();
+        (await _alice.PostAsync($"/api/rpg/encounters/{encounter!.Id}/flee", null))
+            .EnsureSuccessStatusCode();
+
+        var alicesQuests = await _alice.GetFromJsonAsync<List<QuestDto>>("/api/rpg/quests");
+        var bobsQuests = await _bob.GetFromJsonAsync<List<QuestDto>>("/api/rpg/quests");
+
+        Assert.Equal(1, alicesQuests!.Single(q => q.Key == QuestCatalog.FieldNotes).Objectives.Single().Current);
+        Assert.Equal(0, bobsQuests!.Single(q => q.Key == QuestCatalog.FieldNotes).Objectives.Single().Current);
+    }
+
     private static async Task ChooseClassAsync(HttpClient client) =>
         (await client.PutAsJsonAsync("/api/rpg/class", new { classKey = ClassCatalog.Fighter }))
             .EnsureSuccessStatusCode();
+
+    /// <remarks>
+    /// Easy tasks deliberately. An Epic one grants more stamina but levels the character past
+    /// the low monsters these tests fight, which turns a start request into a 400.
+    /// </remarks>
+    private static async Task GrantStaminaAsync(HttpClient client, int count = 2)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var task = await CreateTaskAsync(client, $"Stamina {i}", "easy");
+
+            await client.PostAsJsonAsync($"/api/tasks/{task.Id}/complete", new { utcOffsetMinutes = 0 });
+        }
+    }
 
     private sealed record TaskDto(Guid Id, string Title, int SortOrder, bool IsCompleted);
 
@@ -354,4 +468,37 @@ public class UserIsolationTests(PostgresFixture postgres) : IAsyncLifetime
         int CompletedTasks,
         int TotalXp,
         List<DifficultyBreakdownDto> ByDifficulty);
+
+    private sealed record EncounterDto(Guid Id, string MonsterKey, string Status, int Round);
+
+    private sealed record AttackDto(EncounterDto Encounter);
+
+    private sealed record ObjectiveDto(string Id, int Current, int Required);
+
+    private sealed record QuestDto(string Key, List<ObjectiveDto> Objectives);
+
+    private sealed record BestiaryEntryDto(
+        string Key,
+        string Name,
+        string? Blurb,
+        int Level,
+        bool IsDiscovered,
+        bool IsSlain,
+        int Encounters,
+        int Kills,
+        int GoldTaken,
+        int BestRound,
+        DateTimeOffset? FirstSeenAt,
+        DateTimeOffset? LastSeenAt);
+
+    private sealed record BestiaryDto(
+        List<BestiaryEntryDto> Entries, int Discovered, int Slain, int Total);
+
+    private sealed record LoreFragmentDto(
+        string Key, string Title, string? Body, bool IsUnlocked, string Requirement);
+
+    private sealed record LorePlaceDto(
+        string Key, string Name, string Blurb, List<LoreFragmentDto> Fragments, int Unlocked, int Total);
+
+    private sealed record LoreDto(List<LorePlaceDto> Places, int Unlocked, int Total);
 }

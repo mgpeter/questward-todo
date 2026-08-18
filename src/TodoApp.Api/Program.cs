@@ -43,6 +43,7 @@ builder.Services.AddSingleton<IDiceRoller, SecureDiceRoller>();
 builder.Services.AddScoped<CharacterSheetService>();
 builder.Services.AddScoped<LootService>();
 builder.Services.AddScoped<QuestService>();
+builder.Services.AddScoped<BestiaryService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddScoped<AdventurerService>();
 builder.Services.AddScoped<ShopService>();

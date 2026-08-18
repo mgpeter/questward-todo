@@ -225,6 +225,128 @@ public class RpgSchemaTests(PostgresFixture postgres)
         Assert.Equal(100, (await reader.Characters.SingleAsync(c => c.UserId == alice.Id)).Gold);
     }
 
+    /// <summary>
+    /// One row per user per monster, enforced by the database rather than by the service.
+    /// </summary>
+    /// <remarks>
+    /// Two starts against the same monster racing each other would both read no row and both
+    /// insert one, and the counters would stop being counters. CombatService drops the losing
+    /// chronicle write rather than the fight, which only works because the index is here to do
+    /// the refusing.
+    /// </remarks>
+    [Fact]
+    public async Task A_monster_has_one_chronicle_row_per_user()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.BestiaryEntries.Add(new BestiaryEntry
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1
+        });
+        await db.SaveChangesAsync();
+
+        db.BestiaryEntries.Add(new BestiaryEntry
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Two_users_can_each_have_met_the_same_monster()
+    {
+        // The index is on the pair. Scoped to the key alone, Alice meeting a goblin would
+        // permanently prevent Bob from ever recording one.
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+        var bob = await postgres.CreateUserAsync("test|bob");
+
+        await using var db = postgres.CreateContext();
+
+        db.BestiaryEntries.Add(new BestiaryEntry
+        {
+            UserId = alice.Id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1
+        });
+        db.BestiaryEntries.Add(new BestiaryEntry
+        {
+            UserId = bob.Id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1
+        });
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, await db.BestiaryEntries.CountAsync(b => b.MonsterKey == MonsterCatalog.Goblin));
+    }
+
+    [Fact]
+    public async Task Chronicle_counters_round_trip()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        var firstSeen = new DateTimeOffset(2026, 8, 1, 9, 30, 0, TimeSpan.Zero);
+        var lastSeen = new DateTimeOffset(2026, 8, 14, 18, 5, 0, TimeSpan.Zero);
+
+        await using (var write = postgres.CreateContext())
+        {
+            write.BestiaryEntries.Add(new BestiaryEntry
+            {
+                UserId = alice.Id,
+                MonsterKey = MonsterCatalog.Skeleton,
+                Encounters = 9,
+                Kills = 4,
+                GoldTaken = 137,
+                BestRound = 2,
+                FirstSeenAt = firstSeen,
+                LastSeenAt = lastSeen
+            });
+
+            await write.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+        var reloaded = await db.BestiaryEntries.SingleAsync(b => b.UserId == alice.Id);
+
+        Assert.Equal(9, reloaded.Encounters);
+        Assert.Equal(4, reloaded.Kills);
+        Assert.Equal(137, reloaded.GoldTaken);
+        Assert.Equal(2, reloaded.BestRound);
+        Assert.Equal(firstSeen, reloaded.FirstSeenAt);
+        Assert.Equal(lastSeen, reloaded.LastSeenAt);
+
+        // Derived and deliberately unmapped, so they come back from the catalog rather than
+        // from a column that could disagree with it.
+        Assert.True(reloaded.IsSlain);
+        Assert.Equal("Skeleton", reloaded.Definition!.Name);
+    }
+
+    /// <summary>
+    /// A key retired from the catalog leaves the row readable. The chronicle is history, and
+    /// history does not stop being true when the catalog moves on.
+    /// </summary>
+    [Fact]
+    public async Task A_row_for_a_monster_no_longer_in_the_catalog_still_loads()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        db.BestiaryEntries.Add(new BestiaryEntry
+        {
+            UserId = alice.Id, MonsterKey = "retired-monster", Encounters = 2, Kills = 1
+        });
+        await db.SaveChangesAsync();
+
+        var reloaded = await db.BestiaryEntries.SingleAsync(b => b.MonsterKey == "retired-monster");
+
+        Assert.Null(reloaded.Definition);
+        Assert.True(reloaded.IsSlain);
+    }
+
     [Fact]
     public async Task Deleting_a_user_removes_their_whole_adventure()
     {
@@ -246,6 +368,10 @@ public class RpgSchemaTests(PostgresFixture postgres)
                     MonsterHitPoints = 3, Status = EncounterStatus.Won
                 });
                 seed.QuestProgress.Add(new QuestProgress { UserId = id, QuestKey = QuestCatalog.FirstBlood });
+                seed.BestiaryEntries.Add(new BestiaryEntry
+                {
+                    UserId = id, MonsterKey = MonsterCatalog.Goblin, Encounters = 1, Kills = 1
+                });
             }
 
             await seed.SaveChangesAsync();
@@ -259,10 +385,12 @@ public class RpgSchemaTests(PostgresFixture postgres)
         Assert.Empty(await db.InventoryItems.Where(i => i.UserId == alice.Id).ToListAsync());
         Assert.Empty(await db.Encounters.Where(e => e.UserId == alice.Id).ToListAsync());
         Assert.Empty(await db.QuestProgress.Where(q => q.UserId == alice.Id).ToListAsync());
+        Assert.Empty(await db.BestiaryEntries.Where(b => b.UserId == alice.Id).ToListAsync());
 
         // Bob is untouched.
         Assert.Single(await db.InventoryItems.Where(i => i.UserId == bob.Id).ToListAsync());
         Assert.Single(await db.Encounters.Where(e => e.UserId == bob.Id).ToListAsync());
+        Assert.Single(await db.BestiaryEntries.Where(b => b.UserId == bob.Id).ToListAsync());
     }
 
     [Fact]

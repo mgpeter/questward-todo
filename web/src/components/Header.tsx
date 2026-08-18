@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
 import { useSheet } from '../lib/rpgQueries'
 import { AccountMenu } from './AccountMenu'
+import { SoundToggle } from './SoundToggle'
 import { ThemeToggle } from './ThemeToggle'
 import { XpRail } from './XpRail'
 
@@ -38,6 +39,7 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
 
         <div className="order-2 ml-auto flex items-center gap-2 sm:order-3">
           <StaminaPip />
+          <SoundToggle />
           <ThemeToggle />
           <AccountMenu />
         </div>

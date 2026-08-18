@@ -120,7 +120,10 @@ export interface CombatRoll {
   target: number | null
   outcome: 'hit' | 'miss' | 'critical' | 'fumble' | 'none'
   critical: boolean
+  /** The whole line, mechanical clause and flavour together. */
   text: string
+  /** The narrative tail of `text`, null when the line is purely mechanical. */
+  flavour: string | null
 }
 
 export interface Encounter {
@@ -289,4 +292,81 @@ export interface RestResult {
   gold: number
   hitPoints: number
   maxHitPoints: number
+}
+
+/**
+ * One row of the codex. Every monster in the catalog is sent, met or not, so the panel can
+ * show what is still out there.
+ */
+export interface BestiaryEntry {
+  key: string
+  name: string
+  /** Null until met. The description is the reward for the first sighting. */
+  blurb: string | null
+  level: number
+  isDiscovered: boolean
+  isSlain: boolean
+  /** Sightings, not wins: a fight that went badly still counts as having met the thing. */
+  encounters: number
+  kills: number
+  goldTaken: number
+  /** Fewest rounds to a kill. Zero means never killed. */
+  bestRound: number
+  firstSeenAt: string | null
+  lastSeenAt: string | null
+}
+
+export interface Bestiary {
+  entries: BestiaryEntry[]
+  discovered: number
+  slain: number
+  total: number
+}
+
+export interface LoreFragment {
+  key: string
+  title: string
+  /** Null until unlocked. The body is the whole of the reward. */
+  body: string | null
+  isUnlocked: boolean
+  /** What would unlock it, in words: "Defeat the Goblin 10 times". */
+  requirement: string
+}
+
+export interface LorePlace {
+  key: string
+  name: string
+  blurb: string
+  fragments: LoreFragment[]
+  unlocked: number
+  total: number
+}
+
+export interface Lore {
+  places: LorePlace[]
+  unlocked: number
+  total: number
+}
+
+/**
+ * Splits a combat line into its mechanical sentence and the flavour the API appended to it.
+ *
+ * The seam is marked by the server, not inferred here. It used to be found by cutting at the
+ * last sentence break, which is wrong for every mechanical line that is already two
+ * sentences: "6 damage. Goblin has 4 hit points left." put the remaining hit points, the one
+ * number the player is actually tracking, in the faint style reserved for decoration, and
+ * tagged it as flavour. Only the server knows whether it appended anything, so it says.
+ *
+ * `line` comes back empty for a line that is nothing but narration, which is how the opening
+ * of a fight arrives.
+ */
+export function splitFlavour(
+  text: string,
+  flavour?: string | null,
+): { line: string; flavour: string | null } {
+  // A log written before the API marked its flavour still arrives without it. Rendering it
+  // whole is right: unmarked means unknown, and guessing is what this replaced.
+  if (!flavour || !text.endsWith(flavour)) return { line: text, flavour: null }
+
+  return { line: text.slice(0, text.length - flavour.length).trimEnd(), flavour }
 }

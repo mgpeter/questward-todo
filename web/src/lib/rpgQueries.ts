@@ -12,6 +12,8 @@ export const rpgKeys = {
   quests: ['rpg', 'quests'] as const,
   chronicle: ['rpg', 'chronicle'] as const,
   shop: ['rpg', 'shop'] as const,
+  bestiary: ['rpg', 'bestiary'] as const,
+  lore: ['rpg', 'lore'] as const,
 }
 
 export const useSheet = () => useQuery({ queryKey: rpgKeys.sheet, queryFn: api.getSheet })
@@ -84,6 +86,8 @@ export function useAttack() {
       client.setQueryData<CharacterSheet>(rpgKeys.sheet, result.sheet)
       void client.invalidateQueries({ queryKey: rpgKeys.inventory })
       void client.invalidateQueries({ queryKey: rpgKeys.quests })
+      void client.invalidateQueries({ queryKey: rpgKeys.bestiary })
+      void client.invalidateQueries({ queryKey: rpgKeys.lore })
     },
   })
 }
@@ -163,6 +167,16 @@ export const useChronicle = () =>
 
 export const useShop = () => useQuery({ queryKey: rpgKeys.shop, queryFn: api.getShop })
 
+export const useBestiary = () =>
+  useQuery({ queryKey: rpgKeys.bestiary, queryFn: api.getBestiary })
+
+/**
+ * Lore is derived per request from the level, the codex and the claimed quests, so it has no
+ * cache of its own to keep warm: it goes stale the moment any of those three move, which is
+ * exactly when the blanket ['rpg'] invalidation fires.
+ */
+export const useLore = () => useQuery({ queryKey: rpgKeys.lore, queryFn: api.getLore })
+
 export function useAbility() {
   const client = useQueryClient()
 
@@ -175,6 +189,8 @@ export function useAbility() {
       client.setQueryData<CharacterSheet>(rpgKeys.sheet, result.sheet)
       void client.invalidateQueries({ queryKey: rpgKeys.inventory })
       void client.invalidateQueries({ queryKey: rpgKeys.quests })
+      void client.invalidateQueries({ queryKey: rpgKeys.bestiary })
+      void client.invalidateQueries({ queryKey: rpgKeys.lore })
     },
   })
 }

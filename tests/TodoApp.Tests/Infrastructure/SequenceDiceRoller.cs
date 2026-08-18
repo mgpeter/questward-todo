@@ -34,3 +34,27 @@ public sealed class FixedDiceRoller(int value) : IDiceRoller
 {
     public int Roll(int sides) => Math.Clamp(value, 1, sides);
 }
+
+/// <summary>
+/// Wraps another roller and records the size of every die asked for, in order.
+/// </summary>
+/// <remarks>
+/// A roll count alone cannot tell a d20 that moved from a d100 that appeared, and the whole
+/// point of the flavour work is that narration costs no die at all. Recording the shape of the
+/// stream is what lets a test say "this fight consumed exactly these dice, in this order" and
+/// fail the moment anything reaches for the roller that did not before.
+/// </remarks>
+public sealed class RecordingDiceRoller(IDiceRoller inner) : IDiceRoller
+{
+    private readonly List<int> _sides = [];
+
+    /// <summary>Sides requested, in request order.</summary>
+    public IReadOnlyList<int> Sides => _sides;
+
+    public int Roll(int sides)
+    {
+        _sides.Add(sides);
+
+        return inner.Roll(sides);
+    }
+}
