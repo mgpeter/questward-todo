@@ -1,12 +1,13 @@
-import { ChevronsUp, Coins, Timer } from 'lucide-react'
+import { ChevronsUp, Coins, Dices, Timer, Zap } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useBuyOffer, useInventory, useShop, useUpgradeItem } from '../../lib/rpgQueries'
-import { affixesInForce, type InventoryItem } from '../../lib/rpg'
+import { useBuyOffer, useInventory, useRerollShop, useShop, useUpgradeItem } from '../../lib/rpgQueries'
+import { affixesInForce, type InventoryItem, type Shop as ShopData } from '../../lib/rpg'
 
 export function Shop() {
   const shop = useShop()
   const inventory = useInventory()
   const buy = useBuyOffer()
+  const reroll = useRerollShop()
 
   if (shop.isLoading) {
     return <div className="panel h-72 animate-pulse rounded-2xl opacity-60" />
@@ -24,19 +25,29 @@ export function Shop() {
           </p>
         </div>
 
-        <p className="tabular flex items-center gap-3 text-[12px]">
-          <span className="flex items-center gap-1.5 text-gold">
-            <Coins size={12} />
-            {shop.data?.gold.toLocaleString()}
-          </span>
-          {shop.data && (
-            <span className="flex items-center gap-1.5 text-ink-faint">
-              <Timer size={12} />
-              {untilRotation(shop.data.rotatesAt)}
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="tabular flex items-center gap-3 text-[12px]">
+            <span className="flex items-center gap-1.5 text-gold">
+              <Coins size={12} />
+              {shop.data?.gold.toLocaleString()}
             </span>
-          )}
-        </p>
+            {shop.data && (
+              <span className="flex items-center gap-1.5 text-ink-faint">
+                <Timer size={12} />
+                {untilRotation(shop.data.rotatesAt)}
+              </span>
+            )}
+          </p>
+
+          {shop.data && <RestockButton shop={shop.data} onRestock={() => reroll.mutate()} pending={reroll.isPending} />}
+        </div>
       </header>
+
+      {reroll.isError && (
+        <p role="alert" className="panel rounded-xl px-4 py-3 text-[12.5px] text-rose">
+          {(reroll.error as Error).message}
+        </p>
+      )}
 
       {buy.isError && (
         <p role="alert" className="panel rounded-xl px-4 py-3 text-[12.5px] text-rose">
@@ -168,6 +179,56 @@ function UpgradeBench({ items }: { items: InventoryItem[] }) {
         ))}
       </ul>
     </section>
+  )
+}
+
+/**
+ * Pays stamina for a whole new shelf.
+ *
+ * The price is on the button rather than behind a confirmation, because it climbs steeply:
+ * the first restock costs one stamina and the seventh costs a thousand. Somebody who cannot
+ * see the next number would reasonably expect the second to cost what the first did.
+ */
+function RestockButton({
+  shop,
+  onRestock,
+  pending,
+}: {
+  shop: ShopData
+  onRestock: () => void
+  pending: boolean
+}) {
+  const spent = shop.nextRerollCost === null
+  const affordable = !spent && shop.stamina >= shop.nextRerollCost!
+
+  return (
+    <button
+      type="button"
+      onClick={onRestock}
+      disabled={spent || !affordable || pending}
+      data-testid="shop-reroll"
+      title={
+        spent
+          ? 'The trader has restocked as often as they are going to today.'
+          : affordable
+            ? `A whole new shelf for ${shop.nextRerollCost} stamina. ${shop.rerollsLeft} left today.`
+            : `Restocking costs ${shop.nextRerollCost} stamina and you have ${shop.stamina}.`
+      }
+      className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold disabled:cursor-not-allowed disabled:border-line disabled:text-ink-faint disabled:hover:text-ink-faint"
+    >
+      <Dices size={12} />
+      {spent ? (
+        'Restocked out'
+      ) : (
+        <>
+          Restock
+          <span className="tabular flex items-center gap-0.5">
+            <Zap size={10} />
+            {shop.nextRerollCost}
+          </span>
+        </>
+      )}
+    </button>
   )
 }
 

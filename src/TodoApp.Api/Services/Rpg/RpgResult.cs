@@ -110,7 +110,12 @@ public enum RpgFailure
     /// that has finished. A contract reaches this without any fight ever having been opened, by
     /// being abandoned, and telling that player their fight is over sends them looking for one.
     /// </remarks>
-    HuntAlreadyFought = 24
+    HuntAlreadyFought = 24,
+
+    /// <summary>
+    /// Today's reroll ladder is spent. A state rather than a bad request, so 409.
+    /// </summary>
+    RerollsSpent = 25
 }
 
 /// <summary>

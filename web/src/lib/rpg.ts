@@ -501,6 +501,10 @@ export interface Shop {
   offers: ShopOffer[]
   rotatesAt: string
   gold: number
+  stamina: number
+  /** Stamina the next restock costs, or null once the day's ladder is spent. */
+  nextRerollCost: number | null
+  rerollsLeft: number
 }
 
 export interface PurchaseResult {

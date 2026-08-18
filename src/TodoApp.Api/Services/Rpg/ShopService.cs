@@ -15,6 +15,15 @@ public sealed record PurchaseResult(InventoryItem Item, int GoldSpent, int Gold)
 
 public sealed record UpgradeResult(InventoryItem Item, Rarity From, Rarity To, int GoldSpent, int Gold);
 
+/// <param name="NextCost">What the following reroll would cost, or null once the day is spent.</param>
+public sealed record RerollResult(
+    ShopStock Stock,
+    IReadOnlyCollection<string> SoldOut,
+    int StaminaSpent,
+    int? NextCost,
+    int RerollsLeft,
+    int Stamina);
+
 /// <summary>
 /// The shop. Stock is computed from the user and the date rather than stored, so there is
 /// no stock table and no nightly job, and the shelves are identical all day.
@@ -51,10 +60,13 @@ public sealed class ShopService(TodoDbContext db)
     private static readonly IReadOnlyList<ItemDefinition> Potions =
         [.. ItemCatalog.All.Where(i => i.Slot == ItemSlot.Consumable)];
 
-    public static ShopStock StockFor(Guid userId, DateTimeOffset now)
+    /// <param name="generation">
+    /// How many times today's shelf has been rerolled. Zero is the shelf the day opens with.
+    /// </param>
+    public static ShopStock StockFor(Guid userId, DateTimeOffset now, int generation = 0)
     {
         var today = DateOnly.FromDateTime(now.UtcDateTime);
-        var roller = new SeededDiceRoller(SeededDiceRoller.DailySeed(userId, today));
+        var roller = new SeededDiceRoller(SeededDiceRoller.DailySeed(userId, today, generation));
 
         var offers = new List<ShopOffer>(OfferCount);
         var taken = new HashSet<string>(StringComparer.Ordinal);
@@ -84,7 +96,14 @@ public sealed class ShopService(TodoDbContext db)
             var rarity = RollStockRarity(roller);
 
             offers.Add(new ShopOffer(
-                OfferId: $"{today:yyyyMMdd}-{slot}-{item.Key}",
+                // The generation is part of the id, and has to be. A reroll can legitimately
+                // land the same item in the same slot, and without it that offer would carry a
+                // byte-identical id to one already bought and read as sold out on a shelf the
+                // player has just paid stamina for. Generation 0 keeps the original two-part
+                // form so purchase rows written before rerolls existed still match.
+                OfferId: generation == 0
+                    ? $"{today:yyyyMMdd}-{slot}-{item.Key}"
+                    : $"{today:yyyyMMdd}r{generation}-{slot}-{item.Key}",
                 Item: item,
                 Rarity: rarity,
                 Price: item.ValueAt(rarity)));
@@ -105,7 +124,10 @@ public sealed class ShopService(TodoDbContext db)
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var today = $"{DateOnly.FromDateTime(now.UtcDateTime):yyyyMMdd}-";
+        // Prefixed on the date alone, so it sweeps in every generation of the day. A rerolled
+        // shelf is a fresh set of ids and none of them match a previous generation's, which is
+        // exactly what makes the new shelf fully buyable.
+        var today = $"{DateOnly.FromDateTime(now.UtcDateTime):yyyyMMdd}";
 
         var sold = await db.ShopPurchases
             .Where(p => p.UserId == userId && p.OfferId.StartsWith(today))
@@ -127,7 +149,13 @@ public sealed class ShopService(TodoDbContext db)
     {
         // Recomputed server-side rather than trusted from the request. Without this an
         // offer id could be forged to buy a Legendary at Common prices.
-        var stock = StockFor(userId, DateTimeOffset.UtcNow);
+        //
+        // At the CURRENT generation, so an offer id from a shelf that has since been rerolled
+        // away no longer resolves. Buying off a stale shelf would let the player keep every
+        // previous shelf alive alongside the new one, which is the ladder paid once for
+        // unlimited stock.
+        var now = DateTimeOffset.UtcNow;
+        var stock = StockFor(userId, now, await GenerationAsync(userId, now, cancellationToken));
         var offer = stock.Offers.FirstOrDefault(o => o.OfferId == offerId);
 
         if (offer is null)
@@ -187,6 +215,98 @@ public sealed class ShopService(TodoDbContext db)
 
         return RpgResult<PurchaseResult>.Success(new PurchaseResult(item, offer.Price, character.Gold));
     }
+
+    /// <summary>
+    /// How many times this user has rerolled today, which is also the current shelf.
+    /// </summary>
+    public async Task<int> GenerationAsync(Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var day = DateOnly.FromDateTime(now.UtcDateTime);
+
+        return await db.ShopRerolls.CountAsync(
+            r => r.UserId == userId && r.Day == day, cancellationToken);
+    }
+
+    /// <summary>
+    /// Pays stamina for a whole new shelf, every offer buyable.
+    /// </summary>
+    /// <remarks>
+    /// Fully buyable is the point and is also the risk: it hands back the six purchases the
+    /// day's cap had already spent, and the cap exists because buy-then-salvage was once an
+    /// uncapped route from gold to essence. The escalating ladder is what prices that out, so
+    /// the cost must be charged before the shelf changes and the whole thing must be one
+    /// transaction.
+    /// <para>
+    /// Nothing here touches TotalXp, and stamina only ever comes from finishing a real task
+    /// (DEC-003), so the deepest a shelf can be rerolled is bounded by work actually done.
+    /// </para>
+    /// </remarks>
+    public async Task<RpgResult<RerollResult>> RerollAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var day = DateOnly.FromDateTime(now.UtcDateTime);
+        var spent = await GenerationAsync(userId, now, cancellationToken);
+
+        if (ShopRerolls.CostOf(spent) is not { } cost)
+        {
+            return RpgResult<RerollResult>.Fail(
+                RpgFailure.RerollsSpent,
+                $"The trader has restocked {ShopRerolls.MaxPerDay} times today and is out of patience. Come back tomorrow.");
+        }
+
+        var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
+
+        if (character.Stamina < cost)
+        {
+            return RpgResult<RerollResult>.Fail(
+                RpgFailure.NotEnoughStamina,
+                $"Restocking costs {cost} stamina and you have {character.Stamina}. Complete a task to earn some.");
+        }
+
+        character.Stamina -= cost;
+
+        db.ShopRerolls.Add(new ShopReroll
+        {
+            UserId = userId,
+            Day = day,
+            Generation = spent + 1,
+            StaminaPaid = cost,
+            RerolledAt = now
+        });
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateReroll(exception))
+        {
+            // Two clicks that both read the same generation. The unique index refuses the
+            // second, and because the stamina went down in the same transaction the loser of
+            // the race paid nothing.
+            db.ChangeTracker.Clear();
+
+            return RpgResult<RerollResult>.Fail(
+                RpgFailure.RerollsSpent, "The shelf was already being restocked. Take another look.");
+        }
+
+        var generation = spent + 1;
+        var stock = StockFor(userId, now, generation);
+        var sold = await SoldOutAsync(userId, now, cancellationToken);
+
+        return RpgResult<RerollResult>.Success(new RerollResult(
+            stock,
+            sold,
+            cost,
+            ShopRerolls.CostOf(generation),
+            ShopRerolls.MaxPerDay - generation,
+            character.Stamina));
+    }
+
+    private static bool IsDuplicateReroll(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation }
+        && exception.Entries.Any(e => e.Entity is ShopReroll);
 
     /// <summary>Cost to raise an item to the given rarity.</summary>
     public static int UpgradeCost(ItemDefinition item, Rarity target) =>

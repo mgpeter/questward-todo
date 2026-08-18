@@ -521,7 +521,15 @@ public sealed record ShopOfferDto(
     bool Affordable,
     bool SoldOut);
 
-public sealed record ShopDto(IReadOnlyList<ShopOfferDto> Offers, DateTimeOffset RotatesAt, int Gold);
+/// <param name="NextRerollCost">Stamina the next reroll costs, or null once the day is spent.</param>
+/// <param name="RerollsLeft">How many restocks the trader will still do today.</param>
+public sealed record ShopDto(
+    IReadOnlyList<ShopOfferDto> Offers,
+    DateTimeOffset RotatesAt,
+    int Gold,
+    int Stamina,
+    int? NextRerollCost,
+    int RerollsLeft);
 
 public sealed record PurchaseResponse(InventoryItemDto Item, int GoldSpent, int Gold);
 

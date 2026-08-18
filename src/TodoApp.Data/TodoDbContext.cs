@@ -18,6 +18,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<ShopPurchase> ShopPurchases => Set<ShopPurchase>();
 
+    public DbSet<ShopReroll> ShopRerolls => Set<ShopReroll>();
+
     public DbSet<Encounter> Encounters => Set<Encounter>();
 
     public DbSet<DungeonRun> DungeonRuns => Set<DungeonRun>();

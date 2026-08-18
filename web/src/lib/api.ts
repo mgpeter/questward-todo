@@ -384,6 +384,8 @@ export const api = {
 
   getShop: () => request<Rpg.Shop>('/api/rpg/shop'),
 
+  rerollShop: () => request<Rpg.Shop>('/api/rpg/shop/reroll', { method: 'POST' }),
+
   buyOffer: (offerId: string) =>
     request<Rpg.PurchaseResult>(`/api/rpg/shop/${encodeURIComponent(offerId)}/buy`, {
       method: 'POST',

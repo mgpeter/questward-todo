@@ -195,6 +195,27 @@ export const useChronicle = () =>
 
 export const useShop = () => useQuery({ queryKey: rpgKeys.shop, queryFn: api.getShop })
 
+/**
+ * Pays stamina for a fresh shelf.
+ *
+ * The response IS the new shelf, so it is written straight into the cache rather than
+ * invalidated: refetching would compute the same stock a second time for no reason, and the
+ * gap in between would show the old shelf the player has just paid to be rid of.
+ */
+export function useRerollShop() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.rerollShop(),
+    onSuccess: (shop) => {
+      client.setQueryData(rpgKeys.shop, shop)
+
+      // Stamina moved, and the sheet is where the rest of the app reads it from.
+      void client.invalidateQueries({ queryKey: rpgKeys.sheet })
+    },
+  })
+}
+
 export const useBestiary = () =>
   useQuery({ queryKey: rpgKeys.bestiary, queryFn: api.getBestiary })
 

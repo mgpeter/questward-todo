@@ -97,6 +97,33 @@ public class ShopPurchaseConfiguration : IEntityTypeConfiguration<ShopPurchase>
     }
 }
 
+public class ShopRerollConfiguration : IEntityTypeConfiguration<ShopReroll>
+{
+    public void Configure(EntityTypeBuilder<ShopReroll> builder)
+    {
+        builder.ToTable("shop_rerolls");
+
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(r => r.UserId).HasColumnType("uuid").IsRequired();
+        builder.Property(r => r.Day).HasColumnType("date").IsRequired();
+        builder.Property(r => r.Generation).HasColumnType("integer").IsRequired();
+        builder.Property(r => r.StaminaPaid).HasColumnType("integer").IsRequired();
+        builder.Property(r => r.RerolledAt).HasColumnType("timestamp with time zone").IsRequired();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // One row per generation per day. Two concurrent rerolls both read the same count and
+        // would both charge for generation 1; the index refuses the second, and because the
+        // stamina goes down in the same transaction the loser pays nothing.
+        builder.HasIndex(r => new { r.UserId, r.Day, r.Generation }).IsUnique();
+    }
+}
+
 public class EncounterConfiguration : IEntityTypeConfiguration<Encounter>
 {
     public void Configure(EntityTypeBuilder<Encounter> builder)

@@ -56,6 +56,7 @@ public static class RpgEndpoints
         group.MapPost("/rest", Rest);
         group.MapGet("/shop", GetShop);
         group.MapPost("/shop/{offerId}/buy", Buy);
+        group.MapPost("/shop/reroll", RerollShop);
         group.MapPost("/inventory/{id:guid}/upgrade", Upgrade);
 
         group.MapGet("/inventory", GetInventory);
@@ -276,13 +277,52 @@ public static class RpgEndpoints
             .FirstOrDefaultAsync(cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
-        var stock = ShopService.StockFor(user.Id, now);
+        var generation = await shop.GenerationAsync(user.Id, now, cancellationToken);
+        var stock = ShopService.StockFor(user.Id, now, generation);
         var soldOut = await shop.SoldOutAsync(user.Id, now, cancellationToken);
+
+        var stamina = await db.Characters
+            .Where(c => c.UserId == user.Id)
+            .Select(c => c.Stamina)
+            .FirstOrDefaultAsync(cancellationToken);
 
         return Results.Ok(new ShopDto(
             stock.Offers.Select(o => o.ToDto(gold, soldOut)).ToList(),
             stock.RotatesAt,
-            gold));
+            gold,
+            stamina,
+            ShopRerolls.CostOf(generation),
+            ShopRerolls.MaxPerDay - generation));
+    }
+
+    private static async Task<IResult> RerollShop(
+        ICurrentUser currentUser,
+        ShopService shop,
+        TodoDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await shop.RerollAsync(user.Id, cancellationToken);
+
+        if (!result.Ok)
+        {
+            return Problem(result.Failure, result.Message);
+        }
+
+        var gold = await db.Characters
+            .Where(c => c.UserId == user.Id)
+            .Select(c => c.Gold)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var reroll = result.Value!;
+
+        return Results.Ok(new ShopDto(
+            reroll.Stock.Offers.Select(o => o.ToDto(gold, reroll.SoldOut)).ToList(),
+            reroll.Stock.RotatesAt,
+            gold,
+            reroll.Stamina,
+            reroll.NextCost,
+            reroll.RerollsLeft));
     }
 
     private static async Task<IResult> Buy(
@@ -726,6 +766,9 @@ public static class RpgEndpoints
         // this same message, which is what keeps run ids unprobeable.
         RpgFailure.NoDungeonRun => Results.Problem(message, statusCode: 404),
         RpgFailure.NotEnoughStamina => Results.Problem(message, statusCode: 422),
+
+        // A state rather than a bad request: the ladder is spent until tomorrow.
+        RpgFailure.RerollsSpent => Results.Problem(message, statusCode: 409),
         RpgFailure.NotEnoughGold => Results.Problem(message, statusCode: 422),
         RpgFailure.NotEnoughEssence => Results.Problem(message, statusCode: 422),
         RpgFailure.AbilityExhausted => Results.Problem(message, statusCode: 422),

@@ -46,6 +46,14 @@ public sealed class SeededDiceRoller : IDiceRoller
         return (int)(_state % (uint)sides) + 1;
     }
 
-    /// <summary>The seed for a user's stock on a given day.</summary>
-    public static string DailySeed(Guid userId, DateOnly date) => $"shop:{userId:N}:{date:yyyy-MM-dd}";
+    /// <summary>The seed for a user's stock on a given day, at a given reroll generation.</summary>
+    /// <remarks>
+    /// Generation 0 is the shelf the day opens with, and its seed is written without the
+    /// suffix so it stays byte-identical to what the shop produced before rerolls existed.
+    /// Appending ":0" would have silently reshuffled everybody's stock the day this shipped.
+    /// </remarks>
+    public static string DailySeed(Guid userId, DateOnly date, int generation = 0) =>
+        generation == 0
+            ? $"shop:{userId:N}:{date:yyyy-MM-dd}"
+            : $"shop:{userId:N}:{date:yyyy-MM-dd}:r{generation}";
 }
