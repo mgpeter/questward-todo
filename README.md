@@ -329,3 +329,7 @@ from Auth0's API test tab.
   app container regularly wins the race against Postgres even with a healthcheck in front.
 - Theme is stored in `localStorage` under `questward.theme` and applied by an inline
   script before first paint, so a dark-theme reload never flashes light.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
