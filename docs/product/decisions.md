@@ -196,9 +196,12 @@ file.
 ## 2026-08-16: Single Origin, One Container
 
 **ID:** DEC-006
-**Status:** Accepted
+**Status:** Amended by DEC-016
 **Category:** Technical
 **Stakeholders:** Tech Lead
+**Amended:** 2026-08-20 by DEC-016, which keeps the single origin this entry established and
+moves the job of holding it from the API to a gateway. The reasoning below is why the rule
+exists and is unchanged; only the mechanism is superseded.
 
 ### Decision
 
@@ -929,3 +932,155 @@ would have kept the XP on a row that was no longer completed and broken the ledg
 
 Verified in both directions against a populated database, since the test fixture only ever
 migrates an empty one.
+
+---
+
+## 2026-08-20: A Gateway Owns the Origin, and Aspire Runs the Development Loop
+
+**ID:** DEC-016
+**Status:** Accepted
+**Category:** Technical
+**Stakeholders:** Product Owner, Tech Lead
+**Amends:** DEC-006
+
+### Decision
+
+`TodoApp.Gateway`, a YARP reverse proxy, is the front door in every shape the app runs in. It
+owns the origin, proxies `/api` to the API, and serves the built SPA from its own `wwwroot`
+with a fallback to `index.html`. The API stops serving static files and becomes an API.
+
+Development is orchestrated by a .NET Aspire 13 AppHost: Postgres on a persistent volume, the
+API, the gateway, and the SPA as a live Vite dev server with hot reload, all behind the
+gateway on port 5080. `TodoApp.ServiceDefaults` gives both .NET services OpenTelemetry,
+service discovery and an `/alive` check.
+
+Service discovery is one mechanism with two configuration sources. The gateway's YARP
+destination is the literal string `http://api` everywhere; the AppHost supplies
+`services__api__http__0` through `WithReference`, and `docker-compose.yml` sets the same
+variable by hand. No code asks which orchestrator started it.
+
+Production becomes two images from one Dockerfile: a gateway image carrying the SPA, and an
+API image. Only the gateway publishes a port.
+
+### Context
+
+DEC-006 settled on a single origin and explicitly rejected "a separate static host or a
+reverse proxy in front of two services". It was right about the destination and wrong about
+the route.
+
+The single origin matters more now than it did then. Auth0 arrived in DEC-011,
+`AuthBootstrap.tsx` sends `redirect_uri: window.location.origin`, and a tenant's Allowed
+Callback URLs are literal strings, so every origin the app answers on is a line of
+configuration in somebody else's dashboard. None of that argues for the static file server
+living inside the API.
+
+What did argue against DEC-006's mechanism was the development loop it produced: three
+terminals, a Vite origin on 5173 that behaves differently from the origin that ships, a CORS
+policy that exists only to paper over the difference, and a `wwwroot` that has to be rebuilt
+and the API restarted before the production shape can be looked at.
+
+### Alternatives Considered
+
+1. **Leave DEC-006 alone and add Aspire for orchestration only**
+   - Pros: much smaller change. The dashboard, traces and container management arrive without
+     touching how anything is served.
+   - Cons: the two origins survive, so the CORS policy survives, and the development URL still
+     is not the production URL. It buys the observability and none of the coherence.
+
+2. **`AddYarp`, Aspire's gateway container resource**
+   - Pros: no extra project. Configured in the AppHost in C# and published with the model.
+   - Cons: it proxies but does not serve, and the SPA needs static files and a deep-link
+     fallback, which is application middleware rather than a route table. More decisively, it
+     exists only because the AppHost rendered it, so "the gateway is the front door
+     everywhere" quietly becomes "wherever Aspire generated one". Production is
+     `docker compose up`, where Aspire is not present.
+
+3. **`PublishAsStaticWebsite`, from `Aspire.Hosting.JavaScript`**
+   - Pros: this is what Aspire 13 actually ships for this problem. A few lines produce a YARP
+     image serving the Vite build with `/api` proxied by service discovery, for Compose and
+     for cloud targets alike, and it is less code than what was written here.
+   - Cons: it is preview, and it makes the AppHost the sole author of the production
+     artefact. That is a large bet in a repository whose compose file is hand-written,
+     commented, and carries a `${VAR:?message}` contract the documentation depends on. Worth
+     revisiting when it leaves preview.
+
+4. **A gateway project, used everywhere** (chosen)
+   - Pros: one origin, one port and one way of finding the API, in development and in
+     production. The gateway is ordinary application code: debuggable, testable and readable
+     without knowing anything about Aspire.
+   - Cons: two more projects, a second image and one more hop in every request.
+
+### Rationale
+
+DEC-006 asked for one port and one thing to run, and this delivers both while making the
+development loop and the deployed shape the same shape. That equivalence is the argument:
+until now the only way to see what ships was to build into `wwwroot` and restart the API, and
+DEC-006 lists that restart as a known negative. It stops existing.
+
+The service discovery choice is worth defending on its own. The gateway names the API
+`http://api` and never learns an address. Under Aspire the name resolves from a variable
+Aspire injects; under Compose it resolves from the same variable, set by hand, in a file a
+person can read. A gateway that had to know whether it was being orchestrated would be a
+gateway that was wrong in one of the two cases.
+
+Aspire's own payoff is a trace. A request enters the gateway, is forwarded to the API and
+issues SQL, and the whole tree appears in one place with the log lines attached. That is not
+achievable by reading three terminals, and it is the first answer this project has had to
+"why was that request slow" that is not a guess.
+
+### Consequences
+
+**Positive:**
+- One origin in every environment, so the Auth0 callback list, the verification scripts and
+  the browser all agree. The gateway deliberately takes 5080, the port the API used to use,
+  which is already on the Auth0 allow-list and is already what all four scripts default to:
+  `scripts/check-adventure.mjs` passes against the gateway unchanged, console errors included.
+- The rebuild-and-restart dance DEC-006 recorded as a negative is gone. Vite serves the SPA
+  through the gateway with hot reload, on the same origin the app ships on.
+- `/alive` joins `/health`, so there is a liveness signal the AppHost and Docker can poll that
+  is not the endpoint the tests pin.
+- The API is an API. No static file middleware, no fallback route, so the surface it exposes
+  is exactly the surface the specs document.
+
+**Negative:**
+- **Three services where there were two, and two images where there was one.**
+  `docker compose up` still gives a working app on one port, but the thing being composed is
+  bigger and the build is slower, because two .NET publishes happen instead of one.
+- **The gateway is a new place for a request to die.** A 502 now has three plausible causes
+  rather than one.
+- **Forwarded headers are load-bearing and easy to forget.** `/api/config` is rate limited per
+  address, and behind a proxy every address is the gateway's unless
+  `ASPNETCORE_FORWARDEDHEADERS_ENABLED` is set. Aspire sets it for project resources; Compose
+  does not, so it is written in `docker-compose.yml`. That in turn makes the API trust
+  `X-Forwarded-For` from anything that can reach it, which is safe only while the API
+  publishes no host port. `GatewayContractTests.The_api_container_publishes_no_host_port`
+  exists to keep that invariant from being edited away by someone who only wanted to curl it.
+- **Aspire is now a real dependency of the recommended loop.** It needs the hosting packages
+  and a container runtime. `dotnet run` on the API and the gateway still works and is
+  documented, but it is the fallback rather than the path.
+- **The AppHost's database is a different database.** It uses its own `questward-aspire-data`
+  volume rather than sharing `questward-dev-data` with `docker-compose.dev.yml`, so switching
+  to the AppHost starts from an empty schema. Deliberate: two orchestrators initialising one
+  cluster with whatever credentials each happened to hold makes the loser unrecoverable.
+- **The Vite origin on 5173 is a second, lesser way in.** It still works and still proxies
+  `/api` straight to the API, and it is occasionally the fastest way to isolate a frontend
+  problem, but it is no longer the supported URL.
+
+### Notes
+
+The Postgres credentials the AppHost uses are read from `.env` and fall back to `questward`,
+rather than being generated. `AddPostgres` generates a password when none is given and stores
+it in user secrets; combined with a data volume and a persistent container, that is a database
+you can only start once. Clear user secrets or clone onto another machine and the cluster is
+already initialised with a password nothing knows any more, which presents as a broken app
+rather than as a credentials problem.
+
+`ServiceDefaults.MapDefaultEndpoints` maps `/alive` only, not the `/health` the Aspire template
+also maps. The API has owned `GET /health` since before Aspire, `AuthenticationTests` asserts
+it is anonymous and 200, and two endpoints on one route throw at request time. The template
+guards its mapping on Development while the tests run as Testing, so that collision would have
+broken `dotnet run` while the suite stayed green.
+
+This file already contains two entries numbered DEC-015, at the dungeon stamina decision and
+the recurrence one. Both are referenced by name elsewhere, so neither was renumbered; this
+entry is DEC-016 and the gap is only apparent.

@@ -1,8 +1,11 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/TodoApp.Api/TodoApp.Api.csproj" />
+    <Project Path="src/TodoApp.AppHost/TodoApp.AppHost.csproj" />
     <Project Path="src/TodoApp.Data/TodoApp.Data.csproj" />
+    <Project Path="src/TodoApp.Gateway/TodoApp.Gateway.csproj" />
     <Project Path="src/TodoApp.Models/TodoApp.Models.csproj" />
+    <Project Path="src/TodoApp.ServiceDefaults/TodoApp.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TodoApp.Tests/TodoApp.Tests.csproj" />

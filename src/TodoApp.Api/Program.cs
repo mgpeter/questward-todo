@@ -20,6 +20,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Local developer overrides, gitignored. Layered last so it wins over appsettings.json.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
+// OpenTelemetry, service discovery and the /alive check, shared with the gateway. The OTLP
+// exporter only registers when something is listening, so a bare `dotnet run` pays nothing.
+builder.AddServiceDefaults();
+
 // Resolved from DI rather than read into a local here, so it reflects the fully layered
 // configuration. Reading it before builder.Build() captures whatever appsettings said and
 // silently ignores anything added later, which is exactly how an integration test ends up
@@ -173,9 +177,6 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -184,6 +185,10 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .AllowAnonymous()
     .WithTags("System");
 
+// /alive beside it, from ServiceDefaults, which is what the AppHost and Docker poll. /health
+// keeps the shape it has always had because the suite asserts it and the docs describe it.
+app.MapDefaultEndpoints();
+
 app.MapSystemEndpoints();
 app.MapTaskEndpoints();
 app.MapCharacterEndpoints();
@@ -191,15 +196,13 @@ app.MapAchievementEndpoints();
 app.MapStatsEndpoints();
 app.MapRpgEndpoints();
 
-// Unmatched API routes must 404 rather than fall through to the SPA shell below.
+// Unmatched API routes must 404 in their own right, rather than relying on there being
+// nothing behind them.
 // Deliberately anonymous: if this required authorization, an unauthenticated request to a
 // route that does not exist would return 401 and tell an anonymous caller the difference
 // between a real endpoint and a typo.
 app.MapMethods("/api/{**rest}", ["GET", "POST", "PUT", "DELETE", "PATCH"], () => Results.NotFound())
     .AllowAnonymous();
-
-// Everything else is the single-page app (production only; in dev Vite serves it).
-app.MapFallbackToFile("index.html");
 
 app.Run();
 

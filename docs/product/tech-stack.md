@@ -13,16 +13,18 @@ as of 2026-08-17, not aspirational targets.
 - ui_component_library: none, components are hand-built in web/src/components
 - fonts_provider: self-hosted via Fontsource (Fraunces, Outfit, IBM Plex Mono)
 - icon_library: lucide-react 1.31
-- application_hosting: self-hosted Docker container
+- application_hosting: self-hosted Docker containers, a YARP gateway in front of the API
 - database_hosting: self-hosted Postgres container on a named Docker volume
-- asset_hosting: served from the API's wwwroot on the same origin
-- deployment_solution: Docker Compose over a three-stage Dockerfile
-- authentication_provider: Auth0 (planned, see DEC-011; not yet implemented)
-- code_repository_url: not yet published; a public GitHub repository is planned
+- asset_hosting: served from the gateway's wwwroot on the same origin as /api (DEC-016)
+- deployment_solution: Docker Compose over one Dockerfile with two runtime targets
+- local_orchestration: .NET Aspire 13.4.6 AppHost (TodoApp.AppHost)
+- authentication_provider: Auth0, PKCE from the SPA and JWT bearer at the API (DEC-011)
+- code_repository_url: https://github.com/mgpeter/questward-todo
 
 ## Backend
 
-- .NET 10, three projects: TodoApp.Models, TodoApp.Data, TodoApp.Api
+- .NET 10, six projects: TodoApp.Models, TodoApp.Data, TodoApp.Api, TodoApp.Gateway,
+  TodoApp.ServiceDefaults and TodoApp.AppHost (DEC-016)
 - Microsoft.EntityFrameworkCore 10.0.11 and EntityFrameworkCore.Relational 10.0.11,
   both pinned explicitly because the Npgsql provider only requires 10.0.4 and the Design
   package is PrivateAssets=all, so its newer version does not flow to the API project
@@ -63,9 +65,15 @@ See DEC-011 for the trade-offs, including the requirement for outbound internet 
 
 ## Infrastructure
 
-- Dockerfile: three stages, node:22-alpine builds the SPA, dotnet/sdk:10.0 publishes the
-  API, dotnet/aspnet:10.0 runs it as a non-root user on port 8080
-- docker-compose.yml: app plus db, with the app gated on a db healthcheck
+- Dockerfile: node:22-alpine builds the SPA, dotnet/sdk:10.0 publishes the API and the
+  gateway, and two dotnet/aspnet:10.0 targets (`api` and `gateway`) run them as a non-root
+  user on port 8080. BuildKit skips the SPA stage when only the API target is built
+- docker-compose.yml: gateway, api and db. Only the gateway publishes a port; the api is
+  reachable solely from inside the network, which is what makes it safe for it to trust
+  X-Forwarded-For (DEC-016)
+- Service discovery: the gateway's YARP destination is the name `http://api` in every
+  environment, resolved from `Services__api__http__0` - injected by the AppHost, set by hand
+  in docker-compose.yml
 - docker-compose.dev.yml: Postgres only, published on 5432 for local development
 - The Postgres 18 image sets PGDATA to /var/lib/postgresql/18/docker, so the named volume
   mounts at /var/lib/postgresql rather than the pre-18 conventional path
@@ -74,7 +82,9 @@ See DEC-011 for the trade-offs, including the requirement for outbound internet 
 
 ## Ports
 
-- 8080: the containerised app, API and SPA on one origin
-- 5080: the API when run locally with `dotnet run`
-- 5173: the Vite dev server, proxying /api to 5080
-- 5432: the development Postgres container
+- 8080: the containerised gateway, the only published port in the compose stack
+- 5080: the gateway locally, and the URL to open in development - SPA and /api on one origin
+- 5081: the API locally (also reachable at /scalar/v1 through the gateway)
+- 5173: the Vite dev server, reached through the gateway; proxies /api to 5081 if opened directly
+- 5432: the development Postgres container from docker-compose.dev.yml
+- 15080: the Aspire dashboard, when running under TodoApp.AppHost

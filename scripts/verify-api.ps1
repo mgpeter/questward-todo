@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Exercises the Questward API end to end and asserts the gamification maths.
 
@@ -8,6 +8,11 @@
 
     Destructive: it deletes every task it creates and resets nothing else, so run it
     against a development database.
+
+.PARAMETER BaseUrl
+    Defaults to http://localhost:5080, which is the gateway - under the AppHost, and the
+    same origin the browser uses. Pass http://localhost:5081 to bypass the gateway and hit
+    the API directly, or http://localhost:8080 for the compose stack.
 
 .PARAMETER AccessToken
     An Auth0 access token for the API audience. Every /api route requires one. Take it

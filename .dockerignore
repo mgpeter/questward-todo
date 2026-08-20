@@ -4,7 +4,7 @@
 **/dist
 
 # Built locally by `npm run build`; the image builds its own copy in the web stage.
-src/TodoApp.Api/wwwroot
+src/TodoApp.Gateway/wwwroot
 
 artifacts
 .git

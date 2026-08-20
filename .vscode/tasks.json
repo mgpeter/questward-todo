@@ -10,15 +10,29 @@
       "group": { "kind": "build", "isDefault": true }
     },
     {
+      "label": "build-gateway",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/TodoApp.Gateway/TodoApp.Gateway.csproj"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build-apphost",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/TodoApp.AppHost/TodoApp.AppHost.csproj"],
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "db-up",
-      "detail": "Start the development Postgres container and wait for it to be healthy.",
+      "detail": "Start the development Postgres container and wait for it to be healthy. Not needed under the AppHost, which runs its own Postgres on a separate volume.",
       "type": "shell",
       "command": "docker compose -f docker-compose.dev.yml up -d --wait",
       "problemMatcher": []
     },
     {
       "label": "vite",
-      "detail": "Vite dev server on 5173 with /api proxied to 5080.",
+      "detail": "Vite dev server on 5173 with /api proxied to 5081. Only for the non-Aspire loop: the AppHost starts Vite itself, on a port it allocates.",
       "type": "shell",
       "command": "npm run dev",
       "options": { "cwd": "${workspaceFolder}/web" },
@@ -46,10 +60,18 @@
     },
     {
       "label": "web-build",
-      "detail": "Build the SPA into src/TodoApp.Api/wwwroot for the single-origin setup.",
+      "detail": "Build the SPA into src/TodoApp.Gateway/wwwroot, which is what the gateway serves.",
       "type": "shell",
       "command": "npm run build",
       "options": { "cwd": "${workspaceFolder}/web" },
+      "problemMatcher": []
+    },
+    {
+      "label": "aspire-run",
+      "detail": "Everything at once: Postgres, the API, the gateway and Vite, behind the gateway on 5080.",
+      "type": "shell",
+      "command": "dotnet run --project src/TodoApp.AppHost",
+      "isBackground": true,
       "problemMatcher": []
     },
     {

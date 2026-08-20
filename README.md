@@ -5,8 +5,10 @@ to how hard it was, level up a character, and collect badges along the way.
 
 - **Backend** - .NET 10 Minimal API, EF Core 10, PostgreSQL
 - **Frontend** - React 19 + TypeScript + Vite, Tailwind CSS v4, TanStack Query, Motion
-- **Deployment** - one container serving the API and the SPA on a single port, or
-  `dotnet run` + Vite for development
+- **Deployment** - a YARP gateway serving the SPA and proxying the API on a single
+  published port, in front of the API and Postgres
+- **Development** - one command: a .NET Aspire AppHost runs Postgres, the API, the gateway
+  and the Vite dev server together, with a dashboard for logs, traces and health
 - **Users** - Auth0-backed accounts. Several people can share one instance, each with
   their own tasks, XP, badges and character.
 - **Adventure** - classes, ability scores, d20 combat, loot, a shop and quests, all fuelled
@@ -46,34 +48,59 @@ docker compose up -d --build
 Open <http://localhost:8080>. Postgres data lives in the `questward-data` volume;
 migrations are applied automatically on startup.
 
+Three services, still one published port: `gateway` owns the origin and serves the SPA,
+`api` answers `/api` and is reachable only from the gateway, `db` is Postgres.
+
 ```bash
-docker compose logs -f app  # follow the app
-docker compose down         # stop, keeping data
-docker compose down -v      # stop and delete the database
+docker compose logs -f gateway  # follow the front door
+docker compose logs -f api      # follow the API
+docker compose down             # stop, keeping data
+docker compose down -v          # stop and delete the database
 ```
 
 ## Run it for development
 
-Three terminals, or three background processes:
+One command. The Aspire AppHost starts Postgres in a container, the API, the gateway and
+the Vite dev server, and reads the Auth0 settings straight out of the `.env` you already
+made for Docker:
+
+```bash
+dotnet run --project src/TodoApp.AppHost
+```
+
+Open <http://localhost:5080>. That is the gateway, and it is the same shape the container
+ships: the SPA and `/api` on one origin. Hot reload works through it - edit a `.tsx` and
+the browser updates. The Aspire dashboard is at <http://localhost:15080> (the console
+prints a login link) and has logs, traces and health for every resource in one place.
+
+Postgres runs on the `questward-aspire-data` volume and survives restarts. It is
+deliberately not the same volume `docker-compose.dev.yml` uses, so the two never fight over
+one cluster.
+
+<details>
+<summary>Without Aspire</summary>
+
+Three terminals, and still supported:
 
 ```bash
 # 1. Postgres only
 docker compose -f docker-compose.dev.yml up -d
 
-# 2. API on http://localhost:5080  (OpenAPI UI at /scalar/v1)
+# 2. API on http://localhost:5081  (OpenAPI UI at /scalar/v1)
 #    Needs the Auth0 settings. Put them in src/TodoApp.Api/appsettings.Local.json
 #    (gitignored) or export them:
 #      Auth0__Domain, Auth0__Audience, Auth0__SpaClientId
 dotnet run --project src/TodoApp.Api
 
-# 3. SPA on http://localhost:5173 with hot reload, /api proxied to 5080
+# 3. SPA on http://localhost:5173 with hot reload, /api proxied to 5081
 cd web && npm install && npm run dev
 ```
 
-To try the production shape without Docker, run `npm run build` in `web/` - Vite writes
-the bundle straight into `src/TodoApp.Api/wwwroot` - then `dotnet run --project
-src/TodoApp.Api` and open <http://localhost:5080>. Restart the API after the first build,
-since static file serving is wired up at startup.
+To try the production shape without Docker, run `npm run build` in `web/` - Vite writes the
+bundle into `src/TodoApp.Gateway/wwwroot` - then run the gateway and the API together and
+open <http://localhost:5080>.
+
+</details>
 
 ---
 
@@ -86,10 +113,12 @@ the Run panel:
 
 | Configuration | What it does |
 | --- | --- |
-| **Full stack (API + Vite + Chrome)** | The one to press F5 on. Starts Postgres, builds and launches the API under the debugger on 5080, starts Vite on 5173, opens Chrome attached to it. Breakpoints work in both C# and `.tsx`. |
-| **API (.NET)** | API only, on 5080. Opens `/scalar/v1` when it is ready. |
+| **Aspire AppHost** | The one to press F5 on. Starts Postgres, the API, the gateway and Vite together, and opens the dashboard. |
+| **Full stack (API + Gateway + Vite + Chrome)** | The pre-Aspire loop, still here. Starts Postgres, launches the API under the debugger on 5081 and the gateway on 5080, starts Vite, opens Chrome. Breakpoints work in both C# and `.tsx`. |
+| **API (.NET)** | API only, on 5081. Opens `/scalar/v1` when it is ready. |
+| **Gateway (.NET)** | Gateway only, on 5080. Useful for debugging routing without the AppHost. |
 | **SPA (Chrome)** | Chrome attached to an already-running Vite on 5173. |
-| **SPA (Chrome, against the API on 5080)** | Same, but against the built bundle on the single origin - use this to debug something that only reproduces in the production shape. |
+| **SPA (Chrome, through the gateway)** | Chrome against <http://localhost:5080>, the single origin - use this to debug something that only reproduces in the shape that ships. |
 | **Attach to a running .NET process** | Pick an existing `TodoApp.Api` process. |
 
 Requires the C# extension (`ms-dotnettools.csharp`); the Chrome configs use the debugger
@@ -97,8 +126,10 @@ built into VS Code.
 
 ### Visual Studio / Rider
 
-Open `TodoApp.slnx`, set `TodoApp.Api` as the startup project, F5. It uses the `http`
-profile in `launchSettings.json` (port 5080, Development). Start Vite separately.
+Open `TodoApp.slnx`, set `TodoApp.AppHost` as the startup project, F5: it starts everything
+and opens the dashboard. To debug the API alone, set `TodoApp.Api` instead - it uses the
+`http` profile in `launchSettings.json` (port 5081, Development) and needs the gateway and
+Vite started separately.
 
 ### Where to put a breakpoint
 
@@ -113,7 +144,8 @@ profile in `launchSettings.json` (port 5080, Development). Start Vite separately
 
 ### Seeing the traffic
 
-- **API surface**: <http://localhost:5080/scalar/v1> - browsable, and every endpoint is
+- **API surface**: <http://localhost:5080/scalar/v1> (through the gateway) or
+  <http://localhost:5081/scalar/v1> - browsable, and every endpoint is
   callable from the page. Raw document at `/openapi/v1.json`. Development only.
 - **SQL**: set `Microsoft.EntityFrameworkCore.Database.Command` to `Information` in
   `src/TodoApp.Api/appsettings.Development.json` to log every statement EF Core runs.
@@ -244,11 +276,14 @@ derived from XP: two copies of a derived value eventually disagree.
 ## Layout
 
 ```
-src/TodoApp.Models/     entities, enums, LevelCurve, RankTitles, AchievementCatalog
-src/TodoApp.Data/       TodoDbContext, IEntityTypeConfiguration classes, migrations
-src/TodoApp.Api/        Minimal API endpoints, gamification services, serves wwwroot
-web/                    React SPA
-scripts/                verification scripts
+src/TodoApp.Models/          entities, enums, LevelCurve, RankTitles, AchievementCatalog
+src/TodoApp.Data/            TodoDbContext, IEntityTypeConfiguration classes, migrations
+src/TodoApp.Api/             Minimal API endpoints, gamification services
+src/TodoApp.Gateway/         YARP front door: serves the SPA, proxies /api
+src/TodoApp.ServiceDefaults/ OpenTelemetry, service discovery, /alive - shared by both
+src/TodoApp.AppHost/         Aspire orchestration for development
+web/                         React SPA
+scripts/                     verification scripts
 ```
 
 The achievement catalog lives in code rather than the database, so adding a badge never
@@ -286,20 +321,25 @@ In Development the OpenAPI document is at `/openapi/v1.json` with a browsable UI
 dotnet test
 ```
 
-244 tests: unit tests over the progression and combat rules, plus integration tests that
+870 tests: unit tests over the progression and combat rules, plus integration tests that
 boot the real API against a throwaway Postgres container. Tests never call Auth0; a test
 authentication handler mints principals locally.
 
-Two groups carry most of the weight:
+Three groups carry most of the weight:
 
 - `tests/TodoApp.Tests/Isolation` - two accounts on one instance cannot see or touch each
   other's tasks, XP or badges through any path.
 - `Fighting_a_monster_to_death_never_moves_experience_or_level` and
   `No_adventure_route_can_move_experience` - the guarantee the whole RPG design rests on,
   asserted at both the service layer and through HTTP.
+- `tests/TodoApp.Tests/Gateway` - the routing contract, read from the gateway's own
+  `appsettings.json` rather than a copy of it, plus the invariant that the API container
+  publishes no host port (DEC-016 explains why that one is load-bearing).
 
 The end-to-end scripts are destructive to task data, so run them against a development
-database. Both now need a token, since every `/api` route requires one.
+database. Both now need a token, since every `/api` route requires one. Their default base
+URL is <http://localhost:5080>, which is the gateway under the AppHost - unchanged, because
+the gateway took over the port the API used to answer on. Use 8080 for the container.
 
 ```bash
 # API: XP maths, level thresholds, idempotency, refunds, filters, 404s

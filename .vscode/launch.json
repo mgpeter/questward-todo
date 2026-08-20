@@ -2,6 +2,30 @@
   "version": "0.2.0",
   "configurations": [
     {
+      // F5 this one. Starts Postgres, the API, the gateway and Vite together and opens the
+      // dashboard. Breakpoints bind in the AppHost itself; for breakpoints inside the API or
+      // the gateway, launch those directly or use the compound below.
+      "name": "Aspire AppHost",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-apphost",
+      "program": "${workspaceFolder}/src/TodoApp.AppHost/bin/Debug/net10.0/TodoApp.AppHost.dll",
+      "cwd": "${workspaceFolder}/src/TodoApp.AppHost",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Login to the dashboard at\\s+(https?://\\S+)",
+        "uriFormat": "%s"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        // Everything here is HTTP, including the dashboard. Aspire refuses an unsecured
+        // transport unless told that is deliberate.
+        "ASPIRE_ALLOW_UNSECURED_TRANSPORT": "true"
+      }
+    },
+    {
       // Breakpoints in Program.cs, the endpoints, and GamificationService.
       "name": "API (.NET)",
       "type": "coreclr",
@@ -9,7 +33,7 @@
       "preLaunchTask": "build-api",
       "program": "${workspaceFolder}/src/TodoApp.Api/bin/Debug/net10.0/TodoApp.Api.dll",
       "cwd": "${workspaceFolder}/src/TodoApp.Api",
-      "args": ["--urls", "http://localhost:5080"],
+      "args": ["--urls", "http://localhost:5081"],
       "stopAtEntry": false,
       "serverReadyAction": {
         "action": "openExternally",
@@ -24,6 +48,25 @@
       }
     },
     {
+      // Breakpoints in the YARP wiring. Expects the API on 5081 and Vite on 5173, which is
+      // what the compound below arranges.
+      "name": "Gateway (.NET)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-gateway",
+      "program": "${workspaceFolder}/src/TodoApp.Gateway/bin/Debug/net10.0/TodoApp.Gateway.dll",
+      "cwd": "${workspaceFolder}/src/TodoApp.Gateway",
+      "args": ["--urls", "http://localhost:5080"],
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        // What the AppHost would inject. Without these the gateway refuses to start rather
+        // than answering 502 for every request.
+        "Services__api__http__0": "http://localhost:5081",
+        "Services__web__http__0": "http://localhost:5173"
+      }
+    },
+    {
       // Breakpoints in .tsx files. Needs `npm run dev` already running in web/,
       // or use the "Full stack" compound below which starts it for you.
       "name": "SPA (Chrome)",
@@ -35,9 +78,9 @@
       "userDataDir": "${workspaceFolder}/.vscode/.chrome-profile"
     },
     {
-      // Debug the production shape: one origin, SPA served from wwwroot.
-      // Run `npm run build` in web/ first.
-      "name": "SPA (Chrome, against the API on 5080)",
+      // The shape that ships: one origin, the gateway serving the SPA and proxying /api.
+      // Works against the AppHost or against the compound below.
+      "name": "SPA (Chrome, through the gateway)",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:5080",
@@ -57,9 +100,10 @@
   ],
   "compounds": [
     {
-      // F5 this one: starts Postgres, the API under the debugger, Vite, and Chrome.
-      "name": "Full stack (API + Vite + Chrome)",
-      "configurations": ["API (.NET)", "SPA (Chrome)"],
+      // The pre-Aspire loop, kept because it puts the debugger on the API and the gateway at
+      // once, which the AppHost configuration above does not. Starts Postgres and Vite first.
+      "name": "Full stack (API + Gateway + Vite + Chrome)",
+      "configurations": ["API (.NET)", "Gateway (.NET)", "SPA (Chrome, through the gateway)"],
       "preLaunchTask": "dev-prereqs",
       "stopAll": true
     }

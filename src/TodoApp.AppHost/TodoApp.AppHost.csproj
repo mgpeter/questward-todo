@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.4.6" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\TodoApp.Api\TodoApp.Api.csproj" />
+    <ProjectReference Include="..\TodoApp.Gateway\TodoApp.Gateway.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Aspire.Hosting.AppHost, the dashboard and the orchestrator are added implicitly by
+         Aspire.AppHost.Sdk at the same version, so they are not listed here. -->
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.4.6" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.4.6" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>questward-apphost</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

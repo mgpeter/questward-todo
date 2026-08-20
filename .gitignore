@@ -92,9 +92,12 @@ pnpm-debug.log*
 # Questward
 ##############################################################################
 
-# Vite writes the production SPA straight into the API's static root.
+# Vite writes the production SPA straight into the gateway's static root.
 # It is build output, not source: `npm run build` regenerates it.
-src/TodoApp.Api/wwwroot/
+src/TodoApp.Gateway/wwwroot/
+
+# The wrapper Vite config the Aspire AppHost generates for the web resource.
+.aspire/
 
 # Screenshots produced by scripts/verify-ui.mjs.
 artifacts/
