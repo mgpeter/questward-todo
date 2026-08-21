@@ -526,7 +526,7 @@ async function main() {
     await page.click(`[data-task-title="${MOBILE_TASK}"] [data-testid="task-open"]`)
     await page.waitForSelector('[data-testid="task-sheet"]')
 
-    for (const testId of ['task-edit', 'task-delete', 'task-add-subtask']) {
+    for (const testId of ['task-sheet-complete', 'task-sheet-edit', 'task-sheet-delete']) {
       checkEqual(
         await page.locator(`[data-testid="task-sheet"] [data-testid="${testId}"]`).count(),
         1,

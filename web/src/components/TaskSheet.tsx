@@ -38,6 +38,10 @@ interface TaskSheetProps {
  * them all was 180px tall and still hid its actions behind a hover nobody on a phone has.
  */
 export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
+  // Every action here carries a task-sheet- id rather than the card's. The card stays
+  // mounted behind the scrim, so sharing ids would put two "complete this task" buttons in
+  // the document at once - the duplicate-element defect DEC-010 caught and DEC-017 exists
+  // to avoid. The chips the card already draws carry no id here for the same reason.
   const [addingStep, setAddingStep] = useState(false)
   const [stepTitle, setStepTitle] = useState('')
 
@@ -145,10 +149,7 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
         )}
 
         {due.tone !== 'none' && !task.isCompleted && (
-          <span
-            data-testid="task-due"
-            className={`rounded-full border px-2.5 py-1 text-[11px] ${DUE_TONE_CLASS[due.tone]}`}
-          >
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] ${DUE_TONE_CLASS[due.tone]}`}>
             {due.label}
           </span>
         )}
@@ -156,7 +157,6 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
         {task.tags.map((tag) => (
           <span
             key={tag}
-            data-testid="task-tag"
             className="rounded-full bg-surface-sunk px-2.5 py-1 text-[11px] text-ink-muted"
           >
             {tag}
@@ -227,7 +227,7 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
           onClick={toggle}
           disabled={busy}
           aria-pressed={task.isCompleted}
-          data-testid="task-toggle"
+          data-testid="task-sheet-complete"
           className="flex min-h-11 items-center justify-center gap-2.5 rounded-xl bg-ink py-3.5 text-[14.5px] font-medium text-canvas transition disabled:opacity-40"
         >
           <Check size={16} strokeWidth={3} />
@@ -240,7 +240,7 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
               type="button"
               onClick={start}
               disabled={busy}
-              data-testid="task-move-right"
+              data-testid="task-sheet-start"
               className="min-h-11 flex-1 rounded-xl border border-line py-3 text-[13.5px] text-ink-muted transition disabled:opacity-40"
             >
               {taskProgressLabels[next] === 'In progress' ? 'Start' : taskProgressLabels[next]}
@@ -250,7 +250,7 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
           <button
             type="button"
             onClick={onEdit}
-            data-testid="task-edit"
+            data-testid="task-sheet-edit"
             className="min-h-11 flex-1 rounded-xl border border-line py-3 text-[13.5px] text-ink-muted transition"
           >
             Edit
@@ -263,7 +263,7 @@ export function TaskSheet({ task, open, onClose, onEdit }: TaskSheetProps) {
               onClose()
             }}
             disabled={deleteTask.isPending}
-            data-testid="task-delete"
+            data-testid="task-sheet-delete"
             className="min-h-11 flex-1 rounded-xl border border-rose/40 py-3 text-[13.5px] text-rose transition disabled:opacity-40"
           >
             Delete

@@ -92,7 +92,7 @@ export function TaskHuntSeal({
   if (variant === 'strip') {
     return (
       <div
-        data-testid="task-hunt-seal"
+        data-testid="task-hunt-strip"
         data-archetype={quoted.archetypeKey}
         data-days-overdue={quoted.daysOverdue}
         className={`flex items-center gap-2.5 border-t px-3.5 py-2.5 ${
@@ -108,7 +108,6 @@ export function TaskHuntSeal({
             <span className="truncate">{quoted.monsterName}</span>
             <span
               className="tabular shrink-0 font-normal text-ink-muted"
-              data-testid="task-hunt-bounty"
               data-bounty={quoted.bountyPercent}
             >
               {bountyLabel(quoted.bountyPercent)}
@@ -126,7 +125,7 @@ export function TaskHuntSeal({
             accept.mutate(task.id)
           }}
           disabled={busy}
-          data-testid="task-hunt-start"
+          data-testid="task-hunt-take"
           className="min-h-11 shrink-0 rounded-lg bg-ink px-3 py-2.5 text-[11.5px] font-medium text-canvas transition disabled:opacity-30"
         >
           Take it
