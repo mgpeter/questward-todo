@@ -39,7 +39,19 @@ namespace TodoApp.Data.Migrations
                     "Tags", "DueDate", "Status", "CompletedAt", "StartedAt", "XpAwarded",
                     "StaminaAwarded", "Recurrence", "SortOrder", "CreatedAt", "UpdatedAt")
                 SELECT
-                    uuidv7(), "UserId", NULL, "Title", "Notes", "Difficulty", "Priority",
+                    -- gen_random_uuid(), not uuidv7(): uuidv7() is a PostgreSQL 18 built-in and the
+                    -- shared host (Asgard) runs 17.6. One cluster serves every tenant there, so the
+                    -- major version is not this project's to choose - see the host's
+                    -- docs/tenant-contract.md.
+                    --
+                    -- The app still generates v7 for every row it writes (Guid.CreateVersion7 on the
+                    -- entity), so this affects ONLY rows created by this one-time backfill. Those get
+                    -- a v4 and therefore lose the time-ordering that makes v7 worth having.
+                    --
+                    -- Which is close to free in practice: on a fresh database the SELECT below matches
+                    -- nothing, so the backfill inserts zero rows and the function is needed only to
+                    -- parse. It matters solely when migrating a database that already has history.
+                    gen_random_uuid(), "UserId", NULL, "Title", "Notes", "Difficulty", "Priority",
                     "Tags", "XpEligibleFrom", 0, NULL, NULL, 0,
                     0, "Recurrence", "SortOrder", now(), now()
                 FROM tasks

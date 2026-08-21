@@ -61,23 +61,23 @@ namespace TodoApp.Data.Migrations
             migrationBuilder.Sql(
                 """
                 -- DEC-002 EXCEPTION, DELIBERATE. READ THIS BEFORE "SIMPLIFYING" THIS TABLE.
-                --
+                    --
                 -- Encounters, Kills, GoldTaken and BestRound are all derivable from "encounters", and the
                 -- backfill immediately below derives them with a GROUP BY. That is normally the whole
                 -- argument for not having the columns at all, and it is the reason this note exists: from
                 -- here it looks like a mistake, and it is not one.
-                --
+                    --
                 -- The columns are stored anyway, for two reasons the derivation cannot serve:
-                --
+                    --
                 --   1. The chronicle is prunable. Old encounter rows are expected to be deleted eventually,
                 --      and a derived count would silently shrink when they went. The bestiary is a record of
                 --      what happened, not a view over what is still on disk.
-                --
+                    --
                 --   2. A sighting is not a win. Starting a fight and then losing it or fleeing still counts
                 --      as having met the monster, and a monster that has never been killed has to be
                 --      recordable at all. Deriving from won encounters alone would lose exactly the entries
                 --      the bestiary exists to show.
-                --
+                    --
                 -- So this backfill is a one-time seed from the best source available on the day it ran, not
                 -- evidence that the columns are redundant. From the first sighting written after this
                 -- migration, "encounters" and "bestiary_entries" are allowed to disagree, and
@@ -86,7 +86,19 @@ namespace TodoApp.Data.Migrations
                     "Id", "UserId", "MonsterKey", "Encounters", "Kills", "GoldTaken", "BestRound",
                     "FirstSeenAt", "LastSeenAt")
                 SELECT
-                    uuidv7(),
+                    -- gen_random_uuid(), not uuidv7(): uuidv7() is a PostgreSQL 18 built-in and the
+                    -- shared host (Asgard) runs 17.6. One cluster serves every tenant there, so the
+                    -- major version is not this project's to choose - see the host's
+                    -- docs/tenant-contract.md.
+                    --
+                    -- The app still generates v7 for every row it writes (Guid.CreateVersion7 on the
+                    -- entity), so this affects ONLY rows created by this one-time backfill. Those get
+                    -- a v4 and therefore lose the time-ordering that makes v7 worth having.
+                    --
+                    -- Which is close to free in practice: on a fresh database the SELECT below matches
+                    -- nothing, so the backfill inserts zero rows and the function is needed only to
+                    -- parse. It matters solely when migrating a database that already has history.
+                    gen_random_uuid(),
                     e."UserId",
                     e."MonsterKey",
                     (COUNT(*))::integer,
