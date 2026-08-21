@@ -44,10 +44,6 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
         </div>
 
         <AdventurerHud />
-
-        <nav className="flex gap-1 px-3.5" aria-label="Sections">
-          <Tabs tab={tab} onTabChange={onTabChange} badgeCount={badgeCount} />
-        </nav>
       </header>
     )
   }
