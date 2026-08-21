@@ -553,6 +553,15 @@ async function main() {
     await page.waitForFunction(() => document.documentElement.classList.contains('dark'))
     check(true, 'Dark can be chosen from the account sheet on mobile')
     await shoot(page, '10-mobile-dark')
+
+    // A sheet in dark is the surface with the least review behind it: five of them were
+    // added at once, and 10-mobile-dark shows the shell with every one of them shut.
+    await page.click('[data-testid="bottom-nav-add"]')
+    await page.waitForSelector('[data-testid="add-sheet"]')
+    await shoot(page, '11-mobile-sheet-dark')
+    await page.click('[data-testid="add-sheet-close"]')
+    await page.waitForSelector('[data-testid="add-sheet"]', { state: 'detached' })
+
     await themeOnMobile('light')
 
     // ------------------------------------------------------------ diagnostics
