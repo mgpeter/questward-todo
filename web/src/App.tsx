@@ -16,7 +16,7 @@ export default function App() {
   const character = useCharacter()
 
   return (
-    <div className="relative z-10 min-h-dvh">
+    <div id="app-shell" className="relative z-10 min-h-dvh">
       <Header
         character={character.data}
         tab={tab}
@@ -46,7 +46,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="mx-auto max-w-[88rem] px-4 pb-8 text-[11px] text-ink-faint">
+      <footer className="mx-auto max-w-[88rem] px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] text-[11px] text-ink-faint">
         Questward &middot; self-hosted &middot;{' '}
         <a href="/scalar/v1" className="underline decoration-line-strong underline-offset-2 hover:text-ink-muted">
           API reference
