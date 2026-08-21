@@ -460,12 +460,50 @@ async function main() {
       'Exactly one XP rail exists in the DOM',
     )
     check(await page.locator('[data-testid="xp-rail"]').isVisible(), 'The XP rail is visible on mobile')
+
+    // The compact rail drops the 40px badge, and the sections moved to the bottom bar.
+    checkEqual(
+      await page.locator('[data-testid="level-badge"]').count(),
+      0,
+      'The compact rail drops the level badge',
+    )
+    checkEqual(
+      await page.locator('[data-testid="bottom-nav"]').count(),
+      1,
+      'The bottom bar exists at 390px',
+    )
+    checkEqual(
+      await page.locator('[data-testid="tab-tasks"]').count(),
+      0,
+      'The top tab strip is gone below sm',
+    )
+
+    for (const key of ['tasks', 'adventure', 'record', 'badges', 'add']) {
+      const box = await page.locator(`[data-testid="bottom-nav-${key}"]`).boundingBox()
+      check(
+        Boolean(box) && box.height >= 44,
+        `The ${key} target clears 44px (${box ? Math.round(box.height) : 0}px)`,
+      )
+    }
+
     await shoot(page, '09-mobile-light')
 
-    await page.click('[data-theme-option="dark"]')
-    await page.waitForTimeout(300)
+    // Theme moved behind the avatar, so it is reached through the account sheet now.
+    // Scoped to the sheet on purpose: this fails loudly if the toggle is ever left mounted
+    // in the header as well, rather than passing against the wrong node.
+    const themeOnMobile = async (value) => {
+      await page.click('[data-testid="account-menu"]')
+      await page.waitForSelector('[data-testid="account-sheet"]')
+      await page.click(`[data-testid="account-sheet"] [data-theme-option="${value}"]`)
+      await page.click('[data-testid="account-sheet-close"]')
+      await page.waitForSelector('[data-testid="account-sheet"]', { state: 'detached' })
+    }
+
+    await themeOnMobile('dark')
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'))
+    check(true, 'Dark can be chosen from the account sheet on mobile')
     await shoot(page, '10-mobile-dark')
-    await page.click('[data-theme-option="light"]')
+    await themeOnMobile('light')
 
     // ------------------------------------------------------------ diagnostics
     step('[diagnostics] console and network stayed clean')

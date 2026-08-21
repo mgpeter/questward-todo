@@ -68,3 +68,13 @@ export const MOBILE_QUERY = '(width < 40rem)'
 export function useIsMobile(): boolean {
   return useMediaQuery(MOBILE_QUERY)
 }
+
+/**
+ * The reactive counterpart to the one-shot read in lib/sound.ts.
+ *
+ * That one is right where it is used, deciding a default at call time. Anything that draws
+ * the setting has to re-render when it changes.
+ */
+export function usePrefersReducedMotion(): boolean {
+  return useMediaQuery('(prefers-reduced-motion: reduce)')
+}

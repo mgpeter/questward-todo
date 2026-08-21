@@ -36,11 +36,8 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
         <div className="flex items-center gap-3 px-3.5 py-2.5">
           <WordmarkDiamond />
           {character && <XpRail character={character} />}
-          <div className="flex shrink-0 items-center gap-1">
-            <SoundToggle />
-            <ThemeToggle />
-            <AccountMenu />
-          </div>
+          {/* Theme and sound moved behind the avatar; AccountMenu draws them in its sheet. */}
+          <AccountMenu />
         </div>
 
         <AdventurerHud />
