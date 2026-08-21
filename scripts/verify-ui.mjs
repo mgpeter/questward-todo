@@ -446,6 +446,8 @@ async function main() {
     await page.click('[data-theme-option="light"]')
 
     // ---------------------------------------------------------------- mobile
+    const MOBILE_TASK = 'Added from the sheet'
+
     step('[responsive] the layout holds at phone width')
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForTimeout(400)
@@ -487,6 +489,36 @@ async function main() {
     }
 
     await shoot(page, '09-mobile-light')
+
+    // The add form is a sheet on a phone, so this is the mobile equivalent of the desktop
+    // quick-add path above. It also proves the sheet primitive: the page behind is pinned
+    // rather than merely hidden, and focus actually lands inside.
+    step('[responsive] the add sheet takes a quest')
+    await page.click('[data-testid="bottom-nav-add"]')
+    await page.waitForSelector('[data-testid="add-sheet"]')
+
+    check(
+      await page.evaluate(() => getComputedStyle(document.body).position === 'fixed'),
+      'The page behind the sheet is scroll-locked',
+    )
+    check(
+      await page.evaluate(() =>
+        document.querySelector('[data-testid="add-sheet"]')?.contains(document.activeElement),
+      ),
+      'Focus moves into the sheet',
+    )
+
+    await page.click('[data-testid="add-sheet"] [data-testid="difficulty-option-easy"]')
+    await page.fill('[data-testid="add-sheet"] [data-testid="quick-add-input"]', MOBILE_TASK)
+    await page.click('[data-testid="add-sheet"] [data-testid="quick-add-submit"]')
+    await page.waitForSelector('[data-testid="add-sheet"]', { state: 'detached' })
+    await page.waitForSelector(`[data-task-title="${MOBILE_TASK}"]`)
+    check(true, 'A quest added from the sheet reaches the board')
+
+    check(
+      await page.evaluate(() => getComputedStyle(document.body).position !== 'fixed'),
+      'The scroll lock lifts when the sheet closes',
+    )
 
     // Theme moved behind the avatar, so it is reached through the account sheet now.
     // Scoped to the sheet on purpose: this fails loudly if the toggle is ever left mounted

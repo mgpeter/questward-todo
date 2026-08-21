@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { BottomNav } from './components/BottomNav'
 import { CharacterCard } from './components/CharacterCard'
 import { Header } from './components/Header'
 import { LevelUpOverlay } from './components/LevelUpOverlay'
+import { QuickAddSheet } from './components/QuickAdd'
 import { ContractSettled } from './components/rpg/ContractSettled'
 import { ToastStack } from './components/ToastStack'
 import { XpFloatLayer } from './components/XpFloatLayer'
@@ -17,6 +19,7 @@ export default function App() {
   const { tab, setTab } = useNavigation()
   const isMobile = useIsMobile()
   const character = useCharacter()
+  const [addOpen, setAddOpen] = useState(false)
 
   // The medallion is the one thing the compact header already says twice over: level, XP,
   // title and resources all live in the rail and the HUD line now. It stays on Adventure,
@@ -75,19 +78,24 @@ export default function App() {
         </footer>
       )}
 
+      {/* Reachable from every section, not just the board: the button is in the bar on all
+          four. A quest added from the Record tab lands somewhere you cannot see, so the
+          create moves you to the board. */}
+      {isMobile && (
+        <QuickAddSheet
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          onCreated={() => {
+            setAddOpen(false)
+            setTab('tasks')
+          }}
+        />
+      )}
+
       {isMobile && (
         <BottomNav
           badgeCount={character.data?.achievementsUnlocked ?? 0}
-          onAdd={() => {
-            // Stands in until the add sheet lands. The inline form is still the only way to
-            // add a task on a phone, so the button that will open the sheet takes you to it
-            // rather than doing nothing.
-            const input = document.querySelector<HTMLInputElement>(
-              '[data-testid="quick-add-input"]',
-            )
-            input?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-            input?.focus()
-          }}
+          onAdd={() => setAddOpen(true)}
         />
       )}
 

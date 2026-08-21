@@ -56,6 +56,14 @@ interface SheetProps {
   children: ReactNode
   /** Pinned below the scroller, and where the safe-area padding lands. */
   footer?: ReactNode
+  /**
+   * Put the caret in the first field instead of on the panel.
+   *
+   * Off by default: reading the title before the first input is the point of a titled
+   * sheet, and throwing the keyboard up covers most of what just opened. Worth it only
+   * where typing is the entire purpose of the sheet, as it is for adding a quest.
+   */
+  autoFocusContent?: boolean
   /** Root test id. The close button derives its own from it. */
   testId?: string
 }
@@ -76,9 +84,11 @@ export function Sheet({
   aside,
   children,
   footer,
+  autoFocusContent = false,
   testId,
 }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const descriptionId = useId()
 
@@ -87,6 +97,11 @@ export function Sheet({
   // callback's identity it would tear down and rebuild on every render of the parent.
   const close = useRef(onClose)
   close.current = onClose
+
+  // Read the same way, so the effect can stay keyed on `open` alone. Re-running it on any
+  // other change would re-lock the scroll and steal focus back mid-edit.
+  const focusContent = useRef(autoFocusContent)
+  focusContent.current = autoFocusContent
 
   const token = useRef<symbol | null>(null)
   token.current ??= Symbol('sheet')
@@ -100,10 +115,15 @@ export function Sheet({
     stack.push(self)
     lockScroll()
 
-    // The panel, not the first field. Reading the title before the first input is the point
-    // of a titled sheet, and autofocusing a text input on a phone throws the keyboard up
-    // over the sheet that was just opened.
-    panelRef.current?.focus()
+    // The panel, not the first field, unless the caller asks otherwise. Reading the title
+    // before the first input is the point of a titled sheet, and autofocusing a text input
+    // on a phone throws the keyboard up over the sheet that was just opened.
+    if (focusContent.current) {
+      const first = bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE)
+      ;(first ?? panelRef.current)?.focus()
+    } else {
+      panelRef.current?.focus()
+    }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (stack[stack.length - 1] !== self) return
@@ -238,6 +258,7 @@ export function Sheet({
             {/* min-h-0 is load-bearing: without it the flex item refuses to shrink below its
                 content and the sheet grows past its own max-height instead of scrolling. */}
             <div
+              ref={bodyRef}
               className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 ${
                 footer ? 'pb-4' : 'pb-[calc(1rem+env(safe-area-inset-bottom))]'
               }`}
