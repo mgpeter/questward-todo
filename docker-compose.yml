@@ -60,7 +60,23 @@ services:
       # 100 per connection string against a server configured for 150 in total,
       # so two tenants at defaults can starve the third regardless of anything
       # this file says.
-      ConnectionStrings__Default: "Host=${DB_HOST:-db};Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward};Maximum Pool Size=20"
+      # DB_HOST DEFAULTS TO `postgres`, NOT `db`.
+      #
+      # This is the shared-host file, so its defaults are the shared host's
+      # truth. It previously defaulted to `db` - a service that only exists
+      # under --profile standalone - so forgetting the variable produced a
+      # container that started and then failed DNS, which reads as a network
+      # fault rather than a missing setting.
+      #
+      # `:?` would be stricter still, but Compose interpolates EVERY file before
+      # merging them, so a required-variable marker here fires even when
+      # docker-compose.standalone.yml goes on to replace this whole string.
+      # A default that is right for this file is the honest alternative.
+      #
+      # POSTGRES_PASSWORD keeps its default because a wrong password fails
+      # loudly and unambiguously - `28P01 password authentication failed` names
+      # itself. A wrong host does not.
+      ConnectionStrings__Default: "Host=${DB_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward};Maximum Pool Size=20"
       # Required. The app fails fast at startup if any is missing, rather than
       # booting and rejecting every request with an opaque 401.
       Auth0__Domain: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env, see .env.example}
