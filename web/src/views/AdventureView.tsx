@@ -12,6 +12,7 @@ import { Shop } from '../components/rpg/Shop'
 import { Tavern } from '../components/rpg/Tavern'
 import { useNavigation, type AdventurePanel } from '../game/Navigation'
 import { useInventory, useSheet } from '../lib/rpgQueries'
+import { useIsMobile } from '../lib/useMediaQuery'
 
 const PANELS: { key: AdventurePanel; label: string }[] = [
   { key: 'sheet', label: 'Character' },
@@ -29,6 +30,7 @@ const PANELS: { key: AdventurePanel; label: string }[] = [
 ]
 
 export function AdventureView() {
+  const isMobile = useIsMobile()
   const sheet = useSheet()
   const inventory = useInventory()
   const { panel, setPanel } = useNavigation()
@@ -64,7 +66,20 @@ export function AdventureView() {
       */}
       <AdventurerStrip />
 
-      <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface-sunk p-0.5">
+      {/*
+        Nine flex-1 pills in a wrapping row is three lines of 43px-wide buttons at 390px,
+        and "Chronicle" does not fit in any of them. One line that scrolls keeps each label
+        whole and keeps the panel you are on next to the ones either side of it.
+        -mx-4 px-4 so the row bleeds to the screen edge: a scroller that stops short of the
+        edge reads as a cut-off list rather than a scrollable one.
+      */}
+      <div
+        className={
+          isMobile
+            ? '-mx-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            : 'flex flex-wrap items-center gap-0.5 rounded-lg border border-line bg-surface-sunk p-0.5'
+        }
+      >
         {PANELS.map((entry) => {
           const active = panel === entry.key
 
@@ -75,11 +90,19 @@ export function AdventureView() {
               aria-pressed={active}
               onClick={() => setPanel(entry.key)}
               data-testid={`adventure-${entry.key}`}
-              className={`flex-1 rounded-md px-2.5 py-1.5 text-[11.5px] font-medium whitespace-nowrap transition ${
-                active
-                  ? 'bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]'
-                  : 'text-ink-faint hover:text-ink-muted'
-              }`}
+              className={
+                isMobile
+                  ? `min-h-11 shrink-0 snap-start rounded-full px-4 py-2.5 text-[12.5px] font-medium whitespace-nowrap transition ${
+                      active
+                        ? 'bg-ink text-canvas'
+                        : 'border border-line bg-surface text-ink-muted'
+                    }`
+                  : `flex-1 rounded-md px-2.5 py-1.5 text-[11.5px] font-medium whitespace-nowrap transition ${
+                      active
+                        ? 'bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]'
+                        : 'text-ink-faint hover:text-ink-muted'
+                    }`
+              }
             >
               {entry.label}
             </button>
