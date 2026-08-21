@@ -1,13 +1,24 @@
-# The whole app on one port. Copy .env.example to .env first if you want to change
-# the password or the published port.
-#   docker compose up -d --build   ->  http://localhost:8080
+# Questward as a TENANT on the shared host (Asgard).
 #
-# Three services since DEC-016, but still one published port: the gateway owns the origin,
-# serves the SPA, and proxies /api to an API that nothing else can reach.
+# This file describes two app containers on networks somebody else made, with no
+# database server, no proxy and no published ports - because the host provides
+# all three. That is useless on a machine of your own, so the difference lives in
+# docker-compose.standalone.yml:
+#
+#   shared host:  docker compose --env-file /srv/infra/tenants/questward/.env up -d
+#   your machine: docker compose -f docker-compose.yml -f docker-compose.standalone.yml \
+#                   --profile standalone up -d          ->  http://localhost:8080
+#
+# Three services since DEC-016, and still one origin: the gateway serves the SPA
+# and proxies /api to an API that nothing else can reach.
 name: questward
 
 services:
+  # The host runs ONE Postgres cluster with a database per tenant, so this is
+  # here only for a machine that has to provide its own. `profiles:` gates the
+  # whole service; on the shared host it simply does not exist.
   db:
+    profiles: [standalone]
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
@@ -17,6 +28,8 @@ services:
     volumes:
       # Postgres 18 sets PGDATA to /var/lib/postgresql/18/docker, so the volume goes one level up.
       - questward-data:/var/lib/postgresql
+    networks:
+      - data-questward
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-questward} -d ${POSTGRES_DB:-questward}"]
       interval: 5s
@@ -29,12 +42,21 @@ services:
       dockerfile: Dockerfile
       target: api
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - data-questward
     environment:
-      ConnectionStrings__Default: >-
-        Host=db;Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward}
+      # DB_HOST is the only part that differs between the two deployments: the
+      # host's shared cluster answers to `postgres`, a self-provided one to `db`.
+      # Database and user are the tenant slug in both, which is what the shared
+      # host creates, so the defaults already fit.
+      #
+      # Maximum Pool Size is REQUIRED by the tenant contract. Npgsql defaults to
+      # 100 per connection string against a server configured for 150 in total,
+      # so two tenants at defaults can starve the third regardless of anything
+      # this file says.
+      ConnectionStrings__Default: "Host=${DB_HOST:-db};Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward};Maximum Pool Size=20"
       # Required. The app fails fast at startup if any is missing, rather than
       # booting and rejecting every request with an opaque 401.
       Auth0__Domain: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env, see .env.example}
@@ -45,9 +67,18 @@ services:
       # on the gateway - without which /api/config is one shared bucket of 60/minute for
       # everybody. The Aspire AppHost sets this for project resources itself.
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
     # Deliberately no `ports:`. Trusting X-Forwarded-For unconditionally, as the line above
     # does, is safe only while the gateway is the only thing that can reach this service.
-    # Publishing a port here would make the rate-limit partition spoofable by anyone.
+    # Publishing a port here would make the rate-limit partition spoofable by anyone - and on
+    # the shared host it is also an internet exposure, because Docker's DNAT sits in
+    # PREROUTING while ufw filters INPUT, so a published port is reachable whatever the
+    # firewall says. infra-check-drift fails on it.
 
   gateway:
     build:
@@ -55,16 +86,41 @@ services:
       dockerfile: Dockerfile
       target: gateway
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      # The alias is what the host's Caddy targets - NOT the container name, so
+      # this service can be renamed or the project moved without breaking routing.
+      edge:
+        aliases: [questward-gateway]
+      data-questward:
     environment:
       # The gateway's YARP config names its destination "http://api" and never learns an
       # address; service discovery resolves the name from this key. The Aspire AppHost
       # injects the very same key with a localhost address, which is how one appsettings.json
       # serves both orchestrators with no branch in the code.
       Services__api__http__0: http://api:8080
-    ports:
-      - "${QUESTWARD_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # No `ports:` either - the host's Caddy is the only listener on that box.
+    # docker-compose.standalone.yml puts one back for a machine of your own.
+
+networks:
+  # Created by the HOST (scripts/bootstrap-host.sh), not by Compose, so a tenant
+  # can never quietly create its own private copy and lose sight of the shared
+  # Postgres. That failure reads as a DNS fault and is really a lifecycle bug.
+  edge:
+    external: true
+  data-questward:
+    external: true
 
 volumes:
+  # Only used by the `db` service, so only ever created under --profile standalone.
   questward-data:

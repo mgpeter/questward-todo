@@ -45,6 +45,13 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_gcServer=0
 
+# curl, solely for the compose healthcheck. The aspnet image ships no HTTP
+# client at all - no curl, wget, nc or python - so without this a healthcheck
+# can only be omitted, and the shared host's tenant contract requires one on
+# every service. Installed before USER because apt needs root.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8080
 USER $APP_UID
 
@@ -60,6 +67,13 @@ COPY --from=web   /web/dist    ./wwwroot
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_gcServer=0
+
+# curl, solely for the compose healthcheck. The aspnet image ships no HTTP
+# client at all - no curl, wget, nc or python - so without this a healthcheck
+# can only be omitted, and the shared host's tenant contract requires one on
+# every service. Installed before USER because apt needs root.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8080
 USER $APP_UID

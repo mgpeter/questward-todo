@@ -1,0 +1,49 @@
+# Questward - the bits a machine of your own has to provide for itself.
+#
+# The base file describes a TENANT: two app containers, no database server, no
+# proxy, no published ports, on networks somebody else made. That is right for
+# the shared host and useless here, where there is no host to provide any of it.
+#
+# This override supplies exactly the difference, and it is only two things:
+#
+#   1. The two networks stop being external, so Compose creates them.
+#   2. The gateway publishes a port again, because nothing else is listening.
+#
+# The database is NOT here. It lives in the base file behind
+# `profiles: [standalone]`, because a profile can gate a whole service and an
+# override cannot conveniently add one. That is also why the command needs BOTH
+# the override and the profile flag - they do different jobs, and neither
+# implies the other:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.standalone.yml \
+#     --profile standalone up -d --build      ->  http://localhost:8080
+
+networks:
+  # `external: false` is the whole point of these four lines. The base declares
+  # both networks external so a tenant on the shared host can never create its
+  # own private copy; here there is no host, so Compose must make them. Without
+  # this you get "network data-questward declared as external, but could not be
+  # found" - correct, and useless on a box that worked yesterday.
+  edge:
+    external: false
+  data-questward:
+    external: false
+
+services:
+  api:
+    # The base points this at the shared cluster's `postgres`; here the database
+    # is the `db` service beside it.
+    environment:
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=${POSTGRES_DB:-questward};Username=${POSTGRES_USER:-questward};Password=${POSTGRES_PASSWORD:-questward};Maximum Pool Size=20"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  gateway:
+    # The port the base file deliberately does not publish.
+    #
+    # `ports:` cannot be put behind a profile - profiles gate whole services, not
+    # individual keys - which is the entire reason this file exists rather than
+    # one more `profiles:` line.
+    ports:
+      - "${QUESTWARD_PORT:-8080}:8080"
