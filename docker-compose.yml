@@ -37,10 +37,14 @@ services:
       retries: 12
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: api
+    # Pull-only. `build:` lives in docker-compose.build.yml, NOT here: with both
+    # `image:` and `build:` present Compose builds whenever the image is absent
+    # locally rather than pulling, which on the shared host means a 2-vCPU box
+    # silently running a .NET SDK build instead of a deploy.
+    #
+    # Override the variable to pin a rollback:
+    #   QUESTWARD_API_IMAGE=mgpeter/questward-api:<sha>
+    image: ${QUESTWARD_API_IMAGE:-mgpeter/questward-api:latest}
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -81,10 +85,14 @@ services:
     # firewall says. infra-check-drift fails on it.
 
   gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: gateway
+    # Pull-only. `build:` lives in docker-compose.build.yml, NOT here: with both
+    # `image:` and `build:` present Compose builds whenever the image is absent
+    # locally rather than pulling, which on the shared host means a 2-vCPU box
+    # silently running a .NET SDK build instead of a deploy.
+    #
+    # Override the variable to pin a rollback:
+    #   QUESTWARD_GATEWAY_IMAGE=mgpeter/questward-gateway:<sha>
+    image: ${QUESTWARD_GATEWAY_IMAGE:-mgpeter/questward-gateway:latest}
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.enable=true"

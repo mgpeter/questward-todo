@@ -1,0 +1,19 @@
+# Build the images locally instead of pulling them.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#
+# Separate from docker-compose.standalone.yml on purpose: that file answers "this
+# machine has no host to provide a database or a proxy", which is a different
+# question from "I want to compile the code". A NAS running standalone should
+# still pull a published image; only a developer needs this one.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gateway
