@@ -3,10 +3,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { LogOut } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
+import { useIsMobile } from '../lib/useMediaQuery'
 
 export function AccountMenu() {
   const { user, logout } = useAuth0()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -48,7 +50,9 @@ export function AccountMenu() {
         aria-expanded={open}
         aria-label={`Account: ${label}`}
         data-testid="account-menu"
-        className="grid h-8 w-8 place-items-center overflow-hidden rounded-full border border-line bg-surface-sunk transition hover:border-line-strong"
+        className={`grid place-items-center overflow-hidden rounded-full border border-line bg-surface-sunk transition hover:border-line-strong ${
+          isMobile ? 'h-9 w-9' : 'h-8 w-8'
+        }`}
       >
         {user?.picture ? (
           <img src={user.picture} alt="" className="h-full w-full object-cover" />

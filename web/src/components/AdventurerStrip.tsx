@@ -1,6 +1,7 @@
 import { Coins, Heart, Moon, Shield, Swords, Zap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useSheet } from '../lib/rpgQueries'
+import { useIsMobile } from '../lib/useMediaQuery'
 
 /**
  * Class, health, stamina and gold, on the screen where the work happens.
@@ -10,7 +11,15 @@ import { useSheet } from '../lib/rpgQueries'
  * watching stamina tick up in the corner is the whole of DEC-003 in one glance.
  */
 export function AdventurerStrip() {
+  const isMobile = useIsMobile()
   const sheet = useSheet()
+
+  // On a phone these four readings live in the header instead, as AdventurerHud, because
+  // health and stamina have to survive scrolling. Nulling here rather than guarding the two
+  // views that render this keeps the rule in one place - a third view added later would
+  // otherwise get it wrong, and a strip and a HUD both on screen is two elements reporting
+  // the same number.
+  if (isMobile) return null
 
   if (sheet.isLoading) {
     return <div className="panel h-[58px] animate-pulse rounded-2xl opacity-60" />
@@ -104,6 +113,53 @@ function Resource({
         {label}
       </p>
       <p className="tabular mt-0.5 text-[15px]">{children}</p>
+    </div>
+  )
+}
+
+/**
+ * The same four readings as one line, for the mobile header.
+ *
+ * Separate test ids from the strip on purpose: an assertion written for one must not quietly
+ * pass against the other.
+ */
+export function AdventurerHud() {
+  const sheet = useSheet()
+
+  if (!sheet.data) return null
+
+  const { className, currentHitPoints, maxHitPoints, stamina, gold, nextRegenerationAt } = sheet.data
+  const hurt = maxHitPoints > 0 && currentHitPoints / maxHitPoints <= 0.5
+
+  return (
+    <div
+      className="flex items-center gap-2 border-t border-line bg-surface-sunk/55 px-3.5 py-[7px] text-[11px] text-ink-muted"
+      data-testid="adventurer-hud"
+    >
+      <span className="font-display truncate text-[12.5px]" data-testid="hud-class">
+        {className ?? 'Unclassed'}
+      </span>
+
+      <span aria-hidden="true" className="h-[11px] w-px shrink-0 bg-line" />
+
+      <span className={`tabular shrink-0 ${hurt ? 'text-rose' : ''}`} data-testid="hud-health">
+        HP {currentHitPoints}/{maxHitPoints}
+      </span>
+      <span className="tabular shrink-0" data-testid="hud-stamina">
+        STA {stamina}
+      </span>
+      <span className="tabular shrink-0" data-testid="hud-gold">
+        GOLD {gold}
+      </span>
+
+      {nextRegenerationAt && (
+        <span
+          title="Hit points come back on their own, or all at once at the tavern."
+          className="ml-auto shrink-0 text-[10px] text-ink-faint"
+        >
+          healing
+        </span>
+      )}
     </div>
   )
 }
