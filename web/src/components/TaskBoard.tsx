@@ -4,6 +4,7 @@ import { useRef, useState, type DragEvent } from 'react'
 import { taskProgressLabels, taskProgressOrder, type Task, type TaskProgress } from '../lib/api'
 import { useGameFeed } from '../game/GameFeed'
 import { useClearCompleted, useReorderTasks, useSetTaskStatus } from '../lib/queries'
+import { useIsMobile } from '../lib/useMediaQuery'
 import { TaskCard } from './TaskCard'
 
 interface TaskBoardProps {
@@ -68,6 +69,7 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
   // dragend, no drop event at all. A slow drag survives it because later dragovers see the
   // committed state; a quick flick does not, which made short reorders fail at random.
   // The state below is duplicated for rendering only.
+  const isMobile = useIsMobile()
   const dragRef = useRef<DragState | null>(null)
   const overRef = useRef<DropTarget | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -108,7 +110,9 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
         <p className="mt-1.5 text-[13px] text-ink-muted">
           {hasFilters
             ? 'Try a different filter or search term.'
-            : 'Add your first quest above and start earning XP.'}
+            : isMobile
+              ? 'Tap the plus below to add your first quest and start earning XP.'
+              : 'Add your first quest above and start earning XP.'}
         </p>
       </div>
     )
@@ -178,6 +182,11 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
         const hidden = all.length - tasks.length
         const isTarget = over?.column === column
 
+        // An empty column on a phone is a heading and a count of zero stacked above the
+        // one that matters. On the board they are three side-by-side slots and the gap is
+        // the information.
+        if (isMobile && all.length === 0) return null
+
         return (
           <section
             key={column}
@@ -188,8 +197,12 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
               event.preventDefault()
               drop(column)
             }}
-            className={`rounded-2xl border border-dashed p-2 transition ${
-              isTarget ? 'border-gold bg-gold/5' : 'border-transparent'
+            // No drop target on touch: there is nothing to drop. The dashed outline was
+            // drawing a promise the platform cannot keep.
+            className={`rounded-2xl p-2 transition ${
+              isMobile
+                ? ''
+                : `border border-dashed ${isTarget ? 'border-gold bg-gold/5' : 'border-transparent'}`
             }`}
           >
             <h3 className="mb-2 flex items-center gap-2 px-1 text-[10px] font-medium tracking-[0.18em] text-ink-faint uppercase">
@@ -240,7 +253,7 @@ export function TaskBoard({ columns, isLoading, hasFilters }: TaskBoardProps) {
               </p>
             )}
 
-            {all.length === 0 && (
+            {all.length === 0 && !isMobile && (
               <p className="px-1 py-6 text-center text-[11.5px] text-ink-faint">
                 {column === 'completed' ? 'Nothing finished yet' : 'Drop a task here'}
               </p>

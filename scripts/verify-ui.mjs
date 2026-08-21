@@ -520,6 +520,24 @@ async function main() {
       'The scroll lock lifts when the sheet closes',
     )
 
+    // Everything the card stopped showing is one tap away, including the actions that used
+    // to sit behind a hover no phone can produce.
+    step('[responsive] the card opens its detail sheet')
+    await page.click(`[data-task-title="${MOBILE_TASK}"] [data-testid="task-open"]`)
+    await page.waitForSelector('[data-testid="task-sheet"]')
+
+    for (const testId of ['task-edit', 'task-delete', 'task-add-subtask']) {
+      checkEqual(
+        await page.locator(`[data-testid="task-sheet"] [data-testid="${testId}"]`).count(),
+        1,
+        `The sheet carries ${testId}`,
+      )
+    }
+
+    await page.click('[data-testid="task-sheet-close"]')
+    await page.waitForSelector('[data-testid="task-sheet"]', { state: 'detached' })
+    check(true, 'The detail sheet closes')
+
     // Theme moved behind the avatar, so it is reached through the account sheet now.
     // Scoped to the sheet on purpose: this fails loudly if the toggle is ever left mounted
     // in the header as well, rather than passing against the wrong node.

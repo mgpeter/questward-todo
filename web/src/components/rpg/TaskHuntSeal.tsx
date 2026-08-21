@@ -2,7 +2,7 @@ import { ScrollText, Swords, Zap } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { Task } from '../../lib/api'
 import { useNavigation } from '../../game/Navigation'
-import { bountyTier, describeAge, isReadyToFight, type HuntContract } from '../../lib/rpg'
+import { bountyLabel, bountyTier, describeAge, isReadyToFight, type HuntContract } from '../../lib/rpg'
 import {
   useAcceptHunt,
   useActiveHunt,
@@ -27,7 +27,18 @@ import { ArchetypeIcon, BountyChip, FactionChip, RewardFloorChip } from './HuntC
  * and no item, and dressing every card on the board in gold would leave the three-week-old
  * chore looking exactly like the one created this morning.
  */
-export function TaskHuntSeal({ task }: { task: Task }) {
+export function TaskHuntSeal({
+  task,
+  variant = 'full',
+}: {
+  task: Task
+  /**
+   * `strip` is the mobile card's footer band: the creature, what it pays, and one button.
+   * Everything else the offer carries - its age, its faction, the reward floor - moves to
+   * the detail sheet, which draws the `full` form.
+   */
+  variant?: 'full' | 'strip'
+}) {
   const contract = useTaskContract(task.id)
   const offer = useHuntOffer(task.id)
   const active = useActiveHunt()
@@ -77,6 +88,52 @@ export function TaskHuntSeal({ task }: { task: Task }) {
   const quoted = offer.data
   const legend = bountyTier(quoted.daysOverdue) === 'legend'
   const busy = accept.isPending && accept.variables === task.id
+
+  if (variant === 'strip') {
+    return (
+      <div
+        data-testid="task-hunt-seal"
+        data-archetype={quoted.archetypeKey}
+        data-days-overdue={quoted.daysOverdue}
+        className={`flex items-center gap-2.5 border-t px-3.5 py-2.5 ${
+          legend ? 'border-gold/45 bg-gold/14' : 'border-gold/30 bg-gold/9'
+        }`}
+        // Full bleed, so the glow that would be sheared off inside the card's padding is
+        // simply the strip's own background here.
+        style={legend ? { boxShadow: 'inset 0 0 12px -4px var(--gold-glow)' } : undefined}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-[12px] font-medium text-gold">
+            <ArchetypeIcon archetypeKey={quoted.archetypeKey} size={12} className="shrink-0" />
+            <span className="truncate">{quoted.monsterName}</span>
+            <span
+              className="tabular shrink-0 font-normal text-ink-muted"
+              data-testid="task-hunt-bounty"
+              data-bounty={quoted.bountyPercent}
+            >
+              {bountyLabel(quoted.bountyPercent)}
+            </span>
+          </p>
+          <p className="mt-0.5 truncate text-[10.5px] text-ink-muted">
+            {describeAge(quoted.daysOverdue)}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            play('coin')
+            accept.mutate(task.id)
+          }}
+          disabled={busy}
+          data-testid="task-hunt-start"
+          className="min-h-11 shrink-0 rounded-lg bg-ink px-3 py-2.5 text-[11.5px] font-medium text-canvas transition disabled:opacity-30"
+        >
+          Take it
+        </button>
+      </div>
+    )
+  }
 
   return (
     <motion.div
