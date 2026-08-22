@@ -1316,3 +1316,163 @@ entry sits one tier higher than it did.
 catching everything, the words now decide *which* banner rather than *whether* there is one, so the
 cost of not knowing them dropped from an item to a preference. `spec.md:96` also arbitrated faction
 shop stock, which has never been built.
+
+---
+
+## 2026-08-22: The Chronicle Is Rows, Not A View
+
+**ID:** DEC-020
+**Status:** Accepted
+**Category:** Technical
+**Stakeholders:** Product Owner, Tech Lead
+
+### Decision
+
+The chronicle becomes its own table, `chronicle_entries`, written by the events themselves.
+
+1. One row per thing that happened: fights won, lost and fled, quests claimed, contracts taken and
+   settled, a banner's standing raised, dungeons cleared and failed, levels reached, ascensions.
+2. Rows carry catalog keys and numbers in a jsonb `Facts` object. Every word comes from
+   `ChronicleNarrator` on read, so rewording an entry is a code change (DEC-004) rather than a
+   migration over the history that already said it.
+3. `Era` on each row is the character's ascension count at the time of writing, which is what the
+   feed draws its dividers from.
+4. `EncounterId` is nullable and `ON DELETE SET NULL`. A fight entry expands into its roll-by-roll
+   log while the encounter exists, and still reads as a sentence once it does not.
+5. `GET /api/rpg/chronicle` serves the journal, keyset paged. `GET /api/rpg/encounters` stays
+   exactly as it was and keeps serving fight history.
+
+### Context
+
+"Chronicle" named a read over `encounters`: `CombatService.HistoryAsync`, a totals strip, and a list
+of finished fights. Everything else the player did left no trace anywhere. Claiming a quest, taking
+a contract, settling one under a banner and clearing a dungeon were all events the code knew about
+at the moment they happened and then forgot.
+
+Ascending forced the question. It deletes encounters, quest progress, contracts, runs and the
+bestiary, so a chronicle derived from those tables would be erased by the one act that most needs a
+record.
+
+### Alternatives Considered
+
+1. **Keep it derived and union four tables on read**
+   - Pros: no new table, no dual write, nothing can drift from the rows it describes.
+   - Cons: ascending empties every source. It also needs a timestamp and a sort key per table, and
+     keyset paging across four of them in SQL is considerably more machinery than one index.
+
+2. **Write prose into the row**
+   - Pros: the reader needs no catalog at all.
+   - Cons: a typo becomes a data migration, and a retuned monster name leaves the history describing
+     a creature that no longer exists. DEC-004 already settled this shape for every other catalog.
+
+3. **A column per fact**
+   - Pros: queryable, typed.
+   - Cons: eleven kinds each wanting a different three or four fields is a migration per kind and a
+     table that is mostly nulls. Nothing queries a fact; the feed reads them in order.
+
+### Rationale
+
+The journal is the only thing in the app whose whole job is to outlive the state it describes. That
+makes it storage, not a view. The cost is a dual write, and it is paid where it is cheapest:
+`ChronicleService.Record` adds to the caller's tracked context and never saves, so an entry commits
+in the transaction of the event it records and a fight that rolls back leaves no line claiming it
+happened.
+
+### Consequences
+
+**Positive:** Quests, contracts, dungeons, levels and ascensions are recorded for the first time.
+The feed pages back through history rather than stopping at twenty. Entries survive an ascension.
+
+**Negative:** Two endpoints now describe overlapping things, and a reader has to know that
+`/encounters` is fights and `/chronicle` is everything. Every new event worth recording is a write
+someone has to remember to add, and the failure mode is a silent gap in the history that no test
+notices unless one is written for that event.
+
+**Migration:** `AddChronicleAndAscension` seeds entries from every finished encounter, so an
+existing database opens on the history it already had rather than on an empty page.
+
+---
+
+## 2026-08-22: Ascension Returns, Destructive
+
+**ID:** DEC-021
+**Status:** Accepted
+**Category:** Product
+**Stakeholders:** Product Owner, Tech Lead
+
+### Decision
+
+A character at level 10 or above may **Ascend**, and an account may be **reset** from a danger zone.
+
+1. Ascending renders the era down to essence: `gold / 10 + stamina / 5 + 5 per level`, added to the
+   balance rather than assigned over it.
+2. It resets `TotalXp` to zero and deletes gear, encounters, dungeon runs, contracts, quest
+   progress, shop history and the bestiary. Lore goes with the bestiary, being derived from it.
+3. It keeps tasks, achievements, `TasksCompleted`, the class, the name, the avatar, essence and the
+   whole chronicle. The class weapon and armour are granted again, since the inventory is now empty.
+4. It is refused while a fight is open, and below level 10.
+5. `POST /api/account/reset` deletes every row scoped to the user, the chronicle included, and
+   resets the character to its construction defaults with no class. The `users` row survives, so the
+   login and the user id do not change.
+
+### Context
+
+`docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md:68` put this out of scope:
+
+> **Ascension / prestige** as designed: destructive, irreversible and row-deleting. If it
+> returns it must be additive.
+
+It is returning, and it is destructive. That ruling is overturned here rather than worked around,
+because the additive version does not exist: a prestige that deletes nothing is a second currency
+with a level gate, and the thing being asked for is the reset itself.
+
+There was also no way to delete an account's data. The Auth0 spec deferred that to Auth0, which
+covers deleting the identity and not one row of the game.
+
+### Alternatives Considered
+
+1. **Additive prestige: keep everything, add a multiplier**
+   - Pros: honours the earlier ruling; nothing is ever lost.
+   - Cons: a multiplier on gold or loot is the inflation vector DEC-012 exists to close, and a
+     character that keeps its gear has not begun again in any sense a player would recognise.
+
+2. **Reset progression only, keep gear and collections**
+   - Pros: much smaller blast radius; nothing needs a record to survive it.
+   - Cons: a level one character in Epic gear is a levelling shortcut rather than a new era, and the
+     bestiary and quest log would describe a history the character no longer has.
+
+3. **Delete the `users` row and let the cascade do the work**
+   - Pros: one statement, and the schema already guarantees completeness.
+   - Cons: the next request provisions a new `UserId`. "Start again" would silently become "become a
+     different person" for anything that ever recorded the old id.
+
+### Rationale
+
+What makes the destruction acceptable is DEC-020. The chronicle is rows, it is the one thing
+ascending does not touch, and the era therefore survives as a history even though nothing of it
+survives as a balance. The record of real work survives too: tasks, badges and `TasksCompleted` are
+untouched, so DEC-012's rule that a level is a record of work done is broken only where the player
+asked for it to be, with a confirmation in front of it.
+
+Essence is the only payout, which keeps the exchange inside the existing economy: it buys affixes at
+the forge and can buy nothing else, so ascending cannot become experience (DEC-012), stamina
+(DEC-003) or a finished task.
+
+The level gate and the rates are in `AscendRules`, one file, for the same reason every other tuning
+number is code-held.
+
+### Consequences
+
+**Positive:** There is something to do with a finished character, and something to do with an
+account someone wants back to zero. Both are legible: the panel lists what is kept and what is spent
+before the button, and the reset asks for the word to be typed.
+
+**Negative:** It is irreversible and there is no export. A player who ascends without reading the
+list loses gear they cannot re-earn at level one. Essence is now paid by something other than
+salvage, so the forge's comment that it owned the currency had to change. `AscendService` also has
+to know every user-scoped table by name: a table added later and not added there would quietly
+survive an ascension.
+
+**Not done, and worth knowing:** ascending pays no permanent bonus of its own beyond the essence, so
+a second era is materially the same as the first with a better forge behind it. Whether that is
+enough reason to do it twice is a question for play rather than for this entry.

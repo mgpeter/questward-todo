@@ -248,3 +248,11 @@ because the brief it was handed paraphrased the decision instead of quoting it.
 - Faction shop stock is still unbuilt. `docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md:96`
   arbitrated that "seasonal and faction stock replace general offers rather than adding to them";
   `ShopService` has no faction code at all.
+- Ascending and the account danger zone shipped on 2026-08-22 (DEC-020, DEC-021), which supersedes
+  `docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md:68` putting ascension out of scope and the
+  auth spec's "no account deletion" at `docs/specs/2026-08-17-auth0-user-accounts/spec.md:112`.
+  Deleting the Auth0 identity itself is still Auth0's business; `POST /api/account/reset` deletes
+  the data and keeps the login.
+- Combat sound now defaults on. A browser that had already turned it off stays off; one that never
+  touched the switch will start making noise on its first fight.
+
