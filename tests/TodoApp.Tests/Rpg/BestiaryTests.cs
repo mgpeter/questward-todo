@@ -40,9 +40,9 @@ public class BestiaryTests(PostgresFixture postgres)
         var db = postgres.CreateContext();
         var sheets = new CharacterSheetService(db);
         var loot = new LootService(db, roller);
-        var quests = new QuestService(db, loot);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
         var adventurer = new AdventurerService(db, sheets, loot);
-        var combat = new CombatService(db, roller, sheets, loot, quests);
+        var combat = new CombatService(db, roller, sheets, loot, quests, new ChronicleService(db));
 
         await adventurer.ChooseClassAsync(user.Id, classKey, TestContext.Current.CancellationToken);
 
@@ -452,7 +452,7 @@ public class BestiaryTests(PostgresFixture postgres)
 
         var evaluator = new TodoApp.Api.Services.AchievementEvaluator();
         var gamification = new TodoApp.Api.Services.GamificationService(
-            harness.Db, evaluator, harness.Quests);
+            harness.Db, evaluator, harness.Quests, new ChronicleService(harness.Db));
 
         var parent = new TodoTask
         {
@@ -488,7 +488,7 @@ public class BestiaryTests(PostgresFixture postgres)
 
         var evaluator = new TodoApp.Api.Services.AchievementEvaluator();
         var gamification = new TodoApp.Api.Services.GamificationService(
-            harness.Db, evaluator, harness.Quests);
+            harness.Db, evaluator, harness.Quests, new ChronicleService(harness.Db));
 
         var task = new TodoTask
         {
@@ -695,7 +695,10 @@ public class BestiaryTests(PostgresFixture postgres)
     private async Task ReachLevelAsync(Harness harness, int level)
     {
         var gamification = new TodoApp.Api.Services.GamificationService(
-            harness.Db, new TodoApp.Api.Services.AchievementEvaluator(), harness.Quests);
+            harness.Db,
+            new TodoApp.Api.Services.AchievementEvaluator(),
+            harness.Quests,
+            new ChronicleService(harness.Db));
 
         while (true)
         {

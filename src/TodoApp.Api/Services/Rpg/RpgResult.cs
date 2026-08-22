@@ -115,7 +115,18 @@ public enum RpgFailure
     /// <summary>
     /// Today's reroll ladder is spent. A state rather than a bad request, so 409.
     /// </summary>
-    RerollsSpent = 25
+    RerollsSpent = 25,
+
+    /// <summary>
+    /// The character has not reached <see cref="Models.Rpg.AscendRules.MinimumLevel"/>.
+    /// </summary>
+    /// <remarks>
+    /// Its own member rather than a reuse of anything above it. Every other refusal in this list
+    /// is about a thing the player asked for being unavailable; this one is about the player, and
+    /// the only useful answer names the level they are climbing to. A bad request rather than a
+    /// state conflict would be wrong too: waiting is exactly what changes the answer.
+    /// </remarks>
+    NotReadyToAscend = 26
 }
 
 /// <summary>

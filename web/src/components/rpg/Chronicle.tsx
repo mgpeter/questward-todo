@@ -1,15 +1,47 @@
-import { ChevronDown, Coins, Swords } from 'lucide-react'
+import {
+  ChevronDown,
+  DoorOpen,
+  FileSignature,
+  Flag,
+  Footprints,
+  ScrollText,
+  Skull,
+  Sparkles,
+  Star,
+  Swords,
+  type LucideIcon,
+} from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
 import { formatDate } from '../../lib/format'
-import type { Encounter } from '../../lib/rpg'
+import type { ChronicleEntry as Entry } from '../../lib/rpg'
 import { useChronicle } from '../../lib/rpgQueries'
 import { DiceRoll } from './DiceRoll'
 
-const STATUS_TONE: Record<string, string> = {
-  won: 'text-gold',
-  lost: 'text-rose',
-  fled: 'text-ink-faint',
+/**
+ * The server names an icon, this decides what it looks like.
+ *
+ * The same arrangement avatars and monsters already use: the key crosses the wire and the
+ * drawing stays here, so changing a picture never touches a row or a response.
+ */
+const ICONS: Record<string, LucideIcon> = {
+  fight: Swords,
+  defeat: Skull,
+  flight: Footprints,
+  quest: ScrollText,
+  contract: FileSignature,
+  banner: Flag,
+  dungeon: DoorOpen,
+  level: Star,
+  ascend: Sparkles,
+}
+
+const TONE: Record<string, string> = {
+  fight: 'text-gold',
+  defeat: 'text-rose',
+  banner: 'text-gold',
+  level: 'text-gold',
+  ascend: 'text-gold',
 }
 
 export function Chronicle() {
@@ -19,15 +51,16 @@ export function Chronicle() {
     return <div className="panel h-72 animate-pulse rounded-2xl opacity-60" />
   }
 
-  const summary = chronicle.data?.summary
-  const encounters = chronicle.data?.encounters ?? []
+  const pages = chronicle.data?.pages ?? []
+  const summary = pages[0]?.summary
+  const entries = pages.flatMap((page) => page.entries)
 
   return (
     <div className="space-y-4" data-testid="chronicle">
       <header>
         <h2 className="font-display text-2xl">Chronicle</h2>
         <p className="mt-0.5 text-[13px] text-ink-muted">
-          Every fight you have finished, roll by roll.
+          Everything that has happened, newest first.
         </p>
       </header>
 
@@ -47,19 +80,33 @@ export function Chronicle() {
         </p>
       )}
 
-      {encounters.length === 0 ? (
+      {entries.length === 0 ? (
         <div className="panel rounded-2xl px-6 py-12 text-center">
           <p className="font-display text-lg">No stories yet</p>
           <p className="mt-1 text-[13px] text-ink-muted">
-            Finish a fight and it will be written down here.
+            Take a contract, claim a quest or finish a fight, and it will be written down here.
           </p>
         </div>
       ) : (
-        <ul className="space-y-2">
-          {encounters.map((encounter) => (
-            <ChronicleEntry key={encounter.id} encounter={encounter} />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2">
+            {entries.map((entry, index) => (
+              <Row key={entry.id} entry={entry} previous={entries[index - 1]} />
+            ))}
+          </ul>
+
+          {chronicle.hasNextPage && (
+            <button
+              type="button"
+              onClick={() => void chronicle.fetchNextPage()}
+              disabled={chronicle.isFetchingNextPage}
+              data-testid="chronicle-more"
+              className="w-full rounded-xl border border-line py-2.5 text-[13px] text-ink-muted transition hover:bg-surface-sunk disabled:opacity-60"
+            >
+              {chronicle.isFetchingNextPage ? 'Reading back...' : 'Earlier entries'}
+            </button>
+          )}
+        </>
       )}
     </div>
   )
@@ -78,8 +125,63 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
   )
 }
 
-function ChronicleEntry({ encounter }: { encounter: Encounter }) {
+/**
+ * One line, and the divider that may belong above it.
+ *
+ * The feed runs newest first, so the era on an entry only ever drops as you read down. Where it
+ * drops, an ascension happened, and the line immediately below the divider is the ascension's
+ * own entry: it carries the era it ended, which is what puts it on the correct side.
+ */
+function Row({ entry, previous }: { entry: Entry; previous?: Entry }) {
+  const dividesEras = previous !== undefined && previous.era > entry.era
+
+  return (
+    <>
+      {dividesEras && (
+        <li aria-hidden="true" className="flex items-center gap-3 pt-3 pb-1">
+          <span className="h-px flex-1 bg-line" />
+          <span className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-ink-faint">
+            Ascension {previous.era}
+          </span>
+          <span className="h-px flex-1 bg-line" />
+        </li>
+      )}
+
+      <Line entry={entry} />
+    </>
+  )
+}
+
+function Line({ entry }: { entry: Entry }) {
   const [open, setOpen] = useState(false)
+
+  const Icon = ICONS[entry.icon] ?? Swords
+  const encounter = entry.encounter
+  const expandable = encounter !== null && encounter.log.length > 0
+
+  const body = (
+    <>
+      <Icon size={14} className={`shrink-0 ${TONE[entry.icon] ?? 'text-ink-faint'}`} />
+
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px]">{entry.title}</span>
+        <span className="tabular block text-[11px] text-ink-faint">
+          {formatDate(entry.occurredAt)}
+          {entry.detail ? ` · ${entry.detail}` : ''}
+        </span>
+      </span>
+    </>
+  )
+
+  // A line with no fight behind it is not a button. Every entry used to expand because every
+  // entry was a fight; a quest claim that opened to nothing would be a control that does nothing.
+  if (!expandable) {
+    return (
+      <li className="panel rounded-xl px-4 py-3" data-testid="chronicle-entry">
+        <div className="flex items-center gap-3">{body}</div>
+      </li>
+    )
+  }
 
   return (
     <li className="panel overflow-hidden rounded-xl" data-testid="chronicle-entry">
@@ -89,30 +191,7 @@ function ChronicleEntry({ encounter }: { encounter: Encounter }) {
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface-sunk"
       >
-        <Swords size={14} className="shrink-0 text-ink-faint" />
-
-        <span className="min-w-0 flex-1">
-          <span className="block text-[14px]">{encounter.monsterName}</span>
-          <span className="tabular block text-[11px] text-ink-faint">
-            {formatDate(encounter.startedAt)} · {encounter.round}{' '}
-            {encounter.round === 1 ? 'round' : 'rounds'}
-          </span>
-        </span>
-
-        {encounter.goldAwarded > 0 && (
-          <span className="tabular flex shrink-0 items-center gap-1 text-[11.5px] text-gold">
-            <Coins size={11} />
-            {encounter.goldAwarded}
-          </span>
-        )}
-
-        <span
-          className={`shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] ${
-            STATUS_TONE[encounter.status] ?? 'text-ink-faint'
-          }`}
-        >
-          {encounter.status}
-        </span>
+        {body}
 
         <ChevronDown
           size={14}

@@ -12,6 +12,7 @@ export type AdventurePanel =
   | 'bestiary'
   | 'lore'
   | 'chronicle'
+  | 'ascend'
 
 interface NavigationValue {
   tab: TabKey

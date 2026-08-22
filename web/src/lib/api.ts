@@ -291,6 +291,15 @@ export const api = {
   clearCompleted: () =>
     request<ClearedCompleted>('/api/tasks/completed', { method: 'DELETE' }),
 
+  /**
+   * Deletes everything this account has recorded. The login survives; nothing else does.
+   *
+   * The word is sent as well as typed, so a mis-wired caller cannot empty an account by
+   * reaching this by accident.
+   */
+  resetAccount: () =>
+    request<void>('/api/account/reset', { method: 'POST', ...body({ confirm: 'RESET' }) }),
+
   completeTask: (id: string) =>
     request<CompleteResult>(`/api/tasks/${id}/complete`, {
       method: 'POST',
@@ -393,7 +402,17 @@ export const api = {
   abandonDungeonRun: (id: string) =>
     request<Rpg.DungeonRun>(`/api/rpg/dungeons/${id}/abandon`, { method: 'POST' }),
 
-  getChronicle: (limit = 20) => request<Rpg.Chronicle>(`/api/rpg/encounters?limit=${limit}`),
+  /**
+   * A page of the journal, newest first.
+   *
+   * `before` is a keyset cursor rather than a page number: the feed grows at the end being read
+   * from, so an offset would shift under the reader every time a fight finished.
+   */
+  getChronicle: (limit = 20, before?: string) =>
+    request<Rpg.Chronicle>(
+      `/api/rpg/chronicle?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}`),
+
+  ascend: () => request<Rpg.AscendResult>('/api/rpg/ascend', { method: 'POST' }),
 
   rest: () => request<Rpg.RestResult>('/api/rpg/rest', { method: 'POST' }),
 

@@ -440,3 +440,40 @@ public class HuntContractConfiguration : IEntityTypeConfiguration<HuntContract>
                 + $"{(int)HuntContractStatus.Discharged})");
     }
 }
+
+public class ChronicleEntryConfiguration : IEntityTypeConfiguration<ChronicleEntry>
+{
+    public void Configure(EntityTypeBuilder<ChronicleEntry> builder)
+    {
+        builder.ToTable("chronicle_entries");
+
+        builder.HasKey(e => e.Id);
+
+        builder.Property(e => e.Id).HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(e => e.UserId).HasColumnType("uuid").IsRequired();
+        builder.Property(e => e.Kind).HasColumnType("integer").IsRequired();
+        builder.Property(e => e.Era).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(e => e.OccurredAt).HasColumnType("timestamp with time zone").IsRequired();
+        builder.Property(e => e.EncounterId).HasColumnType("uuid");
+        builder.Property(e => e.Facts).HasColumnType("jsonb").IsRequired().HasDefaultValue("{}");
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(e => e.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // SET NULL rather than cascade, and this is the whole reason the chronicle is rows at all
+        // (DEC-020). Ascending deletes every encounter with ExecuteDeleteAsync, which bypasses the
+        // change tracker, so this referential action is the only thing that runs: the fight's log
+        // goes and its entry stays, still narrating from its own facts. Cascade would delete the
+        // record of the era along with the era.
+        builder.HasOne<Encounter>()
+            .WithMany()
+            .HasForeignKey(e => e.EncounterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // The feed reads one user's entries newest first and pages back with a keyset on
+        // OccurredAt, so this is the index it is read through, in that order.
+        builder.HasIndex(e => new { e.UserId, e.OccurredAt });
+    }
+}

@@ -46,9 +46,9 @@ public class LoreTests(PostgresFixture postgres)
         var db = postgres.CreateContext();
         var sheets = new CharacterSheetService(db);
         var loot = new LootService(db, roller);
-        var quests = new QuestService(db, loot);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
         var adventurer = new AdventurerService(db, sheets, loot);
-        var combat = new CombatService(db, roller, sheets, loot, quests);
+        var combat = new CombatService(db, roller, sheets, loot, quests, new ChronicleService(db));
 
         await adventurer.ChooseClassAsync(user.Id, ClassCatalog.Fighter, TestContext.Current.CancellationToken);
 
@@ -247,7 +247,7 @@ public class LoreTests(PostgresFixture postgres)
         // Real work, which is the only thing that moves a level (DEC-003).
         var evaluator = new TodoApp.Api.Services.AchievementEvaluator();
         var gamification = new TodoApp.Api.Services.GamificationService(
-            harness.Db, evaluator, harness.Quests);
+            harness.Db, evaluator, harness.Quests, new ChronicleService(harness.Db));
 
         for (var i = 0; i < 6; i++)
         {
@@ -271,7 +271,7 @@ public class LoreTests(PostgresFixture postgres)
 
         var evaluator = new TodoApp.Api.Services.AchievementEvaluator();
         var gamification = new TodoApp.Api.Services.GamificationService(
-            harness.Db, evaluator, harness.Quests);
+            harness.Db, evaluator, harness.Quests, new ChronicleService(harness.Db));
 
         // Honest Work wants five tasks finished. Easy ones, so the level stays put and the
         // only thing under test is the claim.

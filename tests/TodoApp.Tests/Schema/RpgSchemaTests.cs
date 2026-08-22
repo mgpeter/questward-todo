@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using TodoApp.Api.Services.Rpg;
 using TodoApp.Models;
 using TodoApp.Models.Rpg;
 using TodoApp.Tests.Infrastructure;
@@ -974,5 +975,86 @@ public class RpgSchemaTests(PostgresFixture postgres)
         Assert.Equal(21, reloaded.CurrentHitPoints);
         Assert.Equal(4, reloaded.Stamina);
         Assert.Equal(250, reloaded.Gold);
+    }
+
+    /// <summary>The facts survive the round trip through jsonb, keys and all.</summary>
+    [Fact]
+    public async Task A_chronicle_entry_round_trips_with_its_facts()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        var id = Guid.CreateVersion7();
+
+        await using (var write = postgres.CreateContext())
+        {
+            write.ChronicleEntries.Add(new ChronicleEntry
+            {
+                Id = id,
+                UserId = alice.Id,
+                Kind = ChronicleKind.DungeonCleared,
+                Era = 2,
+                OccurredAt = DateTimeOffset.UtcNow,
+                Facts = "{\"dungeonKey\":\"sunken-warren\",\"rooms\":\"5\",\"gold\":\"120\"}"
+            });
+
+            await write.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+        var reloaded = await db.ChronicleEntries.AsNoTracking().SingleAsync(e => e.Id == id);
+
+        Assert.Equal(ChronicleKind.DungeonCleared, reloaded.Kind);
+        Assert.Equal(2, reloaded.Era);
+        Assert.Null(reloaded.EncounterId);
+        Assert.Equal("5", ChronicleService.ReadFacts(reloaded)["rooms"]);
+    }
+
+    /// <summary>
+    /// Deleting a fight must never delete the line that says it happened.
+    /// </summary>
+    /// <remarks>
+    /// This is the referential action ascending leans on entirely. It empties encounters with
+    /// ExecuteDeleteAsync, which bypasses the change tracker, so SET NULL here is the only thing
+    /// keeping the journal. CASCADE would delete the record of the era along with the era, and
+    /// RESTRICT would make ascending impossible.
+    /// </remarks>
+    [Fact]
+    public async Task Deleting_an_encounter_keeps_its_chronicle_entry_and_nulls_the_link()
+    {
+        await postgres.ResetAsync();
+        var alice = await postgres.CreateUserAsync("test|alice");
+
+        await using var db = postgres.CreateContext();
+
+        var encounter = new Encounter
+        {
+            UserId = alice.Id,
+            MonsterKey = MonsterCatalog.All[0].Key,
+            MonsterHitPoints = 0,
+            Status = EncounterStatus.Won,
+            Round = 3
+        };
+
+        db.Encounters.Add(encounter);
+        db.ChronicleEntries.Add(new ChronicleEntry
+        {
+            UserId = alice.Id,
+            Kind = ChronicleKind.FightWon,
+            EncounterId = encounter.Id,
+            OccurredAt = DateTimeOffset.UtcNow,
+            Facts = "{\"monsterKey\":\"" + MonsterCatalog.All[0].Key + "\",\"rounds\":\"3\"}"
+        });
+        await db.SaveChangesAsync();
+
+        await db.Encounters.Where(e => e.Id == encounter.Id).ExecuteDeleteAsync();
+
+        db.ChangeTracker.Clear();
+
+        var survivor = await db.ChronicleEntries.AsNoTracking().SingleAsync();
+
+        Assert.Null(survivor.EncounterId);
+        Assert.Equal(ChronicleKind.FightWon, survivor.Kind);
+        Assert.Equal("3", ChronicleService.ReadFacts(survivor)["rounds"]);
     }
 }

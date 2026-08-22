@@ -63,6 +63,21 @@ public class Character
     /// <summary>Anchor for passive hit point regeneration, avoiding a background job.</summary>
     public DateTimeOffset? HitPointsUpdatedAt { get; set; }
 
+    /// <summary>
+    /// How many times this character has begun again. Zero for everyone who never has.
+    /// </summary>
+    /// <remarks>
+    /// Stored rather than counted from the chronicle's ascension entries (DEC-002 argues the
+    /// other way, and loses here): the chronicle is deletable from the account danger zone, and
+    /// a counter that a tidy-up can silently reset is worse than one that is written down. It is
+    /// also stamped onto every entry as its era, which a count over those same entries could not
+    /// do without reading them all back on every write.
+    /// </remarks>
+    public int Ascensions { get; set; }
+
+    /// <summary>When the last ascension happened. Null until the first one.</summary>
+    public DateTimeOffset? AscendedAt { get; set; }
+
     public Rpg.AbilityScores AbilityScores
     {
         get => new(Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma);

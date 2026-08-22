@@ -152,6 +152,25 @@ export function useClearCompleted() {
   })
 }
 
+/**
+ * Deletes everything this account has recorded.
+ *
+ * The cache is cleared rather than invalidated and the page is reloaded rather than re-rendered.
+ * Every query in the tree is now describing rows that no longer exist, and the app has to come
+ * back up in the state a first sign-in produces: no class, no character, no board.
+ */
+export function useResetAccount() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.resetAccount(),
+    onSuccess: () => {
+      client.clear()
+      window.location.reload()
+    },
+  })
+}
+
 export function useReorderTasks() {
   const client = useQueryClient()
 

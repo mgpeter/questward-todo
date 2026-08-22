@@ -20,7 +20,8 @@ namespace TodoApp.Api.Services;
 public sealed class GamificationService(
     TodoDbContext db,
     AchievementEvaluator evaluator,
-    Rpg.QuestService quests)
+    Rpg.QuestService quests,
+    Rpg.ChronicleService chronicle)
 {
     public async Task<Character> GetCharacterAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -179,6 +180,22 @@ public sealed class GamificationService(
         // finished it in three.
         await quests.RecordAsync(
             userId, ObjectiveKind.CompleteTask, task.Difficulty.ToString(), 1, cancellationToken);
+
+        // A level is the one thing in the journal that real work alone can produce, so it is
+        // written where the work is counted and inside the same transaction. One line per level
+        // crossed rather than one per completion: the crossing is the event.
+        if (newLevel > previousLevel)
+        {
+            chronicle.Record(
+                character,
+                ChronicleKind.LevelReached,
+                new Dictionary<string, string>
+                {
+                    [ChronicleNarrator.LevelKey] = newLevel.ToString()
+                },
+                at: completedAtUtc);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);

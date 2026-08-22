@@ -102,7 +102,8 @@ public sealed record HuntView(
 public sealed class HuntService(
     TodoDbContext db,
     CharacterSheetService sheets,
-    CombatService combat)
+    CombatService combat,
+    ChronicleService chronicle)
 {
     /// <summary>
     /// Every open task that could carry a contract, and every contract already taken.
@@ -231,6 +232,22 @@ public sealed class HuntService(
         var contract = Write(userId, task, sheet.Level, subtasks, now);
 
         db.HuntContracts.Add(contract);
+
+        // Taking the contract is the beat worth recording, not the fight it may become: the fight
+        // writes its own line, and a contract abandoned or never discharged would otherwise leave
+        // no trace of having been taken at all.
+        chronicle.Record(
+            character,
+            ChronicleKind.ContractAccepted,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.TaskTitleKey] = contract.TaskTitle,
+                [ChronicleNarrator.FactionKey] = contract.FactionKey ?? string.Empty,
+                [ChronicleNarrator.LevelKey] = contract.Level.ToString(),
+                [ChronicleNarrator.DaysOverdueKey] = contract.DaysOverdue.ToString()
+            },
+            at: now);
+
         await db.SaveChangesAsync(cancellationToken);
 
         var standings = await StandingsAsync(userId, cancellationToken);

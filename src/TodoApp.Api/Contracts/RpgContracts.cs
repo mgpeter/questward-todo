@@ -43,7 +43,23 @@ public sealed record CharacterSheetDto(
     /// Only sets the wearer has at least one piece equipped from. The rest are discovered
     /// through <see cref="InventoryItemDto.SetName"/> on the pieces themselves.
     /// </summary>
-    IReadOnlyList<SetProgressDto> Sets);
+    IReadOnlyList<SetProgressDto> Sets,
+    AscensionDto Ascension);
+
+/// <summary>
+/// Where the character stands with ascending, so the panel needs no rule of its own.
+/// </summary>
+/// <param name="Count">How many eras are already behind them. Zero for almost everyone.</param>
+/// <param name="EssenceOnAscend">
+/// What ascending right now would pay. Computed from the same rule the endpoint applies, so the
+/// preview and the payout cannot disagree.
+/// </param>
+public sealed record AscensionDto(
+    int Count,
+    bool Eligible,
+    int MinimumLevel,
+    int EssenceOnAscend,
+    DateTimeOffset? LastAscendedAt);
 
 /// <param name="Active">True when enough pieces are worn for this tier to be paying.</param>
 public sealed record SetTierDto(int Pieces, string Description, bool Active);
@@ -496,7 +512,36 @@ public sealed record ChronicleSummaryDto(
     string? MostFoughtMonster,
     int MostFoughtCount);
 
-public sealed record ChronicleDto(ChronicleSummaryDto Summary, IReadOnlyList<EncounterDto> Encounters);
+/// <summary>Finished fights and their logs. What <c>GET /api/rpg/encounters</c> has always been.</summary>
+public sealed record EncounterHistoryDto(
+    ChronicleSummaryDto Summary, IReadOnlyList<EncounterDto> Encounters);
+
+/// <param name="Kind">Lowercased, like every other enum on this wire.</param>
+/// <param name="Icon">
+/// A key rather than a glyph, chosen by <c>ChronicleNarrator</c>. The client owns the drawing,
+/// exactly as it owns the drawing for an avatar key.
+/// </param>
+/// <param name="Era">
+/// How many times the character had ascended when this happened. The feed draws its dividers
+/// from it; a jump between two entries is where an age ended.
+/// </param>
+/// <param name="Encounter">
+/// The fight this line is about, when the line is about a fight and that fight still exists.
+/// Null on every other kind, and null on a fight from before an ascension deleted it - the
+/// sentence survives, the roll-by-roll log does not.
+/// </param>
+public sealed record ChronicleEntryDto(
+    Guid Id,
+    string Kind,
+    string Icon,
+    string Title,
+    string? Detail,
+    int Era,
+    DateTimeOffset OccurredAt,
+    EncounterDto? Encounter);
+
+public sealed record ChronicleDto(
+    ChronicleSummaryDto Summary, IReadOnlyList<ChronicleEntryDto> Entries);
 
 /// <param name="Blurb">
 /// Null until the monster has been met. The description is the reward for the first sighting,
@@ -587,6 +632,16 @@ public sealed record RestResponse(int GoldSpent, int Gold, int HitPoints, int Ma
 public sealed record SellResponse(int GoldGained, int Gold);
 
 public sealed record SalvageResponse(int EssenceGained, int Essence);
+
+/// <param name="LevelReached">The level the era ended on. The new one starts at one.</param>
+public sealed record AscendResponse(
+    int EssenceGained,
+    int Essence,
+    int Ascensions,
+    int LevelReached,
+    int GoldConverted,
+    int StaminaConverted,
+    CharacterSheetDto Sheet);
 
 public sealed record CraftResponse(InventoryItemDto Item, int EssenceSpent, int Essence);
 

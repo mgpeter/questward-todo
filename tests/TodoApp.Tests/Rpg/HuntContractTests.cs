@@ -62,11 +62,11 @@ public class HuntContractTests(PostgresFixture postgres)
         var db = postgres.CreateContext();
         var sheets = new CharacterSheetService(db);
         var loot = new LootService(db, roller);
-        var quests = new QuestService(db, loot);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
         var adventurer = new AdventurerService(db, sheets, loot);
-        var combat = new CombatService(db, roller, sheets, loot, quests);
-        var hunts = new HuntService(db, sheets, combat);
-        var gamification = new GamificationService(db, new AchievementEvaluator(), quests);
+        var combat = new CombatService(db, roller, sheets, loot, quests, new ChronicleService(db));
+        var hunts = new HuntService(db, sheets, combat, new ChronicleService(db));
+        var gamification = new GamificationService(db, new AchievementEvaluator(), quests, new ChronicleService(db));
 
         await adventurer.ChooseClassAsync(
             user.Id, ClassCatalog.Fighter, TestContext.Current.CancellationToken);
@@ -1421,9 +1421,9 @@ public class HuntContractTests(PostgresFixture postgres)
 
         var sheets = new CharacterSheetService(fresh);
         var loot = new LootService(fresh, AlwaysHits());
-        var quests = new QuestService(fresh, loot);
-        var combat = new CombatService(fresh, AlwaysHits(), sheets, loot, quests);
-        var hunts = new HuntService(fresh, sheets, combat);
+        var quests = new QuestService(fresh, loot, new ChronicleService(fresh));
+        var combat = new CombatService(fresh, AlwaysHits(), sheets, loot, quests, new ChronicleService(fresh));
+        var hunts = new HuntService(fresh, sheets, combat, new ChronicleService(fresh));
 
         var fight = await hunts.FightAsync(harness.UserId, owed.Id, default);
 

@@ -49,9 +49,9 @@ public class DungeonStaminaTests(PostgresFixture postgres)
         var db = postgres.CreateContext();
         var sheets = new CharacterSheetService(db);
         var loot = new LootService(db, roller);
-        var quests = new QuestService(db, loot);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
         var adventurer = new AdventurerService(db, sheets, loot);
-        var combat = new CombatService(db, roller, sheets, loot, quests);
+        var combat = new CombatService(db, roller, sheets, loot, quests, new ChronicleService(db));
 
         // The same context for both, which is what production's scoped registration gives them.
         var dungeons = new DungeonService(db, roller, sheets, combat);
@@ -75,7 +75,7 @@ public class DungeonStaminaTests(PostgresFixture postgres)
     /// </summary>
     private static async Task ReachLevelAsync(Harness harness, int level)
     {
-        var gamification = new GamificationService(harness.Db, new AchievementEvaluator(), harness.Quests);
+        var gamification = new GamificationService(harness.Db, new AchievementEvaluator(), harness.Quests, new ChronicleService(harness.Db));
 
         while (true)
         {
