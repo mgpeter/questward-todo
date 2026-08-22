@@ -27,7 +27,9 @@ public enum FactionStanding
 /// the killing blow and redirect the reward to whichever banner is holding the item they want.
 /// </remarks>
 /// <param name="Aliases">
-/// Tag names that muster under this banner, matched case-insensitively and never in SQL. The
+/// Tag names that muster under this banner, matched case-insensitively and never in SQL. Empty
+/// on <see cref="FactionCatalog.TheMotley"/> alone, which is reached by falling through rather
+/// than by being named. The
 /// existing tag filter is byte-exact Postgres array containment, so "work" does not find a task
 /// tagged "Work"; faction resolution runs in C# on a materialised task instead, against an
 /// OrdinalIgnoreCase index.
@@ -77,12 +79,19 @@ public sealed record FactionDefinition(
 public static class FactionStandings
 {
     /// <summary>The standing a hunter of this many won contracts holds with a faction.</summary>
+    /// <remarks>
+    /// Four, twelve and twenty-five, down from five, fifteen and forty (DEC-019). A win is not one
+    /// fight: it is an overdue task, a tag that names a banner, a contract taken, the task actually
+    /// finished, and only then a fight that has to be won. Five of those under a single banner
+    /// before the first thing changes was long enough that the ladder read as broken rather than
+    /// slow, which is the report that moved it.
+    /// </remarks>
     public static FactionStanding TierFor(int wonHunts) => wonHunts switch
     {
         <= 0 => FactionStanding.Unknown,
-        < 5 => FactionStanding.Noticed,
-        < 15 => FactionStanding.Trusted,
-        < 40 => FactionStanding.Respected,
+        < 4 => FactionStanding.Noticed,
+        < 12 => FactionStanding.Trusted,
+        < 25 => FactionStanding.Respected,
         _ => FactionStanding.Sworn
     };
 
@@ -112,6 +121,9 @@ public static class FactionCatalog
     public const string TheVigil = "the-vigil";
     public const string TheAthenaeum = "the-athenaeum";
     public const string TheExchequer = "the-exchequer";
+
+    /// <summary>The fallback banner. Carries no aliases; see <see cref="FactionFor"/>.</summary>
+    public const string TheMotley = "the-motley";
 
     public static IReadOnlyList<FactionDefinition> All { get; } =
     [
@@ -178,6 +190,22 @@ public static class FactionCatalog
                 new LootEntry(ItemCatalog.ShadowweaveCloak, 2),
                 new LootEntry(ItemCatalog.RingOfFocus, 2),
                 new LootEntry(ItemCatalog.LuckyCoin, 1)
+            ]),
+
+        // Last in the list because it is last in the resolution: FactionFor only reaches it
+        // when no other banner claimed a word. Its aliases are deliberately empty - a word here
+        // would be a word no other banner could ever have, since ByAlias throws on a duplicate.
+        new(TheMotley, "The Motley",
+            "Every colour, none of them matching. Wears the leftovers as a coat and calls it a uniform.",
+            [],
+            ["Unpatched", "Threadbare", "Patched", "Particoloured", "Master of the Motley"],
+            [
+                new LootEntry(ItemCatalog.WorkmansGloves, 3),
+                new LootEntry(ItemCatalog.GoblinCleaver, 3),
+                new LootEntry(ItemCatalog.TravellersCloak, 2),
+                new LootEntry(ItemCatalog.ThrowingKnives, 2),
+                new LootEntry(ItemCatalog.PlainIronBand, 2),
+                new LootEntry(ItemCatalog.QuartermastersTally, 1)
             ])
     ];
 
@@ -227,11 +255,25 @@ public static class FactionCatalog
     /// faction is the primary one. Walked rather than indexed, so a task tagged
     /// ["urgent", "Work"] still musters under the Ledger.
     /// <para>
+    /// A tag that names no banner falls to <see cref="TheMotley"/> rather than to nothing
+    /// (DEC-019). The twenty alias words are the whole vocabulary, and a task tagged "projects"
+    /// or "errands" used to fly no banner and therefore pay no item at all - a silent penalty for
+    /// not knowing a list the app never showed. The fallback is last in the chain, so a real
+    /// match always beats it: ["projects", "work"] is still the Ledger.
+    /// </para>
+    /// <para>
+    /// An untagged task still musters nowhere. Tagging is the price of entry and one word buys
+    /// it, which is a rule that can be explained on the card; "some words count and others do
+    /// not" is the one that could not.
+    /// </para>
+    /// <para>
     /// Returns the catalog key and never the tag string, which is what keeps a user's casing out
     /// of the database entirely: whatever "WORK" looked like when it was typed, what is stored is
     /// "the-ledger".
     /// </para>
     /// </remarks>
     public static string? FactionFor(TodoTask task) =>
-        task.Tags.Select(FindByTag).FirstOrDefault(f => f is not null)?.Key;
+        task.Tags.Count == 0
+            ? null
+            : task.Tags.Select(FindByTag).FirstOrDefault(f => f is not null)?.Key ?? TheMotley;
 }

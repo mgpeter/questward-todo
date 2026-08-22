@@ -381,8 +381,26 @@ public class HuntRuleTests
             FactionCatalog.TheHearth,
             FactionCatalog.FactionFor(new TodoTask { Tags = ["home", "work"] }));
 
+        // A tag naming no banner falls to the Motley, and never beats one that does.
+        Assert.Equal(
+            FactionCatalog.TheMotley,
+            FactionCatalog.FactionFor(new TodoTask { Tags = ["urgent"] }));
+
+        Assert.Equal(
+            FactionCatalog.TheMotley,
+            FactionCatalog.FactionFor(new TodoTask { Tags = ["projects", "errands"] }));
+
+        Assert.Equal(
+            FactionCatalog.TheLedger,
+            FactionCatalog.FactionFor(new TodoTask { Tags = ["projects", "work"] }));
+
+        // The Motley is reached by falling through, never by being named, so it claims no word.
+        Assert.Empty(FactionCatalog.Find(FactionCatalog.TheMotley)!.Aliases);
+        Assert.Null(FactionCatalog.FindByTag("the-motley"));
+
+        // An untagged task still musters nowhere: one tag is the price of entry.
         Assert.Null(FactionCatalog.FactionFor(new TodoTask()));
-        Assert.Null(FactionCatalog.FactionFor(new TodoTask { Tags = ["urgent"] }));
+        Assert.Null(FactionCatalog.FactionFor(new TodoTask { Tags = [] }));
     }
 
     /// <summary>Every banner is reachable, distinct, and pays out of its own real table.</summary>
@@ -400,11 +418,21 @@ public class HuntRuleTests
         // A tag mustering under two banners has no defined winner.
         Assert.Equal(aliases.Count, aliases.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
+        // Exactly one banner is reached by falling through rather than by being named, and it
+        // is the Motley. Any other bannerless faction would be unreachable content.
+        var wordless = FactionCatalog.All.Where(f => f.Aliases.Count == 0).ToList();
+
+        Assert.Equal(FactionCatalog.TheMotley, Assert.Single(wordless).Key);
+
         foreach (var faction in FactionCatalog.All)
         {
             Assert.True(FactionCatalog.Exists(faction.Key));
-            Assert.NotEmpty(faction.Aliases);
             Assert.NotEmpty(faction.RewardTable);
+
+            if (faction.Key != FactionCatalog.TheMotley)
+            {
+                Assert.NotEmpty(faction.Aliases);
+            }
 
             Assert.All(faction.Aliases, alias =>
                 Assert.Equal(faction.Key, FactionCatalog.FindByTag(alias)!.Key));
@@ -435,12 +463,12 @@ public class HuntRuleTests
         Assert.Equal(FactionStanding.Unknown, FactionStandings.TierFor(0));
         Assert.Equal(FactionStanding.Unknown, FactionStandings.TierFor(-3));
         Assert.Equal(FactionStanding.Noticed, FactionStandings.TierFor(1));
-        Assert.Equal(FactionStanding.Noticed, FactionStandings.TierFor(4));
-        Assert.Equal(FactionStanding.Trusted, FactionStandings.TierFor(5));
-        Assert.Equal(FactionStanding.Trusted, FactionStandings.TierFor(14));
-        Assert.Equal(FactionStanding.Respected, FactionStandings.TierFor(15));
-        Assert.Equal(FactionStanding.Respected, FactionStandings.TierFor(39));
-        Assert.Equal(FactionStanding.Sworn, FactionStandings.TierFor(40));
+        Assert.Equal(FactionStanding.Noticed, FactionStandings.TierFor(3));
+        Assert.Equal(FactionStanding.Trusted, FactionStandings.TierFor(4));
+        Assert.Equal(FactionStanding.Trusted, FactionStandings.TierFor(11));
+        Assert.Equal(FactionStanding.Respected, FactionStandings.TierFor(12));
+        Assert.Equal(FactionStanding.Respected, FactionStandings.TierFor(24));
+        Assert.Equal(FactionStanding.Sworn, FactionStandings.TierFor(25));
         Assert.Equal(FactionStanding.Sworn, FactionStandings.TierFor(4000));
 
         Assert.Equal(Rarity.Common, FactionStandings.FloorFor(FactionStanding.Unknown));
