@@ -1,8 +1,8 @@
 import { Zap } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
-import type { TabKey } from '../game/Navigation'
 import { useSheet } from '../lib/rpgQueries'
+import { useNavigation, type TabKey } from '../game/Navigation'
 import { useIsMobile } from '../lib/useMediaQuery'
 import { AdventurerHud } from './AdventurerStrip'
 import { AccountMenu } from './AccountMenu'
@@ -34,7 +34,7 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
     return (
       <header className="sticky top-0 z-30 border-b border-line bg-canvas/94 backdrop-blur-md">
         <div className="flex items-center gap-3 px-3.5 py-2.5">
-          <WordmarkDiamond />
+          <Wordmark />
           {character && <XpRail character={character} />}
           {/* Theme and sound moved behind the avatar; AccountMenu draws them in its sheet. */}
           <AccountMenu />
@@ -51,7 +51,7 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
           own row instead of being squeezed between the wordmark and the theme switch. */}
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3 sm:gap-x-6">
         <div className="order-1">
-          <Wordmark />
+          <Wordmark withText />
         </div>
 
         <div className="order-3 w-full sm:order-2 sm:w-auto sm:max-w-sm sm:flex-1 md:max-w-md">
@@ -134,24 +134,40 @@ function StaminaPip() {
   )
 }
 
-function WordmarkDiamond({ size = 'h-7 w-7' }: { size?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`grid ${size} shrink-0 rotate-45 place-items-center rounded-[7px] border border-gold/50 bg-linear-to-br from-gold/25 to-transparent`}
-    >
-      <span className="-rotate-45 text-[11px] leading-none text-gold">&#9670;</span>
-    </span>
-  )
-}
+/**
+ * The mark, and the way back to the board.
+ *
+ * A button rather than a link: there is no router to point at, so there is no URL for the one
+ * page this app has. goTo rather than setTab because it scrolls to the top as well, which is
+ * half of what going home means - setTab alone would swap the section under a reader who is
+ * three screens down and leave them there.
+ *
+ * The diamond is rotated 45 degrees, so a 28px square presents rather less than 28px of
+ * axis-aligned target. The button carries the touch area; the mark keeps its size.
+ */
+function Wordmark({ withText = false }: { withText?: boolean }) {
+  const { goTo } = useNavigation()
 
-function Wordmark() {
   return (
-    <div className="flex shrink-0 items-center gap-2.5">
-      <WordmarkDiamond />
-      <span className="font-display text-[19px] leading-none tracking-tight">
-        Quest<span className="text-gold">ward</span>
+    <button
+      type="button"
+      onClick={() => goTo('tasks')}
+      data-testid="wordmark"
+      aria-label="Questward - go to tasks"
+      className="-m-2 flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg p-2 transition hover:opacity-80"
+    >
+      <span
+        aria-hidden="true"
+        className="grid h-7 w-7 shrink-0 rotate-45 place-items-center rounded-[7px] border border-gold/50 bg-linear-to-br from-gold/25 to-transparent"
+      >
+        <span className="-rotate-45 text-[11px] leading-none text-gold">&#9670;</span>
       </span>
-    </div>
+
+      {withText && (
+        <span aria-hidden="true" className="font-display text-[19px] leading-none tracking-tight">
+          Quest<span className="text-gold">ward</span>
+        </span>
+      )}
+    </button>
   )
 }
