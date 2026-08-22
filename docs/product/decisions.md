@@ -1226,3 +1226,93 @@ appears.
 rewards - combat grants no XP (DEC-012) - so the ceiling on that is the stamina it costs, but it
 is a grind the narrower band did not permit. The prose in `BestiaryTests` naming the old floor
 moved with it, and any future reading of "the band" has two numbers in its history.
+
+---
+
+## 2026-08-22: Every Tagged Task Flies a Banner
+
+**ID:** DEC-019
+**Status:** Accepted
+**Category:** Product
+**Stakeholders:** Product Owner, Tech Lead
+
+### Decision
+
+Three changes to the faction system, and one piece of overdue bookkeeping.
+
+1. A sixth banner, **The Motley**, catches any tag that names no other. A task with at least one
+   tag always musters somewhere; an untagged task still musters nowhere.
+2. The standing ladder moves to **1 / 4 / 12 / 25** won contracts, from 1 / 5 / 15 / 40.
+3. The tag words are published: `FactionStandingDto.Aliases` puts them on the wire and the
+   Banners panel lists them under each banner. The contract chips name the banner rather than
+   only the standing title, and a contract with no banner says why.
+4. This entry also records the faction design itself, which shipped in `96bb687` with no decision
+   record of its own.
+
+### Context
+
+Reported from play: "the banners don't seem to work, they never raise the standings."
+
+They worked. Standing is a `COUNT` of won contracts carrying a banner key, the chain from tag to
+contract to encounter to count is complete, and `HuntContractTests` proves three wins read as
+three. What was wrong was that none of it was legible:
+
+- **The first four wins bought nothing.** `FloorFor(Noticed)` equals `FloorFor(Unknown)`, so the
+  only mechanical step was the fifth win - and a win is an overdue task, a matching tag, a
+  contract taken, the task finished, and a fight won.
+- **Twenty words decided everything and appeared nowhere.** `GET /api/tasks/tags` echoes only tags
+  already used, so the tag field could never suggest a word the player had not already typed.
+- **The chip showed the title, not the banner.** At zero wins a correctly tagged contract read
+  "Unentered", so a working match looked like a failed one.
+- **An unmatched tag paid no item at all.** A task tagged "projects" was silently worth less than
+  one tagged "work", and nothing said so.
+
+The last of those is the one that made the feature feel broken rather than slow: a penalty for not
+knowing a list the app never showed.
+
+### Alternatives Considered
+
+1. **Hash unmatched tags onto one of the five**
+   - Pros: no new content, every tag lands somewhere.
+   - Cons: arbitrary. "projects" under The Vigil reads as a bug, and the flavour is most of what
+     banners are for.
+
+2. **Let players map their own tags**
+   - Pros: fits any vocabulary.
+   - Cons: a new table and a settings surface to maintain a mapping most players would never open.
+
+3. **Leave the fallback alone and only fix discoverability**
+   - Pros: smallest change; the mapping genuinely does work.
+   - Cons: leaves the sharp edge in place. Knowing the twenty words would be the difference
+     between a contract paying an item and paying nothing, which is a memory test rather than a
+     decision.
+
+### Rationale
+
+The Motley is honest about being the leftovers rather than pretending to a theme it does not have,
+which is why it is a patchwork coat and not a sixth guild. It claims no alias words: it is reached
+by falling through, so any word it took would be a word no other banner could ever have.
+
+Untagged tasks still fly nothing, deliberately. "Tag it and it musters somewhere" is a rule that
+fits on the card; "some words count and others do not" was the rule that could not.
+
+The ladder moved because five wins under a single banner is a long way to travel with no feedback,
+given what one win costs. `FloorFor` is unchanged, so the tiers still buy exactly what they bought.
+
+### Consequences
+
+**Positive:** Every tagged overdue task is now worth hunting - `PaysContractReward` is
+`DaysOverdue > 0 && Faction is not null`, and the second half is now true for anything with a tag.
+The rule is readable in the place it applies. The first reward floor arrives at four wins.
+
+**Negative:** The Motley will be the busiest banner for anyone whose tags are not the twenty words,
+which makes it the most likely first Sworn - a slightly odd fit for the leftovers. Its reward table
+sits at the low end of the range on purpose (weighted average base value 26.4, against 25.0 for The
+Hearth and 40.9 for The Athenaeum), so it is not the strongest place to muster, only the most
+forgiving. Standing thresholds are now in two places in the history, so a save from before this
+entry sits one tier higher than it did.
+
+**Not done, and worth knowing:** the tag field still does not suggest banner words. With The Motley
+catching everything, the words now decide *which* banner rather than *whether* there is one, so the
+cost of not knowing them dropped from an item to a preference. `spec.md:96` also arbitrated faction
+shop stock, which has never been built.
