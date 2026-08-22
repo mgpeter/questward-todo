@@ -308,10 +308,6 @@ public sealed class ShopService(TodoDbContext db)
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation }
         && exception.Entries.Any(e => e.Entity is ShopReroll);
 
-    /// <summary>Cost to raise an item to the given rarity.</summary>
-    public static int UpgradeCost(ItemDefinition item, Rarity target) =>
-        Math.Max(25, item.ValueAt(target) - item.ValueAt(target - 1));
-
     public async Task<RpgResult<UpgradeResult>> UpgradeAsync(
         Guid userId,
         Guid itemId,
@@ -350,7 +346,7 @@ public sealed class ShopService(TodoDbContext db)
         }
 
         var target = item.Rarity + 1;
-        var cost = UpgradeCost(definition, target);
+        var cost = definition.UpgradeCostTo(target);
 
         var character = await db.Characters.SingleAsync(c => c.UserId == userId, cancellationToken);
 

@@ -228,3 +228,43 @@ export function ContractStats({ contract }: { contract: HuntContract }) {
     </div>
   )
 }
+
+/**
+ * Slot, dice, armour and ability bonuses on one wrapping line.
+ *
+ * Structurally typed rather than taking an InventoryItem, because the shop's offers carry the
+ * same four fields without being inventory rows. This existed twice already, byte for byte, in
+ * the bag and in the shop; the upgrade bench wanting it a third time is what made it a
+ * component. `size` is the only thing the two copies actually disagreed about.
+ */
+export function ItemStats({
+  item,
+  size = 'normal',
+  className = '',
+}: {
+  item: {
+    slot: string
+    damage: string | null
+    armourBonus: number
+    abilityBonuses: { label: string; value: number }[]
+  }
+  size?: 'normal' | 'small'
+  className?: string
+}) {
+  return (
+    <p
+      className={`tabular flex flex-wrap gap-2 text-ink-faint ${
+        size === 'small' ? 'text-[10.5px]' : 'text-[11px]'
+      } ${className}`}
+    >
+      <span className="capitalize">{item.slot}</span>
+      {item.damage && <span>{item.damage}</span>}
+      {item.armourBonus > 0 && <span>+{item.armourBonus} AC</span>}
+      {item.abilityBonuses.map((bonus) => (
+        <span key={bonus.label} className="text-teal">
+          +{bonus.value} {bonus.label}
+        </span>
+      ))}
+    </p>
+  )
+}

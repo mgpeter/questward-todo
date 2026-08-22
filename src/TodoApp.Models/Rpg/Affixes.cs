@@ -329,7 +329,18 @@ public static class AffixRules
         return (prefix is null ? 0 : 1) + (suffix is null ? 0 : 1);
     }
 
-    public static BonusEffects EffectsOf(InventoryItem item)
+    public static BonusEffects EffectsOf(InventoryItem item) => EffectsOf(item, item.Rarity);
+
+    /// <summary>
+    /// The words this item carries, valued at <paramref name="rarity"/> rather than at its own.
+    /// </summary>
+    /// <remarks>
+    /// The override exists for the upgrade preview, which has to answer what the same two words
+    /// would be worth one rarity up. Which words are in force is still read at the item's current
+    /// rarity: an upgrade never rolls a new one, so a slot the step opens stays empty until the
+    /// forge fills it.
+    /// </remarks>
+    public static BonusEffects EffectsOf(InventoryItem item, Rarity rarity)
     {
         var (prefix, suffix) = InForce(item);
 
@@ -338,9 +349,9 @@ public static class AffixRules
             return BonusEffects.None;
         }
 
-        var effects = prefix?.EffectAt(item.Rarity) ?? BonusEffects.None;
+        var effects = prefix?.EffectAt(rarity) ?? BonusEffects.None;
 
-        return suffix is null ? effects : effects.Plus(suffix.EffectAt(item.Rarity));
+        return suffix is null ? effects : effects.Plus(suffix.EffectAt(rarity));
     }
 
     /// <summary>

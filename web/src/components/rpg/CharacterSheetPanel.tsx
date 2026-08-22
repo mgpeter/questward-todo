@@ -24,6 +24,7 @@ import {
 } from '../../lib/rpg'
 import { useCraftItem, useEquip, useRest, useSalvageItem, useSellItem } from '../../lib/rpgQueries'
 import { useIsMobile } from '../../lib/useMediaQuery'
+import { ItemStats } from './HuntChrome'
 
 export function CharacterSheetPanel({
   sheet,
@@ -445,16 +446,7 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                   )}
                 </p>
 
-                <p className="tabular mt-1 flex flex-wrap gap-2 text-[11px] text-ink-faint">
-                  <span className="capitalize">{item.slot}</span>
-                  {item.damage && <span>{item.damage}</span>}
-                  {item.armourBonus > 0 && <span>+{item.armourBonus} AC</span>}
-                  {item.abilityBonuses.map((b) => (
-                    <span key={b.label} className="text-teal">
-                      +{b.value} {b.label}
-                    </span>
-                  ))}
-                </p>
+                <ItemStats item={item} className="mt-1" />
 
                 {usable && (
                   <p className="mt-1 text-[11.5px] leading-snug text-teal" data-testid="item-use">

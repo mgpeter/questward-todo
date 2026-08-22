@@ -447,6 +447,115 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(ForgeRules.EssenceFor(Rarity.Epic, 1), result.Item.SalvageValue);
     }
 
+    /// <summary>
+    /// The bench quotes the outcome before the gold is spent, so the quote has to be the outcome.
+    /// </summary>
+    /// <remarks>
+    /// The preview is a second computation of what the upgrade does. Two of those drift, and a
+    /// screen that promises plus one armour and delivers nothing is worse than the screen that
+    /// promised nothing at all, which is what this replaced. Asserted field by field against the
+    /// item that comes back rather than against hand-written numbers, so the rules stay the only
+    /// source and this fails the moment the two disagree.
+    /// </remarks>
+    [Fact]
+    public async Task The_preview_is_what_the_upgrade_actually_does()
+    {
+        await ChooseAsync(_alice);
+        await GrantGoldAsync(default, "auth0|alice", 100_000);
+
+        Guid id;
+
+        await using (var db = postgres.CreateContext())
+        {
+            var user = await db.Users.SingleAsync(u => u.Auth0Sub == "auth0|alice");
+
+            // Rare armour carrying a word: the one step that moves armour, doubles a word and
+            // opens a slot all at once, so every field of the preview is under test.
+            var item = new InventoryItem
+            {
+                UserId = user.Id,
+                ItemKey = ItemCatalog.ChainShirt,
+                Slot = ItemSlot.Armour,
+                Rarity = Rarity.Rare,
+                PrefixKey = AffixCatalog.Warded
+            };
+
+            db.InventoryItems.Add(item);
+            await db.SaveChangesAsync();
+
+            id = item.Id;
+        }
+
+        var before = (await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory"))!
+            .Single(i => i.Id == id);
+
+        var quoted = before.Upgrade;
+        Assert.NotNull(quoted);
+
+        var upgrade = await _alice.PostAsync($"/api/rpg/inventory/{id}/upgrade", null);
+        upgrade.EnsureSuccessStatusCode();
+
+        var result = await upgrade.Content.ReadFromJsonAsync<UpgradeDto>();
+        var after = result!.Item;
+
+        Assert.Equal(quoted.ToRarity, after.Rarity);
+        Assert.Equal(quoted.Cost, result.GoldSpent);
+        Assert.Equal(quoted.ArmourBonus, after.ArmourBonus);
+        Assert.Equal(quoted.AffixSlots, after.AffixSlots);
+        Assert.Equal(
+            quoted.AbilityBonuses.Select(b => (b.Label, b.Value)),
+            after.AbilityBonuses.Select(b => (b.Label, b.Value)));
+
+        // Rare to Epic is the boundary the tier table steps at, so the promise was "twice as
+        // strong" and the armour has to have moved by more than the plain rarity point.
+        Assert.True(quoted.AffixesGrow);
+        Assert.True(after.ArmourBonus - before.ArmourBonus > 1);
+    }
+
+    [Fact]
+    public async Task Nothing_the_bench_refuses_carries_a_preview()
+    {
+        // Null is the whole eligibility test on the client, so it has to agree with the three
+        // refusals in UpgradeAsync. The bench asked "is it Legendary" and so offered potions.
+        await ChooseAsync(_alice);
+
+        await using (var db = postgres.CreateContext())
+        {
+            var user = await db.Users.SingleAsync(u => u.Auth0Sub == "auth0|alice");
+
+            db.InventoryItems.Add(new InventoryItem
+            {
+                UserId = user.Id,
+                ItemKey = ItemCatalog.SilveredBlade,
+                Slot = ItemSlot.Weapon,
+                Rarity = Rarity.Legendary
+            });
+
+            db.InventoryItems.Add(new InventoryItem
+            {
+                UserId = user.Id,
+                ItemKey = ItemCatalog.DraughtOfMending,
+                Slot = ItemSlot.Consumable,
+                Rarity = Rarity.Common,
+                Quantity = 2
+            });
+
+            await db.SaveChangesAsync();
+        }
+
+        var inventory = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
+
+        Assert.Null(inventory!.Single(i => i.Rarity == "legendary").Upgrade);
+        Assert.All(
+            inventory.Where(i => i.ItemKey == ItemCatalog.DraughtOfMending),
+            i => Assert.Null(i.Upgrade));
+
+        // And everything the bench does accept quotes a price.
+        Assert.All(
+            inventory.Where(i => i.Upgrade is not null),
+            i => Assert.True(i.Upgrade!.Cost >= 25));
+    }
+
     [Fact]
     public async Task Another_users_item_cannot_be_upgraded()
     {
@@ -583,7 +692,12 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     private sealed record ItemDto(
         Guid Id, string ItemKey, string Name, string Rarity, bool IsEquipped,
         string? Prefix, string? Suffix, string? SetName, int AffixSlots,
-        int SalvageValue, int ImbueCost, int ReforgeCost);
+        int SalvageValue, int ImbueCost, int ReforgeCost,
+        int ArmourBonus, List<ModifierDto> AbilityBonuses, UpgradePreviewDto? Upgrade);
+    private sealed record ModifierDto(string Label, int Value);
+    private sealed record UpgradePreviewDto(
+        string ToRarity, int Cost, int ArmourBonus,
+        List<ModifierDto> AbilityBonuses, int AffixSlots, bool AffixesGrow);
     private sealed record LogDto(string Kind, string Text);
     private sealed record EncounterDto(Guid Id, string Status, int Round, List<LogDto> Log, List<StatusEffectDto> Effects);
 

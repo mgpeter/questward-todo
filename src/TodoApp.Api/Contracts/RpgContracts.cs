@@ -176,6 +176,29 @@ public sealed record StartEncounterRequest(string MonsterKey);
 /// How many words this item could hold at its rarity, so the client can tell a full Uncommon
 /// from a half-filled Epic without knowing the rule.
 /// </param>
+/// <summary>What one step at the upgrade bench costs, and what it buys.</summary>
+/// <remarks>
+/// Sent on the row rather than fetched per item, and null rather than flagged: an item that
+/// cannot be upgraded has no price and no preview to quote, so one nullable answers "is this
+/// upgradeable" as well as "what would it do" and the client stops having to guess the rule.
+/// It guessed wrong - `rarity !== 'legendary'` offered potions the bench refuses.
+///
+/// The numbers are the same pure functions the upgrade itself runs, so a preview cannot drift
+/// from the outcome without a test noticing.
+/// </remarks>
+/// <param name="AffixesGrow">
+/// Whether the words already on the item get stronger at the next rarity. Only true crossing
+/// into Epic: magnitude is one at Uncommon and Rare, two at Epic and Legendary. The bench used
+/// to promise growth on every step.
+/// </param>
+public sealed record UpgradePreviewDto(
+    string ToRarity,
+    int Cost,
+    int ArmourBonus,
+    IReadOnlyList<RollModifierDto> AbilityBonuses,
+    int AffixSlots,
+    bool AffixesGrow);
+
 public sealed record InventoryItemDto(
     Guid Id,
     string ItemKey,
@@ -204,7 +227,9 @@ public sealed record InventoryItemDto(
     /// What using one does, at this row's rarity. Null for anything that is not a consumable, so
     /// the client can tell a usable item from a worn one without a slot lookup.
     /// </summary>
-    string? UseDescription);
+    string? UseDescription,
+    /// <summary>The next step at the bench, or null when there is not one.</summary>
+    UpgradePreviewDto? Upgrade);
 
 /// <param name="Loot">What the monster itself dropped, or null when it dropped nothing.</param>
 /// <param name="ClearReward">

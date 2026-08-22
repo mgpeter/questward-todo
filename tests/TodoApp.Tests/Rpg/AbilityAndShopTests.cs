@@ -149,8 +149,8 @@ public class ShopStockTests
     {
         var sword = ItemCatalog.Find(ItemCatalog.RustyLongsword)!;
 
-        var toUncommon = ShopService.UpgradeCost(sword, Rarity.Uncommon);
-        var toLegendary = ShopService.UpgradeCost(sword, Rarity.Legendary);
+        var toUncommon = sword.UpgradeCostTo(Rarity.Uncommon);
+        var toLegendary = sword.UpgradeCostTo(Rarity.Legendary);
 
         Assert.True(toLegendary > toUncommon);
         Assert.True(toUncommon >= 25);
