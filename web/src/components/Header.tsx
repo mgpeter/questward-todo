@@ -3,6 +3,8 @@ import { motion } from 'motion/react'
 import type { Character } from '../lib/api'
 import type { TabKey } from '../game/Navigation'
 import { useSheet } from '../lib/rpgQueries'
+import { useIsMobile } from '../lib/useMediaQuery'
+import { AdventurerHud } from './AdventurerStrip'
 import { AccountMenu } from './AccountMenu'
 import { SoundToggle } from './SoundToggle'
 import { ThemeToggle } from './ThemeToggle'
@@ -23,6 +25,26 @@ interface HeaderProps {
 }
 
 export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps) {
+  const isMobile = useIsMobile()
+
+  // One row and one HUD line, where the desktop header takes two rows and a tab strip. The
+  // wordmark loses its text and keeps its diamond: on a 390px header the six letters were
+  // competing with the only reading that changes.
+  if (isMobile) {
+    return (
+      <header className="sticky top-0 z-30 border-b border-line bg-canvas/94 backdrop-blur-md">
+        <div className="flex items-center gap-3 px-3.5 py-2.5">
+          <WordmarkDiamond />
+          {character && <XpRail character={character} />}
+          {/* Theme and sound moved behind the avatar; AccountMenu draws them in its sheet. */}
+          <AccountMenu />
+        </div>
+
+        <AdventurerHud />
+      </header>
+    )
+  }
+
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
       {/* One rail, reordered rather than duplicated: on narrow screens it wraps onto its
@@ -45,36 +67,44 @@ export function Header({ character, tab, onTabChange, badgeCount }: HeaderProps)
       </div>
 
       <nav className="mx-auto flex max-w-6xl gap-1 px-4" aria-label="Sections">
-        {TABS.map((entry) => {
-          const active = tab === entry.key
-
-          return (
-            <button
-              key={entry.key}
-              type="button"
-              onClick={() => onTabChange(entry.key)}
-              aria-current={active ? 'page' : undefined}
-              data-testid={`tab-${entry.key}`}
-              className={`relative px-3 py-2 text-[13px] font-medium transition-colors ${
-                active ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
-              }`}
-            >
-              {entry.label}
-              {entry.key === 'badges' && badgeCount > 0 && (
-                <span className="tabular ml-1.5 text-[10px] text-gold">{badgeCount}</span>
-              )}
-              {active && (
-                <motion.span
-                  layoutId="tab-underline"
-                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                  className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-gold"
-                />
-              )}
-            </button>
-          )
-        })}
+        <Tabs tab={tab} onTabChange={onTabChange} badgeCount={badgeCount} />
       </nav>
     </header>
+  )
+}
+
+function Tabs({ tab, onTabChange, badgeCount }: Omit<HeaderProps, 'character'>) {
+  return (
+    <>
+      {TABS.map((entry) => {
+        const active = tab === entry.key
+
+        return (
+          <button
+            key={entry.key}
+            type="button"
+            onClick={() => onTabChange(entry.key)}
+            aria-current={active ? 'page' : undefined}
+            data-testid={`tab-${entry.key}`}
+            className={`relative px-3 py-2 text-[13px] font-medium transition-colors ${
+              active ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
+            }`}
+          >
+            {entry.label}
+            {entry.key === 'badges' && badgeCount > 0 && (
+              <span className="tabular ml-1.5 text-[10px] text-gold">{badgeCount}</span>
+            )}
+            {active && (
+              <motion.span
+                layoutId="tab-underline"
+                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-gold"
+              />
+            )}
+          </button>
+        )
+      })}
+    </>
   )
 }
 
@@ -104,15 +134,21 @@ function StaminaPip() {
   )
 }
 
+function WordmarkDiamond({ size = 'h-7 w-7' }: { size?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid ${size} shrink-0 rotate-45 place-items-center rounded-[7px] border border-gold/50 bg-linear-to-br from-gold/25 to-transparent`}
+    >
+      <span className="-rotate-45 text-[11px] leading-none text-gold">&#9670;</span>
+    </span>
+  )
+}
+
 function Wordmark() {
   return (
     <div className="flex shrink-0 items-center gap-2.5">
-      <span
-        aria-hidden="true"
-        className="grid h-7 w-7 rotate-45 place-items-center rounded-[7px] border border-gold/50 bg-linear-to-br from-gold/25 to-transparent"
-      >
-        <span className="-rotate-45 text-[11px] leading-none text-gold">&#9670;</span>
-      </span>
+      <WordmarkDiamond />
       <span className="font-display text-[19px] leading-none tracking-tight">
         Quest<span className="text-gold">ward</span>
       </span>

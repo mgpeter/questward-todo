@@ -280,13 +280,20 @@ public class RpgEndpointTests(PostgresFixture postgres) : IAsyncLifetime
             (await _bob.DeleteAsync($"/api/rpg/inventory/{target}")).StatusCode);
     }
 
+    /// <summary>
+    /// Taking a weapon off and putting the same one back on, over the wire.
+    /// </summary>
+    /// <remarks>
+    /// Named for a swap until it was read closely: the slot is empty when the equip lands, so
+    /// this never has two rows equipped at once. The swap it claimed to cover is
+    /// <see cref="ForgeServiceTests.Equipping_over_an_occupied_slot_swaps_without_taking_the_old_one_off"/>,
+    /// which was written after the bug it would have caught reached a phone.
+    /// </remarks>
     [Fact]
-    public async Task Equipping_swaps_the_slot_and_updates_the_sheet()
+    public async Task Unequipping_and_re_equipping_the_same_weapon_restores_the_sheet()
     {
         await ChooseClassAsync(_alice, ClassCatalog.Fighter);
-        await GrantStaminaAsync(_alice);
 
-        // Win something to swap in.
         var inventory = await _alice.GetFromJsonAsync<List<ItemDto>>("/api/rpg/inventory");
         var equippedWeapon = inventory!.Single(i => i.Slot == "weapon");
 

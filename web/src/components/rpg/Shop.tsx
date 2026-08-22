@@ -1,7 +1,9 @@
-import { ChevronsUp, Coins, Dices, Timer, Zap } from 'lucide-react'
+import { Coins, Dices, Timer, Zap } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useBuyOffer, useInventory, useRerollShop, useShop, useUpgradeItem } from '../../lib/rpgQueries'
-import { affixesInForce, type InventoryItem, type Shop as ShopData } from '../../lib/rpg'
+import { useBuyOffer, useInventory, useRerollShop, useShop } from '../../lib/rpgQueries'
+import type { Shop as ShopData } from '../../lib/rpg'
+import { ItemStats } from './HuntChrome'
+import { UpgradeBench } from './UpgradeBench'
 
 export function Shop() {
   const shop = useShop()
@@ -13,7 +15,9 @@ export function Shop() {
     return <div className="panel h-72 animate-pulse rounded-2xl opacity-60" />
   }
 
-  const upgradeable = (inventory.data ?? []).filter((i) => i.rarity !== 'legendary')
+  // The server decides. It used to be `rarity !== 'legendary'` here, which offered potions the
+  // bench hard-refuses, because the consumable rule lived only on the server.
+  const upgradeable = (inventory.data ?? []).filter((i) => i.upgrade !== null)
 
   return (
     <div className="space-y-5" data-testid="shop">
@@ -75,16 +79,7 @@ export function Shop() {
 
             <p className="mt-1 flex-1 text-[12px] leading-snug text-ink-muted">{offer.blurb}</p>
 
-            <p className="tabular mt-2 flex flex-wrap gap-2 text-[10.5px] text-ink-faint">
-              <span className="capitalize">{offer.slot}</span>
-              {offer.damage && <span>{offer.damage}</span>}
-              {offer.armourBonus > 0 && <span>+{offer.armourBonus} AC</span>}
-              {offer.abilityBonuses.map((b) => (
-                <span key={b.label} className="text-teal">
-                  +{b.value} {b.label}
-                </span>
-              ))}
-            </p>
+            <ItemStats item={offer} size="small" className="mt-2" />
 
             <button
               type="button"
@@ -109,79 +104,12 @@ export function Shop() {
         ))}
       </ul>
 
-      {upgradeable.length > 0 && <UpgradeBench items={upgradeable} />}
+      {upgradeable.length > 0 && (
+        <UpgradeBench items={upgradeable} gold={shop.data?.gold ?? 0} />
+      )}
     </div>
   )
 }
-
-/**
- * Named for the route it calls, not "Reforge" as it once was. The forge now has a reforge
- * of its own that rerolls affix words for essence, and two buttons meaning different
- * things under one word is how a player spends the wrong currency.
- */
-function UpgradeBench({ items }: { items: InventoryItem[] }) {
-  const upgrade = useUpgradeItem()
-
-  return (
-    <section className="panel rounded-2xl p-5" data-testid="upgrade-bench">
-      <h3 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
-        <ChevronsUp size={12} />
-        Upgrade
-      </h3>
-      <p className="mt-1 text-[12px] text-ink-muted">
-        Pay gold to raise an item one rarity. Any words already on it grow with it, but gold
-        never buys a new one. Legendary is as far as it goes.
-      </p>
-
-      {upgrade.isError && (
-        <p role="alert" className="mt-2 text-[12px] text-rose">
-          {(upgrade.error as Error).message}
-        </p>
-      )}
-
-      <ul className="mt-3 space-y-2">
-        {items.map((item) => (
-          <li
-            key={item.id}
-            className={`rarity-${item.rarity} flex flex-wrap items-center gap-3 rounded-xl border border-line p-3`}
-            data-testid="upgrade-item"
-            data-rarity={item.rarity}
-          >
-            <span
-              aria-hidden="true"
-              className="h-7 w-1 shrink-0 rounded-full"
-              style={{ backgroundColor: 'var(--tier)' }}
-            />
-
-            <span className="min-w-0 flex-1 basis-48">
-              <span className="block text-[13.5px]">{item.name}</span>
-              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-faint">
-                <span className="capitalize">{item.rarity}</span>
-                {affixesInForce(item) > 0 && (
-                  <span className="text-teal">
-                    {affixesInForce(item) === 1 ? '1 word' : `${affixesInForce(item)} words`} grow
-                    stronger
-                  </span>
-                )}
-              </span>
-            </span>
-
-            <button
-              type="button"
-              onClick={() => upgrade.mutate(item.id)}
-              disabled={upgrade.isPending}
-              data-testid={`upgrade-${item.itemKey}`}
-              className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold disabled:opacity-40"
-            >
-              Upgrade
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
 /**
  * Pays stamina for a whole new shelf.
  *

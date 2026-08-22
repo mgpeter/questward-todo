@@ -379,6 +379,27 @@ export interface InventoryItem {
   quantity: number
   /** What using one does, at this row's rarity. Null for anything that is not a consumable. */
   useDescription: string | null
+  /**
+   * The next step at the bench, or null when there is not one.
+   *
+   * Null is the whole eligibility test: Legendary, consumables and retired keys all arrive
+   * without one. The bench used to ask `rarity !== 'legendary'` and so offered potions the
+   * server refuses. None of the arithmetic below can be done here - the cost needs the
+   * catalogue's base value, which is not on the wire.
+   */
+  upgrade: UpgradePreview | null
+}
+
+/** What one step at the upgrade bench costs, and what the item becomes. */
+export interface UpgradePreview {
+  toRarity: RarityName
+  cost: number
+  /** Armour at the next rarity, item and words together, as `armourBonus` is now. */
+  armourBonus: number
+  abilityBonuses: RollModifier[]
+  affixSlots: number
+  /** Only true crossing into Epic. Magnitude is 1 at Uncommon and Rare, 2 above. */
+  affixesGrow: boolean
 }
 
 /** Usable in a fight, which is the same test the use endpoint applies. */

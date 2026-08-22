@@ -1084,3 +1084,72 @@ broken `dotnet run` while the suite stayed green.
 This file already contains two entries numbered DEC-015, at the dungeon stamina decision and
 the recurrence one. Both are referenced by name elsewhere, so neither was renumbered; this
 entry is DEC-016 and the gap is only apparent.
+
+---
+
+## 2026-08-22: The Phone Renders a Different Tree, Not a Hidden One
+
+**ID:** DEC-017
+**Status:** Accepted
+**Category:** Technical
+**Stakeholders:** Tech Lead
+
+### Decision
+
+Below Tailwind's `sm` (640px) the app renders a mobile layout: one compact header row plus an
+adventurer HUD line, sections in a bottom bar, and card actions in bottom sheets. Which layout
+renders is decided in JavaScript by `useIsMobile()`, and exactly one of the two is ever in the
+DOM. Desktop is unchanged at 640px and above.
+
+Drag-and-drop stays a mouse gesture. The touch equivalent is `Start` in the task detail sheet,
+which takes the same `setStatus` route the keyboard chevrons already took.
+
+No new colour tokens. Every value the redesign needed was already in `index.css`.
+
+### Context
+
+On a 390px phone the old layout spent 118px on a header and a tab strip before the first task,
+put a 132px character medallion above the work, and hid every card action behind `:hover`. The
+app had 38 responsive utilities in total and `index.css` had exactly one media query.
+
+### Alternatives Considered
+
+1. **Render both trees and hide one with `sm:hidden` / `hidden sm:block`**
+   - Pros: no JavaScript, no breakpoint hook, no flash of the wrong layout on first paint.
+   - Cons: it duplicates every `data-testid` and every ARIA role in the document. DEC-010
+     records this exact defect already found once here - "a duplicated XP rail producing two
+     elements with the same test id and two ARIA progressbars" - and `verify-ui.mjs` has
+     asserted `xp-rail` count is exactly one at 390px ever since. With 184 test ids the
+     question is not whether it would happen again but where.
+
+2. **A separate mobile route or app shell**
+   - Pros: total freedom, no branching inside components.
+   - Cons: two component trees to keep in step for one product, and every mutation, query and
+     celebration wired twice. The parts that differ are layout, not behaviour.
+
+### Rationale
+
+`useSyncExternalStore` rather than state plus an effect, because the snapshot is read during
+render: a dozen components branch on this value and any two disagreeing within one pass
+recreates the duplicate-element defect the whole decision exists to avoid.
+
+Sheets portal into the app shell rather than `document.body`. The shell is `relative z-10`,
+which is a stacking context, so a body-level portal would escape the internal z-index ladder
+entirely and paint over the level-up overlay - which a sheet can itself trigger, by completing
+a task from the detail sheet.
+
+Reduced motion is handled once, by `MotionConfig reducedMotion="user"` in `main.tsx`. The
+global block in `index.css` clamps CSS durations and never reached motion's springs, so the
+level-up medallion and the tab underline had been ignoring the setting.
+
+### Consequences
+
+**Positive:** Every target on a phone clears 44px. Nothing is reachable only by hovering or
+only by dragging. The header costs 56px plus a HUD line instead of 118px. Reduced motion is
+now respected on desktop too, which it had not been.
+
+**Negative:** Components carry two layouts, and a change to one is not a change to the other.
+`verify-ui.mjs` has to reach the theme switch through the account sheet at 390px and directly
+in the header at 1360px, so its mobile section and its desktop section now diverge by more
+than a viewport size. The six D&D ability scores do not fit in the HUD line and are behind a
+disclosure on the character sheet; armour class and attack stand in for them.

@@ -4,8 +4,10 @@ import { FilterBar } from '../components/FilterBar'
 import { QuickAdd } from '../components/QuickAdd'
 import { TaskBoard } from '../components/TaskBoard'
 import { groupByStatus, useTasks, type TaskFilters } from '../lib/queries'
+import { useIsMobile } from '../lib/useMediaQuery'
 
 export function TasksView() {
+  const isMobile = useIsMobile()
   const [filters, setFilters] = useState<TaskFilters>({ status: 'all', search: '' })
   const tasks = useTasks(filters)
   const columns = groupByStatus(tasks.data)
@@ -25,7 +27,9 @@ export function TasksView() {
       */}
       <AdventurerStrip />
 
-      <QuickAdd />
+      {/* On a phone this is the add sheet, opened from the bottom bar. Inline it would be
+          a permanent 90px of form above a list you came here to read. */}
+      {!isMobile && <QuickAdd />}
 
       <FilterBar
         filters={filters}

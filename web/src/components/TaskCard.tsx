@@ -18,8 +18,11 @@ import {
   useSetTaskStatus,
 } from '../lib/queries'
 import { useGameFeed } from '../game/GameFeed'
+import { useIsMobile } from '../lib/useMediaQuery'
 import { TaskHuntSeal } from './rpg/TaskHuntSeal'
+import { SubtaskRow } from './SubtaskRow'
 import { TaskEditor } from './TaskEditor'
+import { TaskSheet } from './TaskSheet'
 
 const DUE_TONE_CLASS: Record<string, string> = {
   // Gold, not rose. An overdue task is a bounty and never a debuff (DEC-013), and a card
@@ -29,6 +32,14 @@ const DUE_TONE_CLASS: Record<string, string> = {
   today: 'text-tier-hard border-tier-hard/35 bg-tier-hard/8',
   soon: 'text-ink-muted border-line',
   future: 'text-ink-faint border-line',
+}
+
+/** The same tones as DUE_TONE_CLASS, without the pill the mobile meta line does not draw. */
+const DUE_TONE_TEXT: Record<string, string> = {
+  overdue: 'text-gold',
+  today: 'text-tier-hard',
+  soon: 'text-ink-muted',
+  future: 'text-ink-faint',
 }
 
 interface TaskCardProps {
@@ -48,7 +59,9 @@ export function TaskCard({
   onDragEnd,
   onDragOverCard,
 }: TaskCardProps) {
+  const isMobile = useIsMobile()
   const [editing, setEditing] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [addingSubtask, setAddingSubtask] = useState(false)
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const completeTask = useCompleteTask()
@@ -111,6 +124,136 @@ export function TaskCard({
 
   if (editing) {
     return <TaskEditor task={task} onClose={() => setEditing(false)} />
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <motion.li
+          layout
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+          className={`${meta.tierClass} panel relative overflow-hidden rounded-xl`}
+          data-testid="task-card"
+          data-task-title={task.title}
+          data-completed={task.isCompleted}
+          data-status={task.status}
+        >
+          {task.isCompleted ? (
+            // A finished quest is a receipt. The title, the tick and what it paid; every
+            // chip it used to carry is answerable in the sheet if anyone asks.
+            <div className="flex items-center gap-3 py-2.5 pr-3.5 pl-3">
+              <button
+                type="button"
+                onClick={toggle}
+                disabled={busy}
+                aria-pressed
+                aria-label={`Reopen ${task.title}`}
+                data-testid="task-toggle"
+                className="grid h-11 w-11 shrink-0 -my-2.5 place-items-center disabled:opacity-50"
+              >
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-teal text-canvas">
+                  <Check size={13} strokeWidth={3.5} />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSheetOpen(true)}
+                data-testid="task-open"
+                className="min-w-0 flex-1 truncate py-1 text-left text-[14px] text-ink-muted line-through decoration-ink-faint"
+              >
+                {task.title}
+              </button>
+
+              <span className="tabular shrink-0 text-[11px]" style={{ color: 'var(--tier)' }}>
+                +{task.xpAwarded} XP
+              </span>
+            </div>
+          ) : (
+            <>
+              <span
+                aria-hidden="true"
+                className="absolute inset-y-0 left-0 w-[3px]"
+                style={{ backgroundColor: 'var(--tier)', opacity: 0.85 }}
+              />
+
+              <div className="flex items-center gap-3 py-3 pr-3 pl-3.5">
+                {/* 26px of ring inside a 44px target. The negative margins keep the card the
+                    height the ring implies rather than the height the target needs. */}
+                <button
+                  type="button"
+                  onClick={toggle}
+                  disabled={busy}
+                  aria-pressed={false}
+                  aria-label={`Complete ${task.title}`}
+                  data-testid="task-toggle"
+                  className="grid h-11 w-11 shrink-0 -my-3 -ml-1 place-items-center disabled:opacity-50"
+                >
+                  <span className="block h-[26px] w-[26px] rounded-full border-2 border-line-strong" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSheetOpen(true)}
+                  data-testid="task-open"
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block text-[15.5px] leading-snug text-pretty">{task.title}</span>
+
+                  {/* One line, and it never wraps. Priority, recurrence and the rest of the
+                      tags are in the sheet: four wrapping chip rows was the old card's
+                      whole height problem. */}
+                  <span
+                    className="mt-1.5 flex items-center gap-2 text-[11px] text-ink-faint"
+                    data-testid="task-meta"
+                  >
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className="h-[7px] w-[7px] rounded-[2px]"
+                        style={{ backgroundColor: 'var(--tier)' }}
+                      />
+                      {meta.label}
+                    </span>
+
+                    <span className="tabular shrink-0">{meta.xp} XP</span>
+
+                    {due.tone !== 'none' && (
+                      <span
+                        data-testid="task-due"
+                        className={`shrink-0 truncate ${DUE_TONE_TEXT[due.tone]}`}
+                      >
+                        {due.label}
+                      </span>
+                    )}
+
+                    {task.tags.length > 0 && (
+                      <span data-testid="task-tag" className="ml-auto min-w-0 truncate">
+                        {task.tags[0]}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </div>
+
+              <TaskHuntSeal task={task} variant="strip" />
+            </>
+          )}
+        </motion.li>
+
+        <TaskSheet
+          task={task}
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          onEdit={() => {
+            setSheetOpen(false)
+            setEditing(true)
+          }}
+        />
+      </>
+    )
   }
 
   const canMoveLeft = taskProgressOrder.indexOf(task.status) > 0
@@ -352,59 +495,5 @@ export function TaskCard({
         </button>
       </div>
     </motion.li>
-  )
-}
-
-/**
- * A step inside a task. Ticking one is real progress and worth showing, but it pays
- * nothing, so it gets no XP float and no celebration.
- */
-function SubtaskRow({ subtask }: { subtask: Task }) {
-  const completeTask = useCompleteTask()
-  const reopenTask = useReopenTask()
-  const deleteTask = useDeleteTask()
-
-  const busy = completeTask.isPending || reopenTask.isPending
-
-  return (
-    <li className="group/step flex items-center gap-2" data-testid="subtask">
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() =>
-          subtask.isCompleted
-            ? reopenTask.mutate(subtask.id)
-            : completeTask.mutate(subtask.id)
-        }
-        aria-pressed={subtask.isCompleted}
-        aria-label={subtask.isCompleted ? `Reopen ${subtask.title}` : `Complete ${subtask.title}`}
-        title="Steps track progress. The XP is paid when the task itself is finished."
-        data-testid="subtask-toggle"
-        className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded border transition disabled:opacity-50 ${
-          subtask.isCompleted
-            ? 'border-teal bg-teal text-canvas'
-            : 'border-line-strong hover:border-gold'
-        }`}
-      >
-        {subtask.isCompleted && <Check size={9} strokeWidth={4} />}
-      </button>
-
-      <span
-        className={`min-w-0 flex-1 truncate text-[12.5px] ${
-          subtask.isCompleted ? 'text-ink-faint line-through' : 'text-ink-muted'
-        }`}
-      >
-        {subtask.title}
-      </span>
-
-      <button
-        type="button"
-        onClick={() => deleteTask.mutate(subtask.id)}
-        aria-label={`Delete ${subtask.title}`}
-        className="rounded p-0.5 text-ink-faint opacity-0 transition group-hover/step:opacity-100 hover:text-rose"
-      >
-        <Trash2 size={11} />
-      </button>
-    </li>
   )
 }

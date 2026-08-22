@@ -155,6 +155,16 @@ public sealed record ItemDefinition(
 
     public int ValueAt(Rarity rarity) => BaseValue * RarityRules.ValueMultiplier(rarity);
 
+    /// <summary>What the bench charges to raise this item to <paramref name="target"/>.</summary>
+    /// <remarks>
+    /// The difference between what the item is worth either side of the step, floored so the
+    /// cheapest trinket still costs something. Here beside ValueAt rather than on ShopService,
+    /// because the inventory mapper has to quote the price on every row and reaching into a
+    /// service for a rule that is pure catalog arithmetic is how two copies of it start.
+    /// </remarks>
+    public int UpgradeCostTo(Rarity target) =>
+        Math.Max(25, ValueAt(target) - ValueAt(target - 1));
+
     /// <summary>All six bonuses at zero, the additive identity for ability bonuses.</summary>
     public static AbilityScores Zero => AbilityScores.Zero;
 }

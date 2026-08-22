@@ -446,6 +446,8 @@ async function main() {
     await page.click('[data-theme-option="light"]')
 
     // ---------------------------------------------------------------- mobile
+    const MOBILE_TASK = 'Added from the sheet'
+
     step('[responsive] the layout holds at phone width')
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForTimeout(400)
@@ -460,12 +462,107 @@ async function main() {
       'Exactly one XP rail exists in the DOM',
     )
     check(await page.locator('[data-testid="xp-rail"]').isVisible(), 'The XP rail is visible on mobile')
+
+    // The compact rail drops the 40px badge, and the sections moved to the bottom bar.
+    checkEqual(
+      await page.locator('[data-testid="level-badge"]').count(),
+      0,
+      'The compact rail drops the level badge',
+    )
+    checkEqual(
+      await page.locator('[data-testid="bottom-nav"]').count(),
+      1,
+      'The bottom bar exists at 390px',
+    )
+    checkEqual(
+      await page.locator('[data-testid="tab-tasks"]').count(),
+      0,
+      'The top tab strip is gone below sm',
+    )
+
+    for (const key of ['tasks', 'adventure', 'record', 'badges', 'add']) {
+      const box = await page.locator(`[data-testid="bottom-nav-${key}"]`).boundingBox()
+      check(
+        Boolean(box) && box.height >= 44,
+        `The ${key} target clears 44px (${box ? Math.round(box.height) : 0}px)`,
+      )
+    }
+
     await shoot(page, '09-mobile-light')
 
-    await page.click('[data-theme-option="dark"]')
-    await page.waitForTimeout(300)
+    // The add form is a sheet on a phone, so this is the mobile equivalent of the desktop
+    // quick-add path above. It also proves the sheet primitive: the page behind is pinned
+    // rather than merely hidden, and focus actually lands inside.
+    step('[responsive] the add sheet takes a quest')
+    await page.click('[data-testid="bottom-nav-add"]')
+    await page.waitForSelector('[data-testid="add-sheet"]')
+
+    check(
+      await page.evaluate(() => getComputedStyle(document.body).position === 'fixed'),
+      'The page behind the sheet is scroll-locked',
+    )
+    check(
+      await page.evaluate(() =>
+        document.querySelector('[data-testid="add-sheet"]')?.contains(document.activeElement),
+      ),
+      'Focus moves into the sheet',
+    )
+
+    await page.click('[data-testid="add-sheet"] [data-testid="difficulty-option-easy"]')
+    await page.fill('[data-testid="add-sheet"] [data-testid="quick-add-input"]', MOBILE_TASK)
+    await page.click('[data-testid="add-sheet"] [data-testid="quick-add-submit"]')
+    await page.waitForSelector('[data-testid="add-sheet"]', { state: 'detached' })
+    await page.waitForSelector(`[data-task-title="${MOBILE_TASK}"]`)
+    check(true, 'A quest added from the sheet reaches the board')
+
+    check(
+      await page.evaluate(() => getComputedStyle(document.body).position !== 'fixed'),
+      'The scroll lock lifts when the sheet closes',
+    )
+
+    // Everything the card stopped showing is one tap away, including the actions that used
+    // to sit behind a hover no phone can produce.
+    step('[responsive] the card opens its detail sheet')
+    await page.click(`[data-task-title="${MOBILE_TASK}"] [data-testid="task-open"]`)
+    await page.waitForSelector('[data-testid="task-sheet"]')
+
+    for (const testId of ['task-sheet-complete', 'task-sheet-edit', 'task-sheet-delete']) {
+      checkEqual(
+        await page.locator(`[data-testid="task-sheet"] [data-testid="${testId}"]`).count(),
+        1,
+        `The sheet carries ${testId}`,
+      )
+    }
+
+    await page.click('[data-testid="task-sheet-close"]')
+    await page.waitForSelector('[data-testid="task-sheet"]', { state: 'detached' })
+    check(true, 'The detail sheet closes')
+
+    // Theme moved behind the avatar, so it is reached through the account sheet now.
+    // Scoped to the sheet on purpose: this fails loudly if the toggle is ever left mounted
+    // in the header as well, rather than passing against the wrong node.
+    const themeOnMobile = async (value) => {
+      await page.click('[data-testid="account-menu"]')
+      await page.waitForSelector('[data-testid="account-sheet"]')
+      await page.click(`[data-testid="account-sheet"] [data-theme-option="${value}"]`)
+      await page.click('[data-testid="account-sheet-close"]')
+      await page.waitForSelector('[data-testid="account-sheet"]', { state: 'detached' })
+    }
+
+    await themeOnMobile('dark')
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'))
+    check(true, 'Dark can be chosen from the account sheet on mobile')
     await shoot(page, '10-mobile-dark')
-    await page.click('[data-theme-option="light"]')
+
+    // A sheet in dark is the surface with the least review behind it: five of them were
+    // added at once, and 10-mobile-dark shows the shell with every one of them shut.
+    await page.click('[data-testid="bottom-nav-add"]')
+    await page.waitForSelector('[data-testid="add-sheet"]')
+    await shoot(page, '11-mobile-sheet-dark')
+    await page.click('[data-testid="add-sheet-close"]')
+    await page.waitForSelector('[data-testid="add-sheet"]', { state: 'detached' })
+
+    await themeOnMobile('light')
 
     // ------------------------------------------------------------ diagnostics
     step('[diagnostics] console and network stayed clean')

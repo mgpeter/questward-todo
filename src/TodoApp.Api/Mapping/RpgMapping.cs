@@ -386,7 +386,48 @@ public static class RpgMapping
             ForgeRules.ReforgeCost(item.Rarity),
             item.Quantity,
             // At the rolled rarity, not at Common, so the card says what this row actually does.
-            definition?.Use?.At(item.Rarity).Describe());
+            definition?.Use?.At(item.Rarity).Describe(),
+            UpgradePreview(item, definition));
+    }
+
+    /// <summary>
+    /// What the bench would charge for this row, and what the row would become.
+    /// </summary>
+    /// <remarks>
+    /// The refusals mirror ShopService.UpgradeAsync exactly - Legendary is the ceiling, the bench
+    /// does not work on what you drink, and a retired key has no catalogue entry to price. Null
+    /// for all three, so the client filters on "is there a next step" instead of restating the
+    /// rule and getting it wrong.
+    ///
+    /// Every number comes from the same function the upgrade itself calls, so the only way this
+    /// can lie is if one of them changes and the other does not.
+    /// </remarks>
+    private static UpgradePreviewDto? UpgradePreview(InventoryItem item, ItemDefinition? definition)
+    {
+        if (definition is null || item.Slot == ItemSlot.Consumable || item.Rarity >= Rarity.Legendary)
+        {
+            return null;
+        }
+
+        var target = item.Rarity + 1;
+
+        // Intrinsic bonus at the new rarity plus the affixes at their new tier, which is what
+        // InventoryItem.AbilityBonuses and .ArmourBonus sum for the current one.
+        var affixes = AffixRules.EffectsOf(item, target);
+        var scores = definition.AbilityBonusesAt(target).Plus(affixes.Abilities);
+
+        var bonuses = AbilityScores.All
+            .Select(a => new RollModifierDto(AbilityScores.Abbreviate(a), scores[a]))
+            .Where(m => m.Value != 0)
+            .ToList();
+
+        return new UpgradePreviewDto(
+            RarityRules.Describe(target),
+            definition.UpgradeCostTo(target),
+            definition.ArmourBonusAt(target) + affixes.ArmourBonus,
+            bonuses,
+            AffixRules.RollableFor(item.Slot, target),
+            AffixRules.TierAt(target) > AffixRules.TierAt(item.Rarity));
     }
 
     public static QuestDto ToDto(this QuestView quest) => new(

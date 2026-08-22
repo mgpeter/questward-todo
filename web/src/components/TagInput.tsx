@@ -6,6 +6,12 @@ interface TagInputProps {
   value: string[]
   onChange: (tags: string[]) => void
   testId?: string
+  /**
+   * `touch` grows the chips and the field to a thumb-sized target, for the sheets. The
+   * datalist is dropped there too: mobile browsers either ignore it or bury it behind the
+   * keyboard's own suggestion strip, so the callers offer the known tags as chips instead.
+   */
+  size?: 'compact' | 'touch'
 }
 
 /**
@@ -15,7 +21,13 @@ interface TagInputProps {
  * word each time, and an empty box invites "work", "Work" and "job". The server also
  * de-duplicates case-insensitively, so this is help rather than the guarantee.
  */
-export function TagInput({ value, onChange, testId = 'tag-input' }: TagInputProps) {
+export function TagInput({
+  value,
+  onChange,
+  testId = 'tag-input',
+  size = 'compact',
+}: TagInputProps) {
+  const touch = size === 'touch'
   const [draft, setDraft] = useState('')
   const known = useTags()
 
@@ -44,12 +56,14 @@ export function TagInput({ value, onChange, testId = 'tag-input' }: TagInputProp
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid={testId}>
-      <Tag size={12} className="shrink-0 text-ink-faint" />
+      <Tag size={touch ? 14 : 12} className="shrink-0 text-ink-faint" />
 
       {value.map((tag) => (
         <span
           key={tag}
-          className="flex items-center gap-1 rounded-full bg-surface-sunk px-2 py-0.5 text-[10.5px] text-ink-muted"
+          className={`flex items-center gap-1 rounded-full bg-surface-sunk text-ink-muted ${
+            touch ? 'gap-1.5 px-3 py-2 text-[12px]' : 'px-2 py-0.5 text-[10.5px]'
+          }`}
         >
           {tag}
           <button
@@ -58,14 +72,14 @@ export function TagInput({ value, onChange, testId = 'tag-input' }: TagInputProp
             aria-label={`Remove tag ${tag}`}
             className="text-ink-faint transition hover:text-rose"
           >
-            <X size={9} />
+            <X size={touch ? 12 : 9} />
           </button>
         </span>
       ))}
 
       <input
         value={draft}
-        list="known-tags"
+        list={touch ? undefined : 'known-tags'}
         maxLength={32}
         placeholder={value.length ? '' : 'Tags'}
         aria-label="Add a tag"
@@ -73,14 +87,20 @@ export function TagInput({ value, onChange, testId = 'tag-input' }: TagInputProp
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={keyDown}
         onBlur={() => add(draft)}
-        className="w-20 min-w-0 bg-transparent text-[11px] text-ink-muted outline-none placeholder:text-ink-faint"
+        className={`min-w-0 bg-transparent text-ink-muted outline-none placeholder:text-ink-faint ${
+          touch ? 'w-24 py-2 text-[12px]' : 'w-20 text-[11px]'
+        }`}
       />
 
-      <datalist id="known-tags">
-        {(known.data ?? []).map((tag) => (
-          <option key={tag} value={tag} />
-        ))}
-      </datalist>
+      {/* One datalist, one fixed id, so only the compact fields may draw it: two mounted at
+          once would put two #known-tags in the document. */}
+      {!touch && (
+        <datalist id="known-tags">
+          {(known.data ?? []).map((tag) => (
+            <option key={tag} value={tag} />
+          ))}
+        </datalist>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ export function ToastStack() {
 
   return (
     <div
-      className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-[280px] flex-col gap-2"
+      className="pointer-events-none fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 flex w-[280px] flex-col gap-2"
       role="status"
       aria-live="polite"
     >

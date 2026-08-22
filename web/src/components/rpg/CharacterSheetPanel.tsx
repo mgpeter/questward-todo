@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { motion } from 'motion/react'
+import { useState, type ReactNode } from 'react'
 import {
   affixesInForce,
   canImbue,
@@ -22,6 +23,8 @@ import {
   type SetProgress,
 } from '../../lib/rpg'
 import { useCraftItem, useEquip, useRest, useSalvageItem, useSellItem } from '../../lib/rpgQueries'
+import { useIsMobile } from '../../lib/useMediaQuery'
+import { ItemStats } from './HuntChrome'
 
 export function CharacterSheetPanel({
   sheet,
@@ -32,6 +35,9 @@ export function CharacterSheetPanel({
   inventory: InventoryItem[]
   onChangeClass: () => void
 }) {
+  const isMobile = useIsMobile()
+  const [abilitiesOpen, setAbilitiesOpen] = useState(false)
+
   return (
     <div className="space-y-5" data-testid="character-sheet">
       <section className="panel rounded-2xl p-5">
@@ -48,46 +54,79 @@ export function CharacterSheetPanel({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onChangeClass}
-            data-testid="change-class"
-            className="rounded-lg border border-line px-3 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold"
-          >
-            {sheet.classKey ? 'Change class' : 'Choose a class'}
-          </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={onChangeClass}
+              data-testid="change-class"
+              className="rounded-lg border border-line px-3 py-1.5 text-[11.5px] text-ink-muted transition hover:border-gold hover:text-gold"
+            >
+              {sheet.classKey ? 'Change class' : 'Choose a class'}
+            </button>
+          )}
         </header>
 
-        {/* Four columns at lg, not five: Recovery spans two, so seven tiles fill 4 + 4 exactly. */}
+        {/*
+          Recovery spans two columns and is drawn second, so at grid-cols-2 it cannot sit
+          beside Hit points and wraps, stranding an empty cell in the first row and leaving
+          Essence alone in a fifth. Lifting Stamina into that gap fills both: five rows and
+          two holes become four rows and none.
+
+          Order only, and only below sm. The same sequence happens to tile 4 + 4 on the board
+          as well, but it would move Stamina on a layout that is already right.
+        */}
         <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-          <Stat icon={<Heart size={13} />} label="Hit points" testId="stat-hp">
-            <span className="tabular">
-              {sheet.currentHitPoints}
-              <span className="text-ink-faint">/{sheet.maxHitPoints}</span>
-            </span>
-          </Stat>
-          <Recovery sheet={sheet} />
-          <Stat icon={<Shield size={13} />} label="Armour class" testId="stat-ac">
-            <span className="tabular">{sheet.armourClass}</span>
-          </Stat>
-          <Stat icon={<Swords size={13} />} label="Attack" testId="stat-attack">
-            <span className="tabular">
-              +{sheet.attackBonus}
-              <span className="ml-1 text-[11px] text-ink-faint">{sheet.damage}</span>
-            </span>
-          </Stat>
-          <Stat icon={<Zap size={13} />} label="Stamina" testId="stat-stamina">
-            <span className="tabular text-teal">{sheet.stamina}</span>
-          </Stat>
-          <Stat icon={<Coins size={13} />} label="Gold" testId="stat-gold">
-            <span className="tabular text-gold">{sheet.gold.toLocaleString()}</span>
-          </Stat>
-          <Stat icon={<Gem size={13} />} label="Essence" testId="stat-essence">
-            <span className="tabular text-teal">{sheet.essence.toLocaleString()}</span>
-          </Stat>
+          {orderedStats(
+            {
+              hitPoints: (
+                <Stat key="hp" icon={<Heart size={13} />} label="Hit points" testId="stat-hp">
+                  <span className="tabular">
+                    {sheet.currentHitPoints}
+                    <span className="text-ink-faint">/{sheet.maxHitPoints}</span>
+                  </span>
+                </Stat>
+              ),
+              recovery: <Recovery key="recovery" sheet={sheet} />,
+              armourClass: (
+                <Stat key="ac" icon={<Shield size={13} />} label="Armour class" testId="stat-ac">
+                  <span className="tabular">{sheet.armourClass}</span>
+                </Stat>
+              ),
+              attack: (
+                <Stat key="attack" icon={<Swords size={13} />} label="Attack" testId="stat-attack">
+                  <span className="tabular">
+                    +{sheet.attackBonus}
+                    <span className="ml-1 text-[11px] text-ink-faint">{sheet.damage}</span>
+                  </span>
+                </Stat>
+              ),
+              stamina: (
+                <Stat key="stamina" icon={<Zap size={13} />} label="Stamina" testId="stat-stamina">
+                  <span className="tabular text-teal">{sheet.stamina}</span>
+                </Stat>
+              ),
+              gold: (
+                <Stat key="gold" icon={<Coins size={13} />} label="Gold" testId="stat-gold">
+                  <span className="tabular text-gold">{sheet.gold.toLocaleString()}</span>
+                </Stat>
+              ),
+              essence: (
+                <Stat key="essence" icon={<Gem size={13} />} label="Essence" testId="stat-essence">
+                  <span className="tabular text-teal">{sheet.essence.toLocaleString()}</span>
+                </Stat>
+              ),
+            },
+            isMobile,
+          )}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {/* Six tiles of two-digit numbers nobody reads every visit. Behind a disclosure on
+            a phone, and always open on a board that has the width for them. */}
+        <div
+          className={`mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6 ${
+            isMobile && !abilitiesOpen ? 'hidden' : ''
+          }`}
+        >
           {sheet.abilities.map((ability) => (
             <div
               key={ability.key}
@@ -110,6 +149,27 @@ export function CharacterSheetPanel({
             </div>
           ))}
         </div>
+        {isMobile && (
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={onChangeClass}
+              data-testid="change-class"
+              className="min-h-11 flex-1 rounded-xl bg-ink py-3 text-[12.5px] font-medium text-canvas transition"
+            >
+              {sheet.classKey ? 'Change class' : 'Choose a class'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAbilitiesOpen((open) => !open)}
+              aria-expanded={abilitiesOpen}
+              data-testid="toggle-abilities"
+              className="min-h-11 flex-1 rounded-xl border border-line py-3 text-[12.5px] font-medium text-ink-muted transition"
+            >
+              Abilities
+            </button>
+          </div>
+        )}
       </section>
 
       <Sets sets={sheet.sets} />
@@ -317,6 +377,14 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
         </p>
       )}
 
+      {/* Equipping had no error line at all, which is how a swap that was failing every
+          other time read as a dead button rather than as a bug. */}
+      {equip.isError && (
+        <p role="alert" className="mb-2 text-[12px] text-rose" data-testid="equip-error">
+          {(equip.error as Error).message}
+        </p>
+      )}
+
       {spoke === craft && craft.isSuccess && craft.data && (
         <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-[12px] text-teal" data-testid="forge-result">
           <Sparkles size={12} className="shrink-0 self-center" />
@@ -378,16 +446,7 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
                   )}
                 </p>
 
-                <p className="tabular mt-1 flex flex-wrap gap-2 text-[11px] text-ink-faint">
-                  <span className="capitalize">{item.slot}</span>
-                  {item.damage && <span>{item.damage}</span>}
-                  {item.armourBonus > 0 && <span>+{item.armourBonus} AC</span>}
-                  {item.abilityBonuses.map((b) => (
-                    <span key={b.label} className="text-teal">
-                      +{b.value} {b.label}
-                    </span>
-                  ))}
-                </p>
+                <ItemStats item={item} className="mt-1" />
 
                 {usable && (
                   <p className="mt-1 text-[11.5px] leading-snug text-teal" data-testid="item-use">
@@ -506,4 +565,18 @@ function Affix({ word }: { word: string }) {
       {word}
     </span>
   )
+}
+
+/**
+ * The seven readings, in the order the width can carry.
+ *
+ * Named rather than positional so the two orders can be read side by side and the difference
+ * is one word, which is all it is.
+ */
+function orderedStats(tiles: Record<string, ReactNode>, isMobile: boolean): ReactNode[] {
+  const order = isMobile
+    ? ['hitPoints', 'stamina', 'recovery', 'armourClass', 'attack', 'gold', 'essence']
+    : ['hitPoints', 'recovery', 'armourClass', 'attack', 'stamina', 'gold', 'essence']
+
+  return order.map((key) => tiles[key])
 }
