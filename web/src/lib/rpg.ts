@@ -284,6 +284,13 @@ export interface Encounter {
    */
   effects?: StatusEffect[]
   goldAwarded: number
+  /**
+   * Every line of the fight, oldest first, in the order the events happened.
+   *
+   * Position is the only sequence record: a CombatRoll has no ordinal and no timestamp, and a
+   * whole round shares one `round`. EncounterView groups this into rounds and draws the newest
+   * first; it never reverses the array, which is shared with the query cache.
+   */
   log: CombatRoll[]
   startedAt: string
   endedAt: string | null
