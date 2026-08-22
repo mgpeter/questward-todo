@@ -159,6 +159,15 @@ public sealed record EncounterDto(
     /// </param>
     IReadOnlyList<StatusEffectDto> Effects,
     int GoldAwarded,
+    /// <param name="Log">
+    /// Every line of the fight, oldest first, in the order the events happened.
+    ///
+    /// Stated because the order is the only sequence record there is: a CombatRoll carries no
+    /// ordinal and no timestamp, and one round stamps its attack, its damage, the monster's
+    /// reply and the tick with the same Round. Position is what says which came first, so a
+    /// consumer that wants the newest at the top reverses on the way to the screen and leaves
+    /// this alone.
+    /// </param>
     IReadOnlyList<CombatRollDto> Log,
     DateTimeOffset StartedAt,
     DateTimeOffset? EndedAt);

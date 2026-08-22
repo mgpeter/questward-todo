@@ -49,7 +49,9 @@ export function DiceRoll({ roll, index }: { roll: CombatRoll; index: number }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
+      // From above, because the log is fed from the top now. Sliding up from below read as
+      // the line having come from the history underneath it.
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.12, type: 'spring', stiffness: 320, damping: 26 }}
       className={`flex flex-wrap items-center gap-1.5 py-1.5 ${isPlayer ? '' : 'pl-4'}`}

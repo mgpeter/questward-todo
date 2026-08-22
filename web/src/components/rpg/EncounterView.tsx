@@ -1,14 +1,52 @@
 import { Swords } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { ReactNode } from 'react'
-import type { AttackResult, CharacterSheet, Encounter, InventoryItem } from '../../lib/rpg'
+import type {
+  AttackResult,
+  CharacterSheet,
+  CombatRoll,
+  Encounter,
+  InventoryItem,
+} from '../../lib/rpg'
 import { play } from '../../lib/sound'
 import { useAbility, useAttack, useConsumeItem, useFlee } from '../../lib/rpgQueries'
-import { useStickToBottom } from '../../lib/useStickToBottom'
 import { ConsumableTray } from './ConsumableTray'
 import { DiceRoll } from './DiceRoll'
 import { PhaseBanner, PhaseChip } from './PhaseBanner'
 import { StatusEffectStrip } from './StatusEffectStrip'
+
+/** One log entry, with the position it holds in the chronological log. */
+interface LoggedRoll {
+  roll: CombatRoll
+  index: number
+}
+
+/**
+ * The log as rounds, newest round first, each round still reading in the order it happened.
+ *
+ * Grouped rather than reversed entry by entry, because position in the array is the only
+ * record that the player swung before the monster answered: CombatRoll carries no ordinal and
+ * no timestamp, and every line of a round shares one round number. Reversing the lines would
+ * throw that away and put the damage above the blow that caused it.
+ *
+ * The source array is never touched - it lives in the query cache, and reversing in place
+ * would reorder it for the audio cues and for the chronicle too.
+ */
+function groupByRound(log: CombatRoll[]): { round: number; rolls: LoggedRoll[] }[] {
+  const rounds: { round: number; rolls: LoggedRoll[] }[] = []
+
+  log.forEach((roll, index) => {
+    const current = rounds[rounds.length - 1]
+
+    if (current && current.round === roll.round) {
+      current.rolls.push({ roll, index })
+    } else {
+      rounds.push({ round: roll.round, rolls: [{ roll, index }] })
+    }
+  })
+
+  return rounds.reverse()
+}
 
 /**
  * A round's cues, in the order the log reads.
@@ -104,13 +142,18 @@ export function EncounterView({
     Math.round((sheet.currentHitPoints / Math.max(1, sheet.maxHitPoints)) * 100),
   )
 
-  // Only the newest round animates; the rest of the log is history.
+  // Only the newest round animates; the rest of the log is history. Read off the tail because
+  // the log itself is still oldest first - only the grouping below is reversed.
   const latestRound = encounter.log.length > 0 ? encounter.log[encounter.log.length - 1].round : 0
 
-  // The log reads oldest first, like a fight does, so the newest entry is the one off the
-  // bottom of the container. Follow it rather than reversing the order and making a fight
-  // read backwards.
-  const log = useStickToBottom<HTMLDivElement>(encounter.log.length)
+  // Newest round at the top, and the exchange inside it still reading downward.
+  //
+  // This used to follow the newest line down to the bottom of the container instead, on the
+  // grounds that reversing would make a fight read backwards. That was right about reversing
+  // line by line - you would see the damage above the blow that caused it - and it is what
+  // grouping by round answers: the block moves, the blows inside it do not. Following the
+  // bottom also meant the line you just caused was the one place a phone could not see.
+  const rounds = groupByRound(encounter.log)
 
   // Refusals from the round-resolving actions are worth a sentence. "You have none left" is
   // reachable by clicking a tray that is one refetch stale, and a silent no-op there reads
@@ -236,19 +279,31 @@ export function EncounterView({
           Combat log
         </h3>
 
-        <div
-          ref={log.ref}
-          onScroll={log.onScroll}
-          className="max-h-96 divide-y divide-line overflow-y-auto"
-          data-testid="combat-log"
-        >
+        {/* No scroll handling: the newest round is at the top, which is where the container
+            already rests. Content arriving above a reader who has scrolled down is held in
+            place by the browser's own scroll anchoring, which is the behaviour wanted. */}
+        <div className="max-h-96 overflow-y-auto" data-testid="combat-log">
           <AnimatePresence initial={false}>
-            {encounter.log.map((roll, index) => (
-              <DiceRoll
-                key={`${roll.round}-${index}`}
-                roll={roll}
-                index={roll.round === latestRound ? index % 4 : 0}
-              />
+            {rounds.map((round) => (
+              <div key={round.round} data-testid="log-round" data-round={round.round}>
+                <p className="tabular border-b border-line py-1 text-[10px] tracking-[0.14em] text-ink-faint uppercase">
+                  {/* Round 0 is the two opening lines, written before anyone has swung. */}
+                  {round.round === 0 ? 'The fight opens' : `Round ${round.round}`}
+                </p>
+
+                <div className="divide-y divide-line">
+                  {round.rolls.map((entry, position) => (
+                    // Keyed on where the entry sits in the log, never on where it is drawn.
+                    // A new round unshifts the display order, so a display-position key would
+                    // change on every attack and AnimatePresence would replay the whole fight.
+                    <DiceRoll
+                      key={entry.index}
+                      roll={entry.roll}
+                      index={round.round === latestRound ? position : 0}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </AnimatePresence>
         </div>
