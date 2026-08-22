@@ -168,7 +168,7 @@ public static class FactionCatalog
 
         new(TheAthenaeum, "The Athenaeum",
             "A room of books nobody has finished. Yours is on the third shelf.",
-            ["study", "learning", "reading", "research"],
+            ["study", "learning", "reading", "research", "school"],
             ["Unread", "Enrolled", "Reader", "Fellow", "Keeper of the Stacks"],
             [
                 new LootEntry(ItemCatalog.PhilosophersInkstone, 3),
@@ -256,7 +256,7 @@ public static class FactionCatalog
     /// ["urgent", "Work"] still musters under the Ledger.
     /// <para>
     /// A tag that names no banner falls to <see cref="TheMotley"/> rather than to nothing
-    /// (DEC-019). The twenty alias words are the whole vocabulary, and a task tagged "projects"
+    /// (DEC-019). The twenty-one alias words are the whole vocabulary, and a task tagged "projects"
     /// or "errands" used to fly no banner and therefore pay no item at all - a silent penalty for
     /// not knowing a list the app never showed. The fallback is last in the chain, so a real
     /// match always beats it: ["projects", "work"] is still the Ledger.
