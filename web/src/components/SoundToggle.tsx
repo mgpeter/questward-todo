@@ -11,23 +11,25 @@ interface SoundToggleProps {
 }
 
 /**
- * One control, two states, off by default.
+ * One control, two states, on by default.
  *
- * Sound that starts on is the most hostile default a web app has, and a user who wants it
- * will find one obvious button. Reduced motion is read once, to explain the default rather
- * than to enforce it: someone who turned sound on and later asks for reduced motion keeps
- * their sound, because quietly reversing a decision they made by hand is worse than the
+ * The cues carry combat information the screen does not: a critical, a miss and a coin all
+ * sound different, and a fight with them switched off reads as a fight that is not resolving.
+ * Nothing plays until a fight does, so the hostile case a silent default protects against -
+ * a page that makes noise on load - cannot happen here. Reduced motion is read once, to
+ * describe the setting rather than to enforce it: someone who asked for reduced motion has
+ * asked about motion, and reversing a separate decision on their behalf is worse than the
  * thing it would be protecting them from.
  */
 export function SoundToggle({ variant = 'icon' }: SoundToggleProps) {
   const on = useSyncExternalStore(subscribeSound, isSoundOn)
   const [reduced] = useState(prefersReducedMotion)
 
-  const title = on
-    ? 'Combat sound on'
+  const title = !on
+    ? 'Combat sound off'
     : reduced
-      ? 'Combat sound off. You have asked for reduced motion, so it stays off until you turn it on.'
-      : 'Combat sound off'
+      ? 'Combat sound on. You have asked for reduced motion, which is a separate setting; this button is the one that silences it.'
+      : 'Combat sound on'
 
   const Icon = on ? Volume2 : VolumeX
 
@@ -45,7 +47,7 @@ export function SoundToggle({ variant = 'icon' }: SoundToggleProps) {
         <span className="min-w-0 flex-1">
           <span className="block text-[14.5px]">Combat sound</span>
           <span className="mt-0.5 block text-[11.5px] text-ink-faint">
-            Off by default. Dice, hits and coins.
+            On by default. Dice, hits and coins.
           </span>
         </span>
 

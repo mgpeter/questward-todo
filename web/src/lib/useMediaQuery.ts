@@ -72,7 +72,7 @@ export function useIsMobile(): boolean {
 /**
  * The reactive counterpart to the one-shot read in lib/sound.ts.
  *
- * That one is right where it is used, deciding a default at call time. Anything that draws
+ * That one is right where it is used, wording a tooltip at call time. Anything that draws
  * the setting has to re-render when it changes.
  */
 export function usePrefersReducedMotion(): boolean {

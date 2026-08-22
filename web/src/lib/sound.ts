@@ -32,19 +32,27 @@ const DEBOUNCE_MS = 40
 let enabled: boolean | null = null
 const listeners = new Set<() => void>()
 
+/**
+ * On unless the player has said otherwise.
+ *
+ * The comparison is against 'off' rather than 'on' so that an absent key means on: the cues are
+ * the only feedback a dice roll has, and a fight played in silence reads as a fight that did not
+ * roll anything. Only an explicit 'off' silences it, and it survives every reload.
+ */
 function readStored(): boolean {
   try {
-    return localStorage.getItem(SOUND_STORAGE_KEY) === 'on'
+    return localStorage.getItem(SOUND_STORAGE_KEY) !== 'off'
   } catch {
-    // Private mode or storage disabled; silence is the safe default to fall back to.
-    return false
+    // Private mode or storage disabled. The choice cannot be read or written, so the default
+    // is all there is, and the default is on.
+    return true
   }
 }
 
 /**
  * There is no prefers-reduced-sound query, so reduced motion is the nearest standing signal
- * that a user does not want incidental sensory effects. It is only ever read to explain the
- * default, never to override a choice already made.
+ * that a user does not want incidental sensory effects. It is read to describe the setting and
+ * never to change it: sound is on by default for everyone, and one button turns it off.
  */
 export function prefersReducedMotion(): boolean {
   try {
