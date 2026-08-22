@@ -9,8 +9,31 @@ import { useIsMobile } from '../lib/useMediaQuery'
 export function TasksView() {
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<TaskFilters>({ status: 'all', search: '' })
-  const tasks = useTasks(filters)
-  const columns = groupByStatus(tasks.data)
+
+  // Fetched without the status filter, and narrowed below.
+  //
+  // The counts beside All, Open and Done have to say what each one would show. Asking the
+  // server for the current status and then counting what came back made every tally agree
+  // with the tab already chosen: on Open, Done read zero and All read the open count. The
+  // server's status filter is `Completed` or `not Completed`, which is the same split
+  // groupByStatus already performs, so doing it here costs nothing and answers all three.
+  //
+  // It also means switching tab no longer refetches: the query key stops changing with the
+  // status, so the other two filters are the only thing that can move it.
+  const tasks = useTasks({ ...filters, status: 'all' })
+  const all = groupByStatus(tasks.data)
+
+  const counts = {
+    open: all.todo.length + all.inProgress.length,
+    done: all.completed.length,
+  }
+
+  const columns =
+    filters.status === 'open'
+      ? { ...all, completed: [] }
+      : filters.status === 'done'
+        ? { todo: [], inProgress: [], completed: all.completed }
+        : all
 
   const hasFilters =
     filters.status !== 'all' ||
@@ -31,14 +54,7 @@ export function TasksView() {
           a permanent 90px of form above a list you came here to read. */}
       {!isMobile && <QuickAdd />}
 
-      <FilterBar
-        filters={filters}
-        counts={{
-          open: columns.todo.length + columns.inProgress.length,
-          done: columns.completed.length,
-        }}
-        onChange={setFilters}
-      />
+      <FilterBar filters={filters} counts={counts} onChange={setFilters} />
 
       {tasks.isError && (
         <p role="alert" className="panel rounded-xl p-4 text-[13px] text-rose">
