@@ -14,9 +14,14 @@ public sealed record CraftResult(InventoryItem Item, int EssenceSpent, int Essen
 /// </summary>
 /// <remarks>
 /// Salvage needs no dice and crafting does, but all three verbs live together because they are
-/// the only things in the app that move essence: retuning the economy is one file to read
-/// rather than three to find. Deliberately outside the combat service graph, so no existing
-/// harness changes shape.
+/// where essence is earned and spent day to day: retuning the economy is one file to read rather
+/// than three to find. Deliberately outside the combat service graph, so no existing harness
+/// changes shape.
+/// <para>
+/// One other thing moves essence, and only one: <c>AscendService</c> pays it once when a
+/// character begins again (DEC-021). It has no spend of its own, so everything essence can
+/// actually buy is still here.
+/// </para>
 /// <para>
 /// Nothing here touches <c>TotalXp</c> (DEC-012). Essence buys magnitude, never progression.
 /// </para>

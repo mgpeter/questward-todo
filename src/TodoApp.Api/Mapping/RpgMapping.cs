@@ -58,7 +58,13 @@ public static class RpgMapping
             fullyHealed,
             AdventurerService.RestCost(sheet.MaxHitPoints - character.CurrentHitPoints, sheet.Level),
             character.Essence,
-            SetCatalog.ProgressFor(equipped).Select(ToDto).ToList());
+            SetCatalog.ProgressFor(equipped).Select(ToDto).ToList(),
+            new AscensionDto(
+                character.Ascensions,
+                AscendRules.MayAscend(sheet.Level),
+                AscendRules.MinimumLevel,
+                AscendRules.EssenceFor(character.Gold, character.Stamina, sheet.Level),
+                character.AscendedAt));
     }
 
     private static SetProgressDto ToDto(SetProgress progress) => new(
@@ -457,6 +463,29 @@ public static class RpgMapping
         summary.GoldEarned,
         summary.MostFoughtMonster,
         summary.MostFoughtCount);
+
+    /// <summary>
+    /// One journal line, worded on the way out.
+    /// </summary>
+    /// <remarks>
+    /// The narration happens here rather than in the client for the reason every other catalog
+    /// lookup does (DEC-004): the words live in one place, and rewording an entry rewords the
+    /// whole history rather than only the rows written after the change.
+    /// </remarks>
+    public static ChronicleEntryDto ToDto(this ChronicleEntry entry, Encounter? encounter)
+    {
+        var line = ChronicleNarrator.Narrate(entry.Kind, ChronicleService.ReadFacts(entry));
+
+        return new ChronicleEntryDto(
+            entry.Id,
+            entry.Kind.ToString().ToLowerInvariant(),
+            line.Icon,
+            line.Title,
+            line.Detail,
+            entry.Era,
+            entry.OccurredAt,
+            encounter?.ToDto());
+    }
 
     public static BestiaryDto ToDto(this BestiaryCodex codex) => new(
         codex.Rows.Select(ToDto).ToList(),

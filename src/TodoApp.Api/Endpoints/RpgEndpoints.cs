@@ -27,7 +27,14 @@ public static class RpgEndpoints
         group.MapGet("/monsters", GetMonsters);
         group.MapPost("/encounters", StartEncounter).ValidateBody<StartEncounterRequest>();
         group.MapGet("/encounters/active", GetActiveEncounter);
-        group.MapGet("/encounters", GetChronicle);
+        group.MapGet("/encounters", GetEncounterHistory);
+
+        // The journal, and a different thing from the fight history above it. /encounters answers
+        // "which fights have I had"; /chronicle answers "what has happened", which includes
+        // quests claimed, contracts taken and settled, dungeons ended, levels reached and
+        // ascensions. Both stay: the first is what the encounter tests are written against, and
+        // the second is what the Chronicle panel reads.
+        group.MapGet("/chronicle", GetChronicle);
         group.MapPost("/encounters/{id:guid}/attack", Attack);
         group.MapPost("/encounters/{id:guid}/ability/{abilityKey}", UseAbility);
         group.MapPost("/encounters/{id:guid}/use/{itemId:guid}", UseItem);
@@ -54,6 +61,11 @@ public static class RpgEndpoints
         group.MapDelete("/hunts/{id:guid}", AbandonHunt);
 
         group.MapPost("/rest", Rest);
+
+        // No body and no confirmation token. The confirmation belongs in the client, where the
+        // player can be shown what they are about to lose; an endpoint that asked for a magic
+        // word would be pretending to a safety it cannot provide.
+        group.MapPost("/ascend", Ascend);
         group.MapGet("/shop", GetShop);
         group.MapPost("/shop/{offerId}/buy", Buy);
         group.MapPost("/shop/reroll", RerollShop);
@@ -88,6 +100,35 @@ public static class RpgEndpoints
         var loaded = await LoadAsync(currentUser, db, sheets, cancellationToken);
 
         return Results.Ok(loaded.Sheet.ToDto(loaded.Character, loaded.Equipped));
+    }
+
+    private static async Task<IResult> Ascend(
+        ICurrentUser currentUser,
+        AscendService ascend,
+        TodoDbContext db,
+        CharacterSheetService sheets,
+        CancellationToken cancellationToken)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+        var result = await ascend.AscendAsync(user.Id, cancellationToken);
+
+        if (!result.Ok)
+        {
+            return Problem(result.Failure, result.Message);
+        }
+
+        // The sheet is reloaded rather than carried out of the service, because almost everything
+        // on it has just changed and half of it is derived from rows the service deleted.
+        var loaded = await LoadAsync(currentUser, db, sheets, cancellationToken);
+
+        return Results.Ok(new AscendResponse(
+            result.Value!.EssenceGained,
+            result.Value.Essence,
+            result.Value.Ascensions,
+            result.Value.LevelReached,
+            result.Value.GoldConverted,
+            result.Value.StaminaConverted,
+            loaded.Sheet.ToDto(loaded.Character, loaded.Equipped)));
     }
 
     private static IResult GetClasses() =>
@@ -231,7 +272,7 @@ public static class RpgEndpoints
             loaded.Sheet.ToDto(loaded.Character, loaded.Equipped, outcome.Encounter)));
     }
 
-    private static async Task<IResult> GetChronicle(
+    private static async Task<IResult> GetEncounterHistory(
         ICurrentUser currentUser,
         CombatService combat,
         CancellationToken cancellationToken,
@@ -243,9 +284,59 @@ public static class RpgEndpoints
         var encounters = await combat.HistoryAsync(user.Id, limit, before, cancellationToken);
         var summary = await combat.SummaryAsync(user.Id, cancellationToken);
 
-        return Results.Ok(new ChronicleDto(
+        return Results.Ok(new EncounterHistoryDto(
             summary.ToDto(),
             encounters.Select(e => e.ToDto()).ToList()));
+    }
+
+    /// <summary>
+    /// The journal: everything that happened, newest first, paged with a keyset on the timestamp.
+    /// </summary>
+    /// <remarks>
+    /// The fights among the entries are hydrated in one query rather than one per row, and only
+    /// the ones still on the table: an ascension deletes the encounters and leaves the entries,
+    /// so a missing fight is expected rather than an error. The line still reads; what is gone is
+    /// the log it could expand into.
+    /// </remarks>
+    private static async Task<IResult> GetChronicle(
+        ICurrentUser currentUser,
+        ChronicleService chronicle,
+        CombatService combat,
+        TodoDbContext db,
+        CancellationToken cancellationToken,
+        int limit = 20,
+        DateTimeOffset? before = null,
+        string? kind = null)
+    {
+        var user = await currentUser.GetAsync(cancellationToken);
+
+        ChronicleKind? filter =
+            kind is not null && Enum.TryParse<ChronicleKind>(kind, true, out var parsed)
+                ? parsed
+                : null;
+
+        var entries = await chronicle.HistoryAsync(user.Id, limit, before, filter, cancellationToken);
+
+        var encounterIds = entries
+            .Where(e => e.EncounterId is not null)
+            .Select(e => e.EncounterId!.Value)
+            .ToList();
+
+        var encounters = encounterIds.Count == 0
+            ? []
+            : await db.Encounters
+                .AsNoTracking()
+                .Where(e => e.UserId == user.Id && encounterIds.Contains(e.Id))
+                .ToDictionaryAsync(e => e.Id, cancellationToken);
+
+        var summary = await combat.SummaryAsync(user.Id, cancellationToken);
+
+        return Results.Ok(new ChronicleDto(
+            summary.ToDto(),
+            entries
+                .Select(e => e.ToDto(
+                    e.EncounterId is { } id && encounters.TryGetValue(id, out var found) ? found : null))
+                .ToList()));
     }
 
     private static async Task<IResult> Rest(
@@ -780,6 +871,11 @@ public static class RpgEndpoints
         RpgFailure.UnknownClass => Results.Problem(message, statusCode: 400),
         RpgFailure.ItemNotUsable => Results.Problem(message, statusCode: 400),
         RpgFailure.NotHuntable => Results.Problem(message, statusCode: 400),
+
+        // 422 rather than 403: the request is well formed and the character is allowed to
+        // ascend, just not yet. The message names the level, so the client needs no rule of
+        // its own to explain the refusal.
+        RpgFailure.NotReadyToAscend => Results.Problem(message, statusCode: 422),
         _ => Results.Problem(message, statusCode: 500)
     };
 }

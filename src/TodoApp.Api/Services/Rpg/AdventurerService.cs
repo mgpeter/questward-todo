@@ -36,13 +36,7 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
         // hand out a second set, or class-swapping becomes an item printer.
         if (isFirstChoice)
         {
-            var weapon = await loot.GrantAsync(
-                userId, characterClass.StartingWeaponKey, Rarity.Common, cancellationToken);
-            var armour = await loot.GrantAsync(
-                userId, characterClass.StartingArmourKey, Rarity.Common, cancellationToken);
-
-            weapon.IsEquipped = true;
-            armour.IsEquipped = true;
+            await GrantStartingGearAsync(userId, characterClass, cancellationToken);
         }
 
         // Scores changed, so the maximum moved. Reset to full: choosing a class should
@@ -59,6 +53,33 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
         }
 
         return RpgResult<Character>.Success(character);
+    }
+
+    /// <summary>
+    /// Hands a character the class weapon and armour, both Common and both worn. Does not save.
+    /// </summary>
+    /// <remarks>
+    /// Shared with ascending, which empties the inventory and would otherwise leave a level one
+    /// character in nothing at all. It stays a method rather than being inlined twice because
+    /// the "grant, then equip" pair is what the equipped-slot index cares about, and two copies
+    /// of it are two chances to get that wrong.
+    /// <para>
+    /// Not a way to print items: the one caller here asks only on a first choice of class, and
+    /// the other has just deleted every item the character owned.
+    /// </para>
+    /// </remarks>
+    public async Task GrantStartingGearAsync(
+        Guid userId,
+        CharacterClass characterClass,
+        CancellationToken cancellationToken)
+    {
+        var weapon = await loot.GrantAsync(
+            userId, characterClass.StartingWeaponKey, Rarity.Common, cancellationToken);
+        var armour = await loot.GrantAsync(
+            userId, characterClass.StartingArmourKey, Rarity.Common, cancellationToken);
+
+        weapon.IsEquipped = true;
+        armour.IsEquipped = true;
     }
 
     public Task<List<InventoryItem>> ListAsync(Guid userId, CancellationToken cancellationToken) =>

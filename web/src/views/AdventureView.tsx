@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { AdventurerStrip } from '../components/AdventurerStrip'
+import { Ascend } from '../components/rpg/Ascend'
 import { Bestiary } from '../components/rpg/Bestiary'
 import { CharacterSheetPanel } from '../components/rpg/CharacterSheetPanel'
 import { Chronicle } from '../components/rpg/Chronicle'
@@ -29,6 +30,10 @@ const PANELS: { key: AdventurePanel; label: string }[] = [
   { key: 'bestiary', label: 'Bestiary' },
   { key: 'lore', label: 'Lore' },
   { key: 'chronicle', label: 'Chronicle' },
+
+  // Last, because it ends everything to its left. Shown at every level rather than hidden
+  // below ten: a mechanic nobody can see is one nobody plans for.
+  { key: 'ascend', label: 'Ascend' },
 ]
 
 export function AdventureView() {
@@ -113,6 +118,7 @@ export function AdventureView() {
       {panel === 'bestiary' && <Bestiary />}
       {panel === 'lore' && <LoreCollection />}
       {panel === 'chronicle' && <Chronicle />}
+      {panel === 'ascend' && <Ascend sheet={sheet.data} />}
 
       <ClassSelect
         open={classOpen}
@@ -124,10 +130,10 @@ export function AdventureView() {
 }
 
 /**
- * The nine panels as a scrolling tab rail.
+ * The ten panels as a scrolling tab rail.
  *
  * Pills first, and they read as filter chips rather than as navigation: nothing said the row
- * moved, so the six panels past the fold may as well not have existed. An underlined rail is
+ * moved, so the panels past the fold may as well not have existed. An underlined rail is
  * the shape a phone already uses for sections, and the two cues that it scrolls are structural
  * rather than instructional - the hairline runs past the last label it can fit, and the fade
  * turns a clipped word into an obvious edge instead of a broken one.

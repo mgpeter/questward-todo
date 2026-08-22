@@ -30,6 +30,8 @@ public class TodoDbContext(DbContextOptions<TodoDbContext> options) : DbContext(
 
     public DbSet<BestiaryEntry> BestiaryEntries => Set<BestiaryEntry>();
 
+    public DbSet<ChronicleEntry> ChronicleEntries => Set<ChronicleEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -43,9 +43,9 @@ public class EffectKindTests(PostgresFixture postgres)
         var db = postgres.CreateContext();
         var sheets = new CharacterSheetService(db);
         var loot = new LootService(db, roller);
-        var quests = new QuestService(db, loot);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
         var adventurer = new AdventurerService(db, sheets, loot);
-        var combat = new CombatService(db, roller, sheets, loot, quests);
+        var combat = new CombatService(db, roller, sheets, loot, quests, new ChronicleService(db));
 
         await adventurer.ChooseClassAsync(
             user.Id, ClassCatalog.Fighter, TestContext.Current.CancellationToken);

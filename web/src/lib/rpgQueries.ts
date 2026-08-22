@@ -1,9 +1,17 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { api } from './api'
 import { queryKeys } from './queries'
 import type {
+  AscendResult,
   AttackResult,
   CharacterSheet,
+  Chronicle,
   DungeonRun,
   HuntBoard,
   HuntContract,
@@ -80,6 +88,11 @@ function settleRound(client: QueryClient, result: AttackResult) {
   // board to offer the next one. Neither is stated anywhere in this response.
   void client.invalidateQueries({ queryKey: rpgKeys.hunts })
   void client.invalidateQueries({ queryKey: rpgKeys.activeHunt })
+
+  // The round wrote journal lines: the fight itself, and possibly a dungeon ended, a contract
+  // settled or a banner's standing raised. This key used to be the one nothing invalidated,
+  // which was survivable while the chronicle only held fights the player had just watched.
+  void client.invalidateQueries({ queryKey: rpgKeys.chronicle })
 }
 
 export function useChooseClass() {
@@ -190,8 +203,45 @@ export function useCraftItem() {
   })
 }
 
+const CHRONICLE_PAGE = 20
+
+/**
+ * The journal, one page at a time.
+ *
+ * Keyset paging on the timestamp of the last entry read, rather than a page number: entries are
+ * written while the panel is open, and an offset would show the same line twice.
+ */
 export const useChronicle = () =>
-  useQuery({ queryKey: rpgKeys.chronicle, queryFn: () => api.getChronicle() })
+  useInfiniteQuery({
+    queryKey: rpgKeys.chronicle,
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      api.getChronicle(CHRONICLE_PAGE, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: Chronicle) =>
+      last.entries.length < CHRONICLE_PAGE
+        ? undefined
+        : last.entries[last.entries.length - 1]?.occurredAt,
+  })
+
+/**
+ * Ends an era.
+ *
+ * Everything is invalidated rather than patched from the response: the wipe reaches gear,
+ * quests, contracts, runs and the bestiary, and there is no part of the adventure screen that
+ * is still true afterwards. Tasks and badges survive, but the character strip above them does
+ * not, which is why the character key goes too.
+ */
+export function useAscend() {
+  const client = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => api.ascend(),
+    onSuccess: (result: AscendResult) => {
+      client.setQueryData<CharacterSheet>(rpgKeys.sheet, result.sheet)
+      invalidateAdventure(client)
+    },
+  })
+}
 
 export const useShop = () => useQuery({ queryKey: rpgKeys.shop, queryFn: api.getShop })
 

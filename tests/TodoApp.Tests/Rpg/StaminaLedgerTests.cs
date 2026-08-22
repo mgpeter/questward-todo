@@ -23,8 +23,8 @@ public class StaminaLedgerTests(PostgresFixture postgres)
 
         var db = postgres.CreateContext();
         var loot = new LootService(db, new FixedDiceRoller(10));
-        var quests = new QuestService(db, loot);
-        var gamification = new GamificationService(db, new AchievementEvaluator(), quests);
+        var quests = new QuestService(db, loot, new ChronicleService(db));
+        var gamification = new GamificationService(db, new AchievementEvaluator(), quests, new ChronicleService(db));
 
         return new Harness(db, gamification, user.Id);
     }

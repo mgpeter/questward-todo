@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace TodoApp.Api.Contracts;
 
 /// <summary>
@@ -14,3 +16,15 @@ public sealed record MeDto(
     string? Email,
     string? DisplayName,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// The word, typed. Everything this account has recorded is deleted when it matches.
+/// </summary>
+/// <param name="Confirm">
+/// Must be exactly <c>RESET</c>. A required field with one accepted value rather than a boolean,
+/// because a boolean is what a client sends by accident.
+/// </param>
+public sealed record ResetAccountRequest(
+    [property: Required(AllowEmptyStrings = false, ErrorMessage = "Type RESET to confirm.")]
+    [property: RegularExpression("^RESET$", ErrorMessage = "Type RESET to confirm.")]
+    string Confirm);

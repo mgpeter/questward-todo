@@ -1,9 +1,11 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { LogOut } from 'lucide-react'
+import { LogOut, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
+import { useResetAccount } from '../lib/queries'
 import { useIsMobile, usePrefersReducedMotion } from '../lib/useMediaQuery'
+import { ConfirmSheet } from './ConfirmSheet'
 import { Sheet } from './Sheet'
 import { SoundToggle } from './SoundToggle'
 import { ThemeToggle } from './ThemeToggle'
@@ -13,7 +15,9 @@ export function AccountMenu() {
   const { user, logout } = useAuth0()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const reset = useResetAccount()
 
   useEffect(() => {
     // The sheet brings its own Escape handling and closes on a tap outside, so this is the
@@ -45,6 +49,44 @@ export function AccountMenu() {
   }
 
   const label = user?.name || user?.email || 'Account'
+
+  // Opened from either tree, and rendered once below both. The popover unmounts the moment the
+  // sheet takes focus, so a confirmation living inside it would close itself.
+  const openReset = () => {
+    setOpen(false)
+    setResetting(true)
+  }
+
+  const confirmReset = (
+    <ConfirmSheet
+      open={resetting}
+      onClose={() => setResetting(false)}
+      onConfirm={() => reset.mutate()}
+      title="Delete everything?"
+      description="Your sign-in survives. Nothing else does."
+      confirmLabel="Delete everything"
+      pending={reset.isPending}
+      typeToConfirm="RESET"
+      testId="reset-account"
+    >
+      <p>
+        Every task, subtask and tag. Your character, level, gold, essence and gear. Badges,
+        quests, contracts, dungeon runs, the bestiary and the whole chronicle. All of it, for
+        good, with no export and no undo.
+      </p>
+
+      <p className="text-ink-muted">
+        You stay signed in as {user?.email ?? label} and land back at choosing a class, exactly
+        as on the first day.
+      </p>
+
+      {reset.isError && (
+        <p role="alert" className="text-rose">
+          {(reset.error as Error).message}
+        </p>
+      )}
+    </ConfirmSheet>
+  )
 
   const trigger = (
     <button
@@ -81,7 +123,9 @@ export function AccountMenu() {
           onClose={() => setOpen(false)}
           user={{ name: user?.name, email: user?.email, picture: user?.picture, label }}
           onSignOut={signOut}
+          onReset={openReset}
         />
+        {confirmReset}
       </>
     )
   }
@@ -115,9 +159,24 @@ export function AccountMenu() {
               <LogOut size={13} />
               Sign out
             </button>
+
+            {/* Below the line and in the destructive colour, because it is the only item here
+                that cannot be undone by clicking it again. */}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={openReset}
+              data-testid="reset-account-open"
+              className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2.5 text-left text-[13px] text-rose transition hover:bg-rose/10"
+            >
+              <TriangleAlert size={13} />
+              Delete all my data
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmReset}
     </div>
   )
 }
@@ -127,11 +186,13 @@ function AccountSheet({
   onClose,
   user,
   onSignOut,
+  onReset,
 }: {
   open: boolean
   onClose: () => void
   user: { name?: string; email?: string; picture?: string; label: string }
   onSignOut: () => void
+  onReset: () => void
 }) {
   const reduced = usePrefersReducedMotion()
 
@@ -165,7 +226,8 @@ function AccountSheet({
 
           It belongs under sound for the reason lib/sound.ts gives: there is no
           prefers-reduced-sound, so this is the nearest standing signal that someone does not
-          want incidental sensory effects, and it is what the default above is read from.
+          want incidental sensory effects. It reports the browser setting and nothing more -
+          the switch above defaults to on either way, and stays wherever it was last put.
         */}
         <p
           className="-mt-1 pb-3.5 text-[11.5px] text-ink-faint"
@@ -185,6 +247,25 @@ function AccountSheet({
         >
           <LogOut size={16} />
           Sign out
+        </button>
+      </div>
+
+      <div className="mt-2 border-t border-line pt-4">
+        <p className="mb-1.5 text-[10px] tracking-[0.18em] text-ink-faint uppercase">Danger zone</p>
+
+        <p className="text-[12px] text-ink-faint">
+          Deletes every task, your character and the whole chronicle. Your sign-in survives; the
+          data does not, and there is no way back.
+        </p>
+
+        <button
+          type="button"
+          onClick={onReset}
+          data-testid="reset-account-open"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose/40 py-2.5 text-[14px] text-rose transition hover:bg-rose/10"
+        >
+          <TriangleAlert size={15} />
+          Delete all my data
         </button>
       </div>
     </Sheet>

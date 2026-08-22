@@ -73,6 +73,27 @@ export interface CharacterSheet {
    * InventoryItem.setName on the pieces themselves.
    */
   sets: SetProgress[]
+  ascension: Ascension
+}
+
+export interface Ascension {
+  /** Eras already behind this character. Zero for almost everyone. */
+  count: number
+  eligible: boolean
+  minimumLevel: number
+  /** What ascending right now would pay, from the same rule the endpoint applies. */
+  essenceOnAscend: number
+  lastAscendedAt: string | null
+}
+
+export interface AscendResult {
+  essenceGained: number
+  essence: number
+  ascensions: number
+  levelReached: number
+  goldConverted: number
+  staminaConverted: number
+  sheet: CharacterSheet
 }
 
 export interface ClassOption {
@@ -504,9 +525,48 @@ export interface ChronicleSummary {
   mostFoughtCount: number
 }
 
-export interface Chronicle {
+/** Finished fights and their logs: what `GET /api/rpg/encounters` returns. */
+export interface EncounterHistory {
   summary: ChronicleSummary
   encounters: Encounter[]
+}
+
+export type ChronicleKindName =
+  | 'fightwon'
+  | 'fightlost'
+  | 'fightfled'
+  | 'questclaimed'
+  | 'contractaccepted'
+  | 'contractsettled'
+  | 'standingraised'
+  | 'dungeoncleared'
+  | 'dungeonfailed'
+  | 'levelreached'
+  | 'ascended'
+
+export interface ChronicleEntry {
+  id: string
+  kind: ChronicleKindName
+  /** An icon key chosen by the server. `Chronicle.tsx` owns which drawing it maps to. */
+  icon: string
+  title: string
+  detail: string | null
+  /**
+   * How many ascensions the character had when this happened. The feed draws a divider wherever
+   * two adjacent entries disagree.
+   */
+  era: number
+  occurredAt: string
+  /**
+   * The fight this line is about, when there is one and it still exists. Null after an ascension
+   * deletes the encounters: the line survives, the roll-by-roll log does not.
+   */
+  encounter: Encounter | null
+}
+
+export interface Chronicle {
+  summary: ChronicleSummary
+  entries: ChronicleEntry[]
 }
 
 export interface ShopOffer {

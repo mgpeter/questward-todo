@@ -61,6 +61,11 @@ public class CharacterConfiguration : IEntityTypeConfiguration<Character>
 
         builder.Property(c => c.HitPointsUpdatedAt).HasColumnType("timestamp with time zone");
 
+        // Defaulted rather than backfilled: every character that already exists has ascended
+        // zero times, and a nullable AscendedAt says the rest.
+        builder.Property(c => c.Ascensions).HasColumnType("integer").IsRequired().HasDefaultValue(0);
+        builder.Property(c => c.AscendedAt).HasColumnType("timestamp with time zone");
+
         // Every balance above is read, changed in memory and written back, which without a
         // token is a lost update: two requests both read 30 essence, both pass the "can you
         // afford it" check, and both write the same absolute value, so one craft is free.

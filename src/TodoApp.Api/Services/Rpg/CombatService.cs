@@ -46,7 +46,8 @@ public sealed class CombatService(
     IDiceRoller roller,
     CharacterSheetService sheets,
     LootService loot,
-    QuestService quests)
+    QuestService quests,
+    ChronicleService chronicle)
 {
     public const int StaminaPerEncounter = 1;
 
@@ -682,7 +683,11 @@ public sealed class CombatService(
     }
 
     /// <summary>Ends a fight the player lost, and the run it was a room of. Costs no roll.</summary>
-    private static void RecordDefeat(
+    /// <remarks>
+    /// An instance method rather than a static one because the defeat is also a journal line, and
+    /// the journal is written through the same tracked context the fight is.
+    /// </remarks>
+    private void RecordDefeat(
         Encounter encounter,
         Character character,
         MonsterDefinition monster,
@@ -691,6 +696,10 @@ public sealed class CombatService(
     {
         encounter.Status = EncounterStatus.Lost;
         encounter.EndedAt = DateTimeOffset.UtcNow;
+
+        // Asked before EndRun, which is idempotent and would otherwise leave no way to tell a run
+        // this defeat ended from one that was already over.
+        var runEndsHere = run is not null && !run.IsOver;
 
         // Left standing on one hit point rather than killed. A todo app has no
         // business punishing someone for losing a dice roll.
@@ -716,6 +725,24 @@ public sealed class CombatService(
             rolls.Add(CombatRoll.Note(
                 encounter.Round, CombatRoll.Player,
                 "The run ends here. What is left of the dungeon keeps it."));
+        }
+
+        chronicle.Record(
+            character,
+            ChronicleKind.FightLost,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.MonsterKey] = monster.Key,
+                [ChronicleNarrator.RoundsKey] = encounter.Round.ToString()
+            },
+            encounter.Id);
+
+        if (runEndsHere && run!.DungeonKey is { Length: > 0 } dungeonKey)
+        {
+            chronicle.Record(
+                character,
+                ChronicleKind.DungeonFailed,
+                new Dictionary<string, string> { [ChronicleNarrator.DungeonKey] = dungeonKey });
         }
     }
 
@@ -787,6 +814,20 @@ public sealed class CombatService(
         encounter.EndedAt = DateTimeOffset.UtcNow;
         encounter.Log = Serialise(log);
 
+        // RecordAsync rather than Record: walking out of a fight is the one ending that never
+        // needed the character row, and loading one only to read its era back would be a write
+        // this method does not otherwise make.
+        await chronicle.RecordAsync(
+            userId,
+            ChronicleKind.FightFled,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.MonsterKey] = encounter.MonsterKey,
+                [ChronicleNarrator.RoundsKey] = encounter.Round.ToString()
+            },
+            cancellationToken,
+            encounter.Id);
+
         await db.SaveChangesAsync(cancellationToken);
 
         return RpgResult<Encounter>.Success(encounter);
@@ -846,18 +887,10 @@ public sealed class CombatService(
     /// What to call a key out of the MonsterKey column, whichever catalog it came from.
     /// </summary>
     /// <remarks>
-    /// The column carries two key spaces, deliberately disjoint: bestiary keys from a tavern or
-    /// dungeon fight, and HuntArchetypeCatalog keys from a contract. MonsterCatalog.Find is a
-    /// plain dictionary lookup and returns null for the second kind, so a summary that consulted
-    /// it alone reported no most-fought creature at all once contracts outnumbered any single
-    /// bestiary monster, which is the normal steady state: one archetype key covers every task of
-    /// that shape. Falling through to the archetype, and then to the raw key, matches what
-    /// RpgMapping already does for an encounter's own monster name.
+    /// Moved to <see cref="MonsterNames"/> when the chronicle grew a second caller for it. The
+    /// reasoning it carries is why the fallback exists at all.
     /// </remarks>
-    private static string NameOf(string monsterKey) =>
-        MonsterCatalog.Find(monsterKey)?.Name
-        ?? HuntArchetypeCatalog.Find(monsterKey)?.Noun
-        ?? monsterKey;
+    private static string NameOf(string monsterKey) => MonsterNames.Of(monsterKey);
 
     public Task<Encounter?> ActiveAsync(Guid userId, CancellationToken cancellationToken) =>
         db.Encounters.FirstOrDefaultAsync(
@@ -937,7 +970,8 @@ public sealed class CombatService(
         // The contract's own reward, drawn here beside the dungeon's for one reason: this is
         // where the clear already spends its dice, so no existing seeded script sees a roll move.
         // A fight is a room or a contract and never both, so the slot is never contested.
-        reward ??= await ResolveContractRewardAsync(userId, sheet, encounter, rolls, cancellationToken);
+        reward ??= await ResolveContractRewardAsync(
+            userId, character, sheet, encounter, rolls, cancellationToken);
 
         // The kill counters ride the same transaction as the fight, the gold and the drop, so
         // the chronicle can never claim a win the encounters table does not also show. This is
@@ -993,6 +1027,23 @@ public sealed class CombatService(
             advances.AddRange(await quests.RecordAsync(
                 userId, ObjectiveKind.AcquireItem, string.Empty, acquired, cancellationToken));
         }
+
+        // The journal line for the win, written here beside the counters for the same reason
+        // they are here: one transaction, so a chronicle can never claim a fight the encounters
+        // table does not also show. The monster's own gold, not the clear bonus - the dungeon
+        // writes its own entry for that, and counting it twice would read as two payouts.
+        chronicle.Record(
+            character,
+            ChronicleKind.FightWon,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.MonsterKey] = monster.Key,
+                [ChronicleNarrator.RoundsKey] = encounter.Round.ToString(),
+                [ChronicleNarrator.GoldKey] = gold.ToString(),
+                [ChronicleNarrator.ItemKey] = drop?.ItemKey ?? string.Empty,
+                [ChronicleNarrator.RarityKey] = drop is null ? string.Empty : drop.Rarity.ToString()
+            },
+            encounter.Id);
 
         // Note what is not here: character.TotalXp is never touched.
         // The reward is carried out rather than dropped: it was counted towards AcquireItem two
@@ -1077,6 +1128,18 @@ public sealed class CombatService(
                 $"The dungeon yields {RarityRules.Describe(reward.Rarity)} {reward.DisplayName}."));
         }
 
+        chronicle.Record(
+            character,
+            ChronicleKind.DungeonCleared,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.DungeonKey] = dungeon.Key,
+                [ChronicleNarrator.RoomsKey] = rooms.ToString(),
+                [ChronicleNarrator.GoldKey] = dungeon.ClearGold.ToString(),
+                [ChronicleNarrator.ItemKey] = reward?.ItemKey ?? string.Empty,
+                [ChronicleNarrator.RarityKey] = reward is null ? string.Empty : reward.Rarity.ToString()
+            });
+
         return (dungeon.ClearGold, reward);
     }
 
@@ -1107,6 +1170,7 @@ public sealed class CombatService(
     /// </remarks>
     private async Task<InventoryItem?> ResolveContractRewardAsync(
         Guid userId,
+        Character character,
         Models.Rpg.CharacterSheet sheet,
         Encounter encounter,
         List<CombatRoll> rolls,
@@ -1141,6 +1205,44 @@ public sealed class CombatService(
                 encounter.Round, CombatRoll.Player,
                 $"{faction.Name} settles the contract with "
                 + $"{RarityRules.Describe(reward.Rarity)} {reward.DisplayName}."));
+        }
+
+        // Which task this was, from the contract that opened the fight. The encounter carries a
+        // TaskId, but the task itself may have been tidied away since, and the contract froze the
+        // title at accept time precisely so the history still knows what was fought over.
+        var title = await db.HuntContracts
+            .Where(c => c.EncounterId == encounter.Id)
+            .Select(c => c.TaskTitle)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        chronicle.Record(
+            character,
+            ChronicleKind.ContractSettled,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.TaskTitleKey] = title ?? string.Empty,
+                [ChronicleNarrator.FactionKey] = faction.Key,
+                [ChronicleNarrator.ItemKey] = reward?.ItemKey ?? string.Empty,
+                [ChronicleNarrator.RarityKey] = reward is null ? string.Empty : reward.Rarity.ToString()
+            });
+
+        // The count above excludes this win because it runs in the database and this fight's Won
+        // is still only tracked, so adding one is what the banner will read a moment from now.
+        // Only written when the tier actually moves: a line per win saying nothing changed would
+        // bury the four that do.
+        var reached = FactionStandings.TierFor(wonUnderBanner + 1);
+
+        if (reached != FactionStandings.TierFor(wonUnderBanner))
+        {
+            chronicle.Record(
+                character,
+                ChronicleKind.StandingRaised,
+                new Dictionary<string, string>
+                {
+                    [ChronicleNarrator.FactionKey] = faction.Key,
+                    [ChronicleNarrator.StandingKey] = ((int)reached).ToString(),
+                    [ChronicleNarrator.WinsKey] = (wonUnderBanner + 1).ToString()
+                });
         }
 
         return reward;

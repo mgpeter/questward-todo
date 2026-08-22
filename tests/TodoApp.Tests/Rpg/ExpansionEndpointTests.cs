@@ -59,6 +59,7 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
 
     [Theory]
     [InlineData("/api/rpg/encounters")]
+    [InlineData("/api/rpg/chronicle")]
     [InlineData("/api/rpg/shop")]
     public async Task New_read_routes_require_authentication(string route)
     {
@@ -115,6 +116,122 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
 
         Assert.Empty(bobs!.Encounters);
         Assert.Equal(0, bobs.Summary.Fought);
+    }
+
+
+    /// <summary>
+    /// The journal endpoint narrates, pages and hydrates the fight behind a line.
+    /// </summary>
+    /// <remarks>
+    /// Sibling to the fight history above rather than a replacement for it: /encounters answers
+    /// "which fights have I had", and this answers "what has happened", which is a superset with
+    /// different rows in it.
+    /// </remarks>
+    [Fact]
+    public async Task The_journal_narrates_every_kind_of_event_and_pages_back()
+    {
+        await ChooseAsync(_alice);
+
+        var empty = await _alice.GetFromJsonAsync<JournalDto>("/api/rpg/chronicle");
+        Assert.Empty(empty!.Entries);
+
+        // Six easy chores cross level 2, so the journal has a line in it before any fight does.
+        // That is the point of it being a journal rather than a fight history.
+        await StaminaAsync(_alice, 6);
+
+        var afterWork = await _alice.GetFromJsonAsync<JournalDto>("/api/rpg/chronicle");
+        var level = Assert.Single(afterWork!.Entries, e => e.Kind == "levelreached");
+
+        Assert.Equal("level", level.Icon);
+        Assert.Equal("Reached level 2", level.Title);
+        Assert.Null(level.Encounter);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var start = await _alice.PostAsJsonAsync(
+                "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+            start.EnsureSuccessStatusCode();
+
+            var encounter = await start.Content.ReadFromJsonAsync<EncounterDto>();
+            await _alice.PostAsync($"/api/rpg/encounters/{encounter!.Id}/flee", null);
+        }
+
+        var journal = await _alice.GetFromJsonAsync<JournalDto>("/api/rpg/chronicle");
+        var flights = journal!.Entries.Where(e => e.Kind == "fightfled").ToList();
+
+        Assert.Equal(3, flights.Count);
+        Assert.All(flights, entry =>
+        {
+            Assert.Equal("flight", entry.Icon);
+            Assert.Contains("Giant Rat", entry.Title);
+
+            // The fight is hydrated onto the line, so the panel can expand it without a second
+            // round trip per entry.
+            Assert.NotNull(entry.Encounter);
+            Assert.NotEmpty(entry.Encounter!.Log);
+        });
+
+        // Keyset paging, filtered so the page boundaries do not depend on how many levels the
+        // arrangement happened to cross.
+        var first = await _alice.GetFromJsonAsync<JournalDto>(
+            "/api/rpg/chronicle?limit=2&kind=fightfled");
+
+        Assert.Equal(2, first!.Entries.Count);
+
+        var cursor = Uri.EscapeDataString(first.Entries[^1].OccurredAt.ToString("o"));
+        var next = await _alice.GetFromJsonAsync<JournalDto>(
+            $"/api/rpg/chronicle?kind=fightfled&before={cursor}");
+
+        var seen = Assert.Single(next!.Entries);
+
+        Assert.DoesNotContain(first.Entries, e => e.Id == seen.Id);
+
+        // An unknown kind is ignored rather than refused: the filter is a convenience, and a
+        // client sending a name this server does not know should still get its journal.
+        var everything = await _alice.GetFromJsonAsync<JournalDto>("/api/rpg/chronicle?kind=nonsense");
+
+        Assert.Equal(journal.Entries.Count, everything!.Entries.Count);
+    }
+
+    [Fact]
+    public async Task One_adventurers_journal_is_invisible_to_another()
+    {
+        await ChooseAsync(_alice);
+        await ChooseAsync(_bob);
+        await StaminaAsync(_alice, 2);
+
+        var start = await _alice.PostAsJsonAsync(
+            "/api/rpg/encounters", new { monsterKey = MonsterCatalog.GiantRat });
+        var encounter = await start.Content.ReadFromJsonAsync<EncounterDto>();
+        await _alice.PostAsync($"/api/rpg/encounters/{encounter!.Id}/flee", null);
+
+        var bobs = await _bob.GetFromJsonAsync<JournalDto>("/api/rpg/chronicle");
+
+        Assert.Empty(bobs!.Entries);
+    }
+
+    /// <summary>
+    /// The ascend route is wired, and a fresh character is told the level rather than 500ing.
+    /// </summary>
+    /// <remarks>
+    /// What the arithmetic does is asserted against the service in AscendTests. This is here for
+    /// the two things only the running app can prove: that the endpoint resolves its services, and
+    /// that a refusal comes back as 422 rather than as a stack trace.
+    /// </remarks>
+    [Fact]
+    public async Task Ascending_below_the_gate_is_refused_by_the_endpoint()
+    {
+        await ChooseAsync(_alice);
+
+        var response = await _alice.PostAsync("/api/rpg/ascend", null);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        var sheet = await _alice.GetFromJsonAsync<AscensionSheetDto>("/api/rpg/sheet");
+
+        Assert.False(sheet!.Ascension.Eligible);
+        Assert.Equal(0, sheet.Ascension.Count);
+        Assert.Equal(AscendRules.MinimumLevel, sheet.Ascension.MinimumLevel);
     }
 
     // --------------------------------------------------------------------- rest
@@ -705,6 +822,12 @@ public class ExpansionEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     private sealed record AttackDto(EncounterDto Encounter, SheetDto Sheet);
     private sealed record SummaryDto(int Fought, int Won, int Lost, int Fled, int GoldEarned);
     private sealed record ChronicleDto(SummaryDto Summary, List<EncounterDto> Encounters);
+    private sealed record JournalEntryDto(
+        Guid Id, string Kind, string Icon, string Title, string? Detail, int Era,
+        DateTimeOffset OccurredAt, EncounterDto? Encounter);
+    private sealed record JournalDto(SummaryDto Summary, List<JournalEntryDto> Entries);
+    private sealed record AscensionDto(int Count, bool Eligible, int MinimumLevel, int EssenceOnAscend);
+    private sealed record AscensionSheetDto(AscensionDto Ascension);
     private sealed record OfferDto(
         string OfferId, string ItemKey, string Rarity, int Price, bool Affordable, bool SoldOut);
     private sealed record ShopDto(List<OfferDto> Offers, DateTimeOffset RotatesAt, int Gold);

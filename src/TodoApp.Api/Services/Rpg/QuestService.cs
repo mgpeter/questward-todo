@@ -37,7 +37,7 @@ public sealed record QuestClaim(int GoldGained, int Gold, InventoryItem? Item);
 /// todo list optional, which is the one thing the whole design is arranged to prevent
 /// (DEC-003).
 /// </remarks>
-public sealed class QuestService(TodoDbContext db, LootService loot)
+public sealed class QuestService(TodoDbContext db, LootService loot, ChronicleService chronicle)
 {
     /// <summary>
     /// Records progress toward every objective matching the event. Does not save; the
@@ -266,6 +266,17 @@ public sealed class QuestService(TodoDbContext db, LootService loot)
             item = await loot.GrantAsync(
                 userId, quest.RewardItemKey, Rarity.Uncommon, cancellationToken);
         }
+
+        chronicle.Record(
+            character,
+            ChronicleKind.QuestClaimed,
+            new Dictionary<string, string>
+            {
+                [ChronicleNarrator.QuestKey] = quest.Key,
+                [ChronicleNarrator.GoldKey] = quest.RewardGold.ToString(),
+                [ChronicleNarrator.ItemKey] = item?.ItemKey ?? string.Empty,
+                [ChronicleNarrator.RarityKey] = item is null ? string.Empty : item.Rarity.ToString()
+            });
 
         // Deliberately absent: any change to character.TotalXp.
         await db.SaveChangesAsync(cancellationToken);

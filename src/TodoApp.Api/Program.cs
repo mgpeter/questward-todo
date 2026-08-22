@@ -48,6 +48,10 @@ builder.Services.AddScoped<CharacterSheetService>();
 builder.Services.AddScoped<LootService>();
 builder.Services.AddScoped<QuestService>();
 builder.Services.AddScoped<BestiaryService>();
+// Scoped, and every writer resolves the same one: an entry is added to the caller's context and
+// commits in the caller's transaction, so a fight that rolls back leaves no line saying it
+// happened.
+builder.Services.AddScoped<ChronicleService>();
 builder.Services.AddScoped<CombatService>();
 // Scoped alongside CombatService on purpose: both resolve the same TodoDbContext, so the run a
 // room's fight ends is the very instance this service is holding, and the two commit together.
@@ -59,6 +63,8 @@ builder.Services.AddScoped<HuntService>();
 builder.Services.AddScoped<AdventurerService>();
 builder.Services.AddScoped<ShopService>();
 builder.Services.AddScoped<ForgeService>();
+builder.Services.AddScoped<AscendService>();
+builder.Services.AddScoped<AccountService>();
 
 // Fail at startup rather than booting and rejecting every request with an opaque 401.
 builder.Services.AddOptions<Auth0Options>()
@@ -190,6 +196,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
 app.MapDefaultEndpoints();
 
 app.MapSystemEndpoints();
+app.MapAccountEndpoints();
 app.MapTaskEndpoints();
 app.MapCharacterEndpoints();
 app.MapAchievementEndpoints();
