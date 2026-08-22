@@ -512,7 +512,7 @@ public class BestiaryTests(PostgresFixture postgres)
     /// A kind is met for the first time exactly once, and the discovery quests unlock late.
     /// Progress that only accrued while the quest was already unlocked threw those sightings
     /// away, and the availability band means they can never be made again: from level 8 the
-    /// tavern offers nothing below monster level 6 ever again. Full Catalogue would have sat
+    /// tavern offers nothing below monster level 4 ever again. Full Catalogue would have sat
     /// at zero of twelve with a ceiling of ten, permanently.
     /// </summary>
     [Fact]
