@@ -349,9 +349,15 @@ function ContractCard({
             className="inline-flex min-w-0 items-center gap-1 rounded-full border border-line bg-surface-sunk px-2 py-0.5 text-[10px] text-ink-muted"
             data-testid="contract-faction"
             data-faction={contract.factionKey}
+            title={contract.factionTitle ? `${contract.factionName}: ${contract.factionTitle}` : contract.factionName ?? undefined}
           >
             <Flag size={9} className="shrink-0" />
-            <span className="truncate">{contract.factionTitle ?? contract.factionName}</span>
+            {/* The banner first. This read the title alone, so a correctly tagged contract
+                announced itself as "Unentered" and the tag rule looked broken. */}
+            <span className="truncate">{contract.factionName}</span>
+            {contract.factionTitle && (
+              <span className="hidden shrink-0 text-ink-faint sm:inline">{contract.factionTitle}</span>
+            )}
           </span>
         )}
       </div>
@@ -440,8 +446,8 @@ function Banners({ factions, offers }: { factions: FactionStanding[]; offers: Hu
           Banners
         </h3>
         <p className="text-[11px] text-ink-faint">
-          Mustered from your tags. Standing is won contracts, and it buys a better floor on
-          what they hand over.
+          Mustered from the tags on your tasks. Standing is won contracts, and it buys a better
+          floor on what they hand over.
         </p>
       </header>
 
@@ -469,6 +475,22 @@ function Banners({ factions, offers }: { factions: FactionStanding[]; offers: Hu
               </div>
 
               <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">{faction.blurb}</p>
+
+              {/* The words themselves. This panel said "mustered from your tags" without ever
+                  saying which, and they were nowhere else on screen either - so twenty words
+                  decided whether a contract paid an item and none of them were readable. */}
+              <p className="mt-1.5 text-[10.5px] leading-snug text-ink-faint" data-testid="faction-aliases">
+                {faction.aliases.length > 0 ? (
+                  faction.aliases.map((alias, index) => (
+                    <span key={alias}>
+                      {index > 0 && <span className="opacity-50"> &middot; </span>}
+                      <span className="text-ink-muted">{alias}</span>
+                    </span>
+                  ))
+                ) : (
+                  <span className="italic">any other tag</span>
+                )}
+              </p>
 
               <StandingLadder faction={faction} />
 
@@ -593,9 +615,15 @@ function OfferCard({ offer }: { offer: HuntOffer }) {
             className="inline-flex min-w-0 items-center gap-1 rounded-full border border-line bg-surface-sunk px-2 py-0.5 text-[10px] text-ink-muted"
             data-testid="offer-faction"
             data-faction={offer.factionKey}
+            title={offer.factionTitle ? `${offer.factionName}: ${offer.factionTitle}` : offer.factionName ?? undefined}
           >
             <Flag size={9} className="shrink-0" />
-            <span className="truncate">{offer.factionTitle ?? offer.factionName}</span>
+            {/* The banner first. This read the title alone, so a correctly tagged contract
+                announced itself as "Unentered" and the tag rule looked broken. */}
+            <span className="truncate">{offer.factionName}</span>
+            {offer.factionTitle && (
+              <span className="hidden shrink-0 text-ink-faint sm:inline">{offer.factionTitle}</span>
+            )}
           </span>
         )}
       </div>

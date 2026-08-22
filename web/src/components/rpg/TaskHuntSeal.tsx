@@ -168,12 +168,23 @@ export function TaskHuntSeal({
           testId="task-hunt-bounty"
         />
         {quoted.paysContractReward && <RewardFloorChip floor={quoted.rewardFloor} />}
-        {quoted.factionName && (
+        {quoted.factionName ? (
           <FactionChip
             name={quoted.factionName}
             title={quoted.factionTitle}
             standing={quoted.standing}
           />
+        ) : (
+          // Only an untagged task lands here now: everything with a tag falls to the Motley.
+          // Left unsaid, it is the same silent rule the banners already had - this contract
+          // pays no item and nothing on the card admitted why.
+          <span
+            className="rounded-full border border-dashed border-line px-2 py-0.5 text-[10px] text-ink-faint"
+            title="Contracts muster under a banner from the task's tags. Untagged, this one flies none, and a banner is what pays the item."
+            data-testid="task-hunt-no-banner"
+          >
+            Untagged &middot; no banner
+          </span>
         )}
       </div>
 

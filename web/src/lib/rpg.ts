@@ -705,6 +705,13 @@ export interface FactionStanding {
   /** Contracts won under this banner. Wins, not contracts taken: a hunt fled is nothing. */
   wonHunts: number
   rewardFloor: RarityName
+  /**
+   * The tag words that muster here. Empty on the Motley, which catches everything else.
+   *
+   * On the wire so the board can name them: they decide whether a contract pays an item at
+   * all, and until now the only place they were written down was the server's catalog.
+   */
+  aliases: string[]
 }
 
 export interface HuntBoard {
