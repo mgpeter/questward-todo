@@ -360,6 +360,13 @@ public sealed record HuntOfferDto(
 /// The worst a contract reward from this banner can roll at this standing. It lifts a poor roll
 /// and never caps a good one, and it is the only mechanical thing standing buys.
 /// </param>
+/// <param name="Aliases">
+/// The tag words that muster under this banner, so the board can say which they are.
+///
+/// They were never on the wire before, which made the whole mechanism unfindable: twenty words
+/// decided whether a contract paid an item at all, and the only place they were written down was
+/// the catalog. Empty on the Motley, which is reached by falling through rather than by a word.
+/// </param>
 public sealed record FactionStandingDto(
     string Key,
     string Name,
@@ -367,7 +374,8 @@ public sealed record FactionStandingDto(
     string Standing,
     string Title,
     int WonHunts,
-    string RewardFloor);
+    string RewardFloor,
+    IReadOnlyList<string> Aliases);
 
 /// <param name="Offers">
 /// Every task that could be written up, worst first, and deliberately not trimmed. How many the

@@ -222,7 +222,8 @@ public static class RpgMapping
         record.Standing.ToString().ToLowerInvariant(),
         record.Faction.TitleAt(record.Standing),
         record.WonHunts,
-        RarityRules.Describe(FactionStandings.FloorFor(record.Standing)));
+        RarityRules.Describe(FactionStandings.FloorFor(record.Standing)),
+        record.Faction.Aliases);
 
     /// <summary>
     /// A contract as every screen renders it: what was promised, and how far along it is.
