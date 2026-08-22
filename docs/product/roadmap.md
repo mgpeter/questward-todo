@@ -242,4 +242,9 @@ because the brief it was handed paraphrased the decision instead of quoting it.
 - One-level nesting is enforced in the service, not in Postgres.
 - The board has not been driven end to end in a browser: that needs a signed-in session,
   and the sign-in credentials are the product owner's.
-- Phases 3-8 of the RPG expansion are specified but unbuilt.
+- Hunts, contracts and the five banners shipped on 2026-08-18 in `96bb687`; The Motley and the
+  shorter standing ladder followed in DEC-019. This line previously read "Phases 3-8 of the RPG
+  expansion are specified but unbuilt", which stopped being true the day after it was written.
+- Faction shop stock is still unbuilt. `docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md:96`
+  arbitrated that "seasonal and faction stock replace general offers rather than adding to them";
+  `ShopService` has no faction code at all.
