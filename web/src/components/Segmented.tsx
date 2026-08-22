@@ -1,12 +1,18 @@
 import { motion } from 'motion/react'
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 
 interface SegmentedProps<T extends string> {
   label: string
   value: T
   onChange: (value: T) => void
-  options: { value: T; label: string }[]
+  /** `hint` sits after the label in a quieter weight, for a count or a unit. */
+  options: { value: T; label: string; hint?: ReactNode; testId?: string }[]
   testId?: string
+  /**
+   * Off when the control should be its own width rather than filling the row - the task
+   * filter sits beside two icon buttons and cannot take the whole line.
+   */
+  grow?: boolean
 }
 
 /**
@@ -25,6 +31,7 @@ export function Segmented<T extends string>({
   onChange,
   options,
   testId,
+  grow = true,
 }: SegmentedProps<T>) {
   // The sliding pill is shared by layoutId, so each control needs its own or the pill flies
   // between the Priority row and the Repeats row whenever either changes.
@@ -48,7 +55,10 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.value)}
-            className="relative min-h-11 flex-1 rounded-[9px] py-2.5 text-[12.5px] transition-colors"
+            data-testid={option.testId}
+            className={`relative min-h-11 rounded-[9px] py-2.5 text-[12.5px] transition-colors ${
+              grow ? 'flex-1' : 'px-3'
+            }`}
           >
             {active && (
               <motion.span
@@ -59,6 +69,9 @@ export function Segmented<T extends string>({
             )}
             <span className={`relative ${active ? 'font-medium text-ink' : 'text-ink-faint'}`}>
               {option.label}
+              {option.hint !== undefined && (
+                <span className="tabular ml-1.5 text-[10.5px] opacity-60">{option.hint}</span>
+              )}
             </span>
           </button>
         )

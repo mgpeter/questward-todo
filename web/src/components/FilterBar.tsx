@@ -4,6 +4,7 @@ import type { Difficulty, TaskStatus } from '../lib/api'
 import { DIFFICULTIES } from '../lib/difficulty'
 import { useTags, type TaskFilters } from '../lib/queries'
 import { useIsMobile } from '../lib/useMediaQuery'
+import { Segmented } from './Segmented'
 import { Sheet } from './Sheet'
 
 interface FilterBarProps {
@@ -37,29 +38,22 @@ export function FilterBar({ filters, counts, onChange }: FilterBarProps) {
   if (isMobile) {
     return (
       <div className="flex items-center gap-2" data-testid="filter-bar">
-        <div className="flex items-center gap-0.5 rounded-xl border border-line bg-surface-sunk p-[3px]">
-          {STATUSES.filter((status) => status.value !== 'all').map((status) => {
-            const active = filters.status === status.value
-
-            return (
-              <button
-                key={status.value}
-                type="button"
-                aria-pressed={active}
-                data-testid={`filter-${status.value}`}
-                onClick={() => onChange({ ...filters, status: active ? 'all' : status.value })}
-                className={`min-h-11 rounded-lg px-3 text-[12px] font-medium transition ${
-                  active ? 'bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.1)]' : 'text-ink-faint'
-                }`}
-              >
-                {status.label}
-                <span className="tabular ml-1.5 text-[10.5px] opacity-60">
-                  {countFor(status.value)}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        {/* Three options and exactly one lit, the same as the board. This was two buttons
+            where pressing the lit one fell back to 'all' - a state a two-button control has no
+            way to draw, so the filter simply looked cleared. Segmented is a real radiogroup,
+            which is also the honest semantic: aria-pressed is for something you can un-press. */}
+        <Segmented
+          label="Task status"
+          value={filters.status}
+          onChange={(status) => onChange({ ...filters, status })}
+          grow={false}
+          options={STATUSES.map((status) => ({
+            value: status.value,
+            label: status.label,
+            hint: countFor(status.value),
+            testId: `filter-${status.value}`,
+          }))}
+        />
 
         <IconButton
           label="Search tasks"
@@ -75,7 +69,7 @@ export function FilterBar({ filters, counts, onChange }: FilterBarProps) {
         <IconButton
           label="Filter tasks"
           active={Boolean(filters.difficulty || filters.tag)}
-          testId="filter-open"
+          testId="filter-sheet-trigger"
           onClick={() => {
             setFocusSearch(false)
             setSheetOpen(true)
@@ -312,31 +306,18 @@ function FilterSheet({
       </label>
 
       <p className={SHEET_LABEL}>Status</p>
-      <div className="flex items-stretch gap-[3px] rounded-xl border border-line bg-surface-sunk p-[3px]">
-        {STATUSES.map((status) => {
-          const active = filters.status === status.value
-
-          return (
-            <button
-              key={status.value}
-              type="button"
-              aria-pressed={active}
-              data-testid={`filter-${status.value}`}
-              onClick={() => onChange({ ...filters, status: status.value })}
-              className={`min-h-11 flex-1 rounded-lg py-2.5 text-[13px] transition ${
-                active
-                  ? 'bg-surface font-medium text-ink shadow-[0_1px_2px_rgb(0_0_0/0.12)]'
-                  : 'text-ink-faint'
-              }`}
-            >
-              {status.label}
-              <span className="tabular ml-1.5 text-[11px] opacity-60">
-                {countFor(status.value)}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      {/* No test ids here: the inline control behind this sheet already carries them, and two
+          elements answering to filter-open is the duplicate DEC-017 exists to avoid. */}
+      <Segmented
+        label="Task status"
+        value={filters.status}
+        onChange={(status) => onChange({ ...filters, status })}
+        options={STATUSES.map((status) => ({
+          value: status.value,
+          label: status.label,
+          hint: countFor(status.value),
+        }))}
+      />
 
       <p className={SHEET_LABEL}>Difficulty</p>
       <div className="grid grid-cols-4 gap-1.5">
