@@ -236,7 +236,13 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
     try {
       const problem = await response.json()
       fieldErrors = problem?.errors
-      message = problem?.title ?? problem?.detail ?? message
+
+      // Detail before title. Results.Problem(message, statusCode) puts the sentence the
+      // server wrote in `detail` and lets ProblemDetailsDefaults fill `title` from the
+      // status code, so preferring the title showed "Unprocessable Entity" in place of
+      // "Reforging to epic costs 240 gold and you have 0." - and "Conflict" and "Bad
+      // Request" everywhere else - while the sentence sat unread in the same body.
+      message = problem?.detail ?? problem?.title ?? message
 
       // Surface the first field message: it is what the user actually needs to read.
       const firstField = fieldErrors && Object.values(fieldErrors)[0]?.[0]

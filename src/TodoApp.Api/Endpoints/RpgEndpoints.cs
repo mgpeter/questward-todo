@@ -745,7 +745,11 @@ public static class RpgEndpoints
     /// <summary>One place mapping domain failures to status codes.</summary>
     private static IResult Problem(RpgFailure failure, string? message) => failure switch
     {
-        RpgFailure.NotFound => Results.NotFound(),
+        // Carries its sentence, like NoDungeonRun below and for the same reason: every caller
+        // raising this writes the same message whether the row is missing or belongs to
+        // somebody else, so nothing is disclosed by saying so. An empty 404 left the client
+        // with no body to read and printing "Request failed with 404".
+        RpgFailure.NotFound => Results.Problem(message, statusCode: 404),
         RpgFailure.EncounterAlreadyActive => Results.Problem(message, statusCode: 409),
         RpgFailure.EncounterOver => Results.Problem(message, statusCode: 409),
         RpgFailure.ItemEquipped => Results.Problem(message, statusCode: 409),
