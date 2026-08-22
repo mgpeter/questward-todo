@@ -98,8 +98,23 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
             return RpgResult<InventoryItem>.Success(item);
         }
 
-        // Clear the slot first. The partial unique index would reject the pair otherwise,
-        // and doing it in one SaveChanges keeps the swap atomic.
+        // Free the slot and take it in that order, in two saves, inside one transaction.
+        //
+        // Both writes used to be a single SaveChanges, on the assumption that the order they
+        // were assigned in was the order they would be sent in. It is not: EF sorts a batch by
+        // ascending key, and IsEquipped is only the filter on the equipped-slot index rather
+        // than one of its columns, so nothing tells EF the two rows are related at all.
+        // Whenever the taking row sorted first, Postgres saw two equipped rows in one slot and
+        // refused the batch - a partial unique index is checked per row, and unlike a
+        // constraint it cannot be deferred, because a constraint cannot carry a filter. It
+        // surfaced as a 500 the inventory screen showed no sign of, so finding better armour
+        // and pressing Equip did nothing at all, for about half of all pairs of items.
+        //
+        // Two saves rather than one ExecuteUpdate because that bypasses the change tracker:
+        // the freed rows would stay equipped in memory, and the next equip in the same scope
+        // would read its own stale copy and return early having done nothing.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
         var occupying = await db.InventoryItems
             .Where(i => i.UserId == userId && i.Slot == item.Slot && i.IsEquipped)
             .ToListAsync(cancellationToken);
@@ -109,9 +124,13 @@ public sealed class AdventurerService(TodoDbContext db, CharacterSheetService sh
             previous.IsEquipped = false;
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+
         item.IsEquipped = true;
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
         await ClampHitPointsAsync(userId, cancellationToken);
 
         return RpgResult<InventoryItem>.Success(item);

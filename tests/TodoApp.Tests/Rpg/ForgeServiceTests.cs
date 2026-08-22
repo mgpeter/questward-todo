@@ -601,6 +601,54 @@ public class ForgeServiceTests(PostgresFixture postgres)
 
     // ------------------------------------------------------------- the sheet
 
+    /// <summary>
+    /// Equipping over an occupied slot, in one call, with nothing taken off first.
+    /// </summary>
+    /// <remarks>
+    /// The path a player actually takes when they find better armour, and the one nothing
+    /// covered. <c>RpgEndpointTests.Equipping_swaps_the_slot_and_updates_the_sheet</c> takes the
+    /// weapon off and puts the same weapon back on, which is the workaround rather than the
+    /// feature: the slot is empty when its equip lands, so the only interesting moment never
+    /// happens.
+    /// <para>
+    /// Swapped twice, and both directions asserted, because the hazard is asymmetric. Freeing
+    /// the slot and taking it are two UPDATEs in one batch, and EF orders a batch by ascending
+    /// key rather than by the order the assignments were written - <c>IsEquipped</c> is only
+    /// the index's filter, not one of its columns, so nothing tells EF the two are related.
+    /// Whichever way the two ids happen to compare, one of the swaps below writes the taking
+    /// row first, and the partial unique index is checked per row rather than per batch.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task Equipping_over_an_occupied_slot_swaps_without_taking_the_old_one_off()
+    {
+        var harness = await ArrangeAsync(new FixedDiceRoller(1));
+        var token = TestContext.Current.CancellationToken;
+
+        var worn = await harness.Db.InventoryItems
+            .SingleAsync(i => i.UserId == harness.UserId && i.Slot == ItemSlot.Armour && i.IsEquipped, token);
+
+        var found = await GiveAsync(harness, ItemCatalog.ScaleMail, Rarity.Common);
+
+        async Task AssertSwapsToAsync(Guid takingId, Guid freedId)
+        {
+            var result = await harness.Adventurer.EquipAsync(harness.UserId, takingId, token);
+
+            Assert.True(result.Ok, result.Message);
+
+            var rows = await harness.Db.InventoryItems.AsNoTracking()
+                .Where(i => i.UserId == harness.UserId && i.Slot == ItemSlot.Armour)
+                .ToListAsync(token);
+
+            Assert.True(rows.Single(i => i.Id == takingId).IsEquipped);
+            Assert.False(rows.Single(i => i.Id == freedId).IsEquipped);
+            Assert.Single(rows, i => i.IsEquipped);
+        }
+
+        await AssertSwapsToAsync(found.Id, worn.Id);
+        await AssertSwapsToAsync(worn.Id, found.Id);
+    }
+
     [Fact]
     public async Task A_constitution_affix_moves_max_hit_points_and_taking_it_off_clamps_them_back()
     {

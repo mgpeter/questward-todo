@@ -351,6 +351,14 @@ function Inventory({ items, essence }: { items: InventoryItem[]; essence: number
         </p>
       )}
 
+      {/* Equipping had no error line at all, which is how a swap that was failing every
+          other time read as a dead button rather than as a bug. */}
+      {equip.isError && (
+        <p role="alert" className="mb-2 text-[12px] text-rose" data-testid="equip-error">
+          {(equip.error as Error).message}
+        </p>
+      )}
+
       {spoke === craft && craft.isSuccess && craft.data && (
         <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-[12px] text-teal" data-testid="forge-result">
           <Sparkles size={12} className="shrink-0 self-center" />
