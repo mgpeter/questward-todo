@@ -1153,3 +1153,76 @@ now respected on desktop too, which it had not been.
 in the header at 1360px, so its mobile section and its desktop section now diverge by more
 than a viewport size. The six D&D ability scores do not fit in the HUD line and are behind a
 disclosure on the character sheet; armour class and attack stand in for them.
+
+---
+
+## 2026-08-22: The Tavern Reaches Four Levels Down, Not Two
+
+**ID:** DEC-018
+**Status:** Accepted
+**Category:** Product
+**Supersedes:** the ruling at `docs/specs/2026-08-17-task-model-and-rpg-depth/spec.md:98`
+**Stakeholders:** Product Owner, Tech Lead
+
+### Decision
+
+`MonsterDefinition.IsInBand` widens its floor from `level - 2` to `level - 4`. The tavern now
+offers monsters from four levels below the character to one above.
+
+The ceiling stays at `+ 1` and is not up for negotiation in the same breath. Three dungeon tests
+assert a boss sits outside this band at the level its dungeon unlocks, which is the rule stopping
+the tavern from selling the fight the dungeon walks you into.
+
+### Context
+
+Reported from play at level 10: the fights on offer were hard enough that the tavern stopped
+being a choice. The band was already asymmetric in the player's favour, so the complaint was not
+that easy fights were missing in principle - it was that two rungs of relief is not enough to be
+relief.
+
+The arithmetic says why. A monster's stats climb every rung, while the character's climb in
+steps: proficiency at 1, 5, 9, 13, and ability improvements at 4, 8, 12, 16. Between those the
+player stands still and the catalogue does not, so a same-level fight is near a coin flip and the
+level before an improvement is the worst of it - 3, 7, 11, and 10 is close enough. Two levels down
+buys back a couple of armour class and fifteen hit points, which is inside the noise of a d20.
+
+### Alternatives Considered
+
+1. **Leave the band and raise player power**
+   - Pros: fixes the cause rather than the symptom, and helps every fight including hunts and
+     dungeons, which this does not.
+   - Cons: re-tunes a progression curve that nothing else is complaining about, and every
+     existing character silently gets stronger. Much larger blast radius for the same relief.
+
+2. **Widen to `- 3`**
+   - Pros: a smaller departure from a ruling that declined `- 4` by name.
+   - Cons: at level 10 it adds one rung and two monsters. The report was that the board was too
+     hard, and a change that small risks being invisible.
+
+3. **Widen to `- 5`**
+   - Pros: the widest the current tests allow.
+   - Cons: `- 6` breaks `BestiaryTests`, so `- 5` sits one step from a wall for no stated reason,
+     and it keeps trivial fights on the board permanently.
+
+### Rationale
+
+Losing is already cheap - a lost fight leaves the character on one hit point and costs the one
+stamina it cost to start. The thing the old band protected against was therefore not danger but
+tedium: a board of certain wins. Four rungs down is still four rungs inside a catalogue that runs
+to fourteen, and the top of the band is unchanged, so the hardest fight on offer is exactly as
+hard as it was.
+
+The earlier ruling declined this same `-2 → -4` change, and was right to: it was proposed as a
+side effect of a feature that had no business moving a shared rule. This is the standalone
+decision it asked for instead.
+
+### Consequences
+
+**Positive:** At level 10 the board goes from eight monsters to thirteen. Discovery quests stay
+satisfiable for longer, since a kind stays offered four levels rather than two after it first
+appears.
+
+**Negative:** A character can now farm a fight they cannot lose. Gold and loot are the only
+rewards - combat grants no XP (DEC-012) - so the ceiling on that is the stamina it costs, but it
+is a grind the narrower band did not permit. The prose in `BestiaryTests` naming the old floor
+moved with it, and any future reading of "the band" has two numbers in its history.

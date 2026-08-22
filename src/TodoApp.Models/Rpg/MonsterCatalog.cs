@@ -80,14 +80,24 @@ public sealed record MonsterDefinition(
         Phases is not null && phase >= 1 && phase <= Phases.Count ? Phases[phase - 1] : null;
 
     /// <summary>
-    /// Monsters from two levels below the character to one level above, so the tavern always
+    /// Monsters from four levels below the character to one level above, so the tavern always
     /// has something to fight without offering a certain death. The band is deliberately
     /// asymmetric: an easy fight is a valid choice, an unwinnable one is not.
     /// </summary>
     /// <remarks>
-    /// A monster of level N is therefore offered to characters N-1 through N+2, which is the
-    /// arithmetic the level coverage test relies on. Other phases depend on the band as
-    /// written; widening or narrowing it re-plans the whole bestiary.
+    /// A monster of level N is therefore offered to characters N-1 through N+4, which is the
+    /// arithmetic the level coverage test relies on.
+    /// <para>
+    /// The floor was two below until DEC-018 and is now four. Player power is a staircase -
+    /// proficiency every four levels, ability improvements at 4, 8, 12 and 16 - while monster
+    /// stats climb every rung, so a same-level fight is near a coin flip and the level before
+    /// an improvement is the worst of it. Two rungs of relief was not enough to be relief.
+    /// </para>
+    /// <para>
+    /// The ceiling is load-bearing and is not the same kind of number. Three dungeon tests
+    /// assert a boss sits outside this band at the level its dungeon unlocks, which is what
+    /// stops the tavern selling the fight the dungeon walks you into. Moving +1 breaks them.
+    /// </para>
     /// <para>
     /// The character level is clamped to the deepest level the bestiary actually goes to
     /// before the band is applied. Unclamped, the band walks off the end of the catalog: a
@@ -98,7 +108,7 @@ public sealed record MonsterDefinition(
     /// </remarks>
     public bool IsAvailableAt(int characterLevel) => IsInBand(MonsterCatalog.BandLevel(characterLevel));
 
-    private bool IsInBand(int level) => Level <= level + 1 && Level >= level - 2;
+    private bool IsInBand(int level) => Level <= level + 1 && Level >= level - 4;
 }
 
 /// <summary>Code-held, following DEC-004. Only the key is ever persisted.</summary>
