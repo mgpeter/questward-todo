@@ -158,25 +158,24 @@ function AccountSheet({
         <SoundToggle variant="row" />
 
         {/*
-          Read-only, and deliberately so. The browser owns this setting and an app switch
-          that appeared to control it would be lying; saying which way it is currently read
-          explains why the animations are doing what they are doing.
+          A footnote to sound rather than a row of its own. The browser owns this setting and
+          an app switch would be lying about that, but as a bordered row with a value on the
+          right it was the same shape as the switch above it and read as one - so it was a
+          control that did nothing. Said as a sentence, it is plainly a report.
+
+          It belongs under sound for the reason lib/sound.ts gives: there is no
+          prefers-reduced-sound, so this is the nearest standing signal that someone does not
+          want incidental sensory effects, and it is what the default above is read from.
         */}
-        <div className="flex items-center gap-3 border-t border-line py-3.5">
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14.5px]">Reduced motion</span>
-            <span className="mt-0.5 block text-[11.5px] text-ink-faint">
-              Following your system setting
-            </span>
-          </span>
-          <span
-            className="tabular shrink-0 text-[11.5px] text-ink-faint"
-            data-testid="reduced-motion-state"
-            data-reduced={reduced ? 'on' : 'off'}
-          >
-            {reduced ? 'On' : 'Off'}
-          </span>
-        </div>
+        <p
+          className="-mt-1 pb-3.5 text-[11.5px] text-ink-faint"
+          data-testid="reduced-motion-state"
+          data-reduced={reduced ? 'on' : 'off'}
+        >
+          {reduced
+            ? 'Reduced motion is on in your system settings, so animations are kept short.'
+            : 'Reduced motion is off in your system settings.'}
+        </p>
 
         <button
           type="button"

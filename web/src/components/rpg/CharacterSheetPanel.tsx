@@ -12,7 +12,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   affixesInForce,
   canImbue,
@@ -65,33 +65,58 @@ export function CharacterSheetPanel({
           )}
         </header>
 
-        {/* Four columns at lg, not five: Recovery spans two, so seven tiles fill 4 + 4 exactly. */}
+        {/*
+          Recovery spans two columns and is drawn second, so at grid-cols-2 it cannot sit
+          beside Hit points and wraps, stranding an empty cell in the first row and leaving
+          Essence alone in a fifth. Lifting Stamina into that gap fills both: five rows and
+          two holes become four rows and none.
+
+          Order only, and only below sm. The same sequence happens to tile 4 + 4 on the board
+          as well, but it would move Stamina on a layout that is already right.
+        */}
         <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-          <Stat icon={<Heart size={13} />} label="Hit points" testId="stat-hp">
-            <span className="tabular">
-              {sheet.currentHitPoints}
-              <span className="text-ink-faint">/{sheet.maxHitPoints}</span>
-            </span>
-          </Stat>
-          <Recovery sheet={sheet} />
-          <Stat icon={<Shield size={13} />} label="Armour class" testId="stat-ac">
-            <span className="tabular">{sheet.armourClass}</span>
-          </Stat>
-          <Stat icon={<Swords size={13} />} label="Attack" testId="stat-attack">
-            <span className="tabular">
-              +{sheet.attackBonus}
-              <span className="ml-1 text-[11px] text-ink-faint">{sheet.damage}</span>
-            </span>
-          </Stat>
-          <Stat icon={<Zap size={13} />} label="Stamina" testId="stat-stamina">
-            <span className="tabular text-teal">{sheet.stamina}</span>
-          </Stat>
-          <Stat icon={<Coins size={13} />} label="Gold" testId="stat-gold">
-            <span className="tabular text-gold">{sheet.gold.toLocaleString()}</span>
-          </Stat>
-          <Stat icon={<Gem size={13} />} label="Essence" testId="stat-essence">
-            <span className="tabular text-teal">{sheet.essence.toLocaleString()}</span>
-          </Stat>
+          {orderedStats(
+            {
+              hitPoints: (
+                <Stat key="hp" icon={<Heart size={13} />} label="Hit points" testId="stat-hp">
+                  <span className="tabular">
+                    {sheet.currentHitPoints}
+                    <span className="text-ink-faint">/{sheet.maxHitPoints}</span>
+                  </span>
+                </Stat>
+              ),
+              recovery: <Recovery key="recovery" sheet={sheet} />,
+              armourClass: (
+                <Stat key="ac" icon={<Shield size={13} />} label="Armour class" testId="stat-ac">
+                  <span className="tabular">{sheet.armourClass}</span>
+                </Stat>
+              ),
+              attack: (
+                <Stat key="attack" icon={<Swords size={13} />} label="Attack" testId="stat-attack">
+                  <span className="tabular">
+                    +{sheet.attackBonus}
+                    <span className="ml-1 text-[11px] text-ink-faint">{sheet.damage}</span>
+                  </span>
+                </Stat>
+              ),
+              stamina: (
+                <Stat key="stamina" icon={<Zap size={13} />} label="Stamina" testId="stat-stamina">
+                  <span className="tabular text-teal">{sheet.stamina}</span>
+                </Stat>
+              ),
+              gold: (
+                <Stat key="gold" icon={<Coins size={13} />} label="Gold" testId="stat-gold">
+                  <span className="tabular text-gold">{sheet.gold.toLocaleString()}</span>
+                </Stat>
+              ),
+              essence: (
+                <Stat key="essence" icon={<Gem size={13} />} label="Essence" testId="stat-essence">
+                  <span className="tabular text-teal">{sheet.essence.toLocaleString()}</span>
+                </Stat>
+              ),
+            },
+            isMobile,
+          )}
         </div>
 
         {/* Six tiles of two-digit numbers nobody reads every visit. Behind a disclosure on
@@ -548,4 +573,18 @@ function Affix({ word }: { word: string }) {
       {word}
     </span>
   )
+}
+
+/**
+ * The seven readings, in the order the width can carry.
+ *
+ * Named rather than positional so the two orders can be read side by side and the difference
+ * is one word, which is all it is.
+ */
+function orderedStats(tiles: Record<string, ReactNode>, isMobile: boolean): ReactNode[] {
+  const order = isMobile
+    ? ['hitPoints', 'stamina', 'recovery', 'armourClass', 'attack', 'gold', 'essence']
+    : ['hitPoints', 'recovery', 'armourClass', 'attack', 'stamina', 'gold', 'essence']
+
+  return order.map((key) => tiles[key])
 }
